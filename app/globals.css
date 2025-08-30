@@ -1,0 +1,53 @@
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+:root {
+     /* Warna dasar untuk mode terang */
+    --background: 249 250 251; /* Corresponds to Tailwind's gray-50 */
+    --foreground: 17 24 39;   /* Corresponds to Tailwind's gray-900 */
+    
+    /* Palet Warna utama TripGo (dalam format R G B untuk opacity) */
+    --primary-blue: 10 88 202; /* #0A58CA */
+    --accent-orange: 253 126 20; /* #FD7E14 */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+      --background: 17 24 39;   /* gray-900 */
+      --foreground: 243 244 246; /* gray-100 */
+    }
+  }
+
+  html {
+    /* Membuat scrolling di halaman menjadi lebih halus */
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    /* Menggunakan variabel CSS untuk warna background dan teks */
+    background-color: rgb(var(--background));
+    color: rgb(var(--foreground));
+    
+    /* Font 'Inter' sudah diaplikasikan dari file app/layout.tsx. 
+      Baris di bawah ini menambahkan anti-aliasing untuk membuat teks
+      terlihat lebih tajam dan halus di berbagai browser.
+    */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+ }
+ 
+@layer components {
+  .main-container {
+    @apply container mx-auto px-4;
+  }
+}
