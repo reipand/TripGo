@@ -30,7 +30,7 @@ const Footer = () => {
                     <div className="md:col-span-2 lg:col-span-1">
                         <h2 className="text-2xl font-bold mb-4">TripGo</h2>
                         <p className="text-gray-300">
-                            Satu aplikasi untuk segala kebutuhan perjalananmu. Pesan tiket pesawat, kereta api, hotel, dan aktivitas seru dengan mudah.
+                            Satu aplikasi untuk segala kebutuhan perjalananmu. Pesan tiket pesawat, kereta api, dan aktivitas seru dengan mudah.
                         </p>
                     </div>
 
@@ -40,7 +40,6 @@ const Footer = () => {
                         <ul className="space-y-2 text-gray-300">
                             <li><Link href="/pesawat" className="hover:text-white">Pesawat</Link></li>
                             <li><Link href="/kereta" className="hover:text-white">Kereta Api</Link></li>
-                            <li><Link href="/hotel" className="hover:text-white">Hotel</Link></li>
                             <li><Link href="/todo" className="hover:text-white">To Do</Link></li>
                         </ul>
                     </div>

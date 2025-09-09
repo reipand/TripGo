@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // Impor useRouter untuk navigasi
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 // --- Kumpulan Ikon SVG ---
 
@@ -39,37 +40,100 @@ const Navbar = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const router = useRouter();
 
-  // Fungsi untuk menangani pencarian
+  // State dan data untuk search suggestions
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+  
+  const allDestinations = [
+    'Bali, Indonesia',
+    'Yogyakarta, Indonesia',
+    'Jakarta, Indonesia',
+    'Surabaya, Indonesia',
+    'Bandung, Indonesia',
+    'Raja Ampat, Indonesia',
+    'Labuan Bajo, Indonesia',
+  ];
+
+  // Fungsi untuk menangani perubahan input dan memfilter saran
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+
+    if (query.length > 1) {
+        const filteredSuggestions = allDestinations.filter(dest =>
+            dest.toLowerCase().includes(query.toLowerCase())
+        );
+        setSuggestions(filteredSuggestions);
+        setIsSuggestionsOpen(true);
+    } else {
+        setSuggestions([]);
+        setIsSuggestionsOpen(false);
+    }
+  };
+  
+  // Fungsi untuk menangani klik pada saran
+  const handleSuggestionClick = (suggestion: string) => {
+    setSearchQuery(suggestion);
+    setIsSuggestionsOpen(false);
+    router.push(`/search?q=${encodeURIComponent(suggestion.trim())}`);
+  };
+
+  // Fungsi untuk menangani pencarian via "Enter"
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Cek jika tombol yang ditekan adalah 'Enter' dan query tidak kosong
     if (e.key === 'Enter' && searchQuery.trim() !== '') {
-      // Navigasi ke halaman pencarian dengan query
+      setIsSuggestionsOpen(false);
       router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-      // Kosongkan input setelah mencari
       setSearchQuery('');
     }
+  };
+  
+  // Fungsi untuk menutup dropdown saat input kehilangan fokus
+  const handleBlur = () => {
+    setTimeout(() => {
+        setIsSuggestionsOpen(false);
+    }, 150); // Delay untuk memungkinkan event klik pada saran
   };
 
   return (
     <nav className="bg-gradient-to-r from-[#0A58CA] to-[#0548AD] p-4 text-white shadow-md sticky top-0 z-50">
       <div className="container mx-auto flex items-center justify-between">
         
-        {/* Logo TripGo */}
-        <div className="text-2xl font-bold">
-          <Link href="/">TripGo</Link>
-        </div>
+        <Link href="/" className="flex items-center">
+          <Image
+            src="/images/logo_tg2.svg"
+            alt="TripGo Logo"
+            width={120}
+            height={32}
+            priority
+          />
+        </Link>
 
-        {/* Search Bar (Terlihat di Desktop) */}
+        {/* Search Bar dengan Suggestions */}
         <div className="hidden lg:flex relative flex-grow mx-8 max-w-lg">
           <input
             type="text"
-            placeholder="Cari destinasi atau hotel..."
+            placeholder="Cari destinasi..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleSearch}
+            onBlur={handleBlur}
+            onFocus={handleInputChange} // Tampilkan lagi saran saat fokus
             className="w-full py-2 pl-10 pr-4 rounded-full bg-white bg-opacity-20 border border-white border-opacity-30 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 text-white placeholder-white placeholder-opacity-70 transition-all duration-300"
           />
           <SearchIcon />
+          {isSuggestionsOpen && suggestions.length > 0 && (
+            <div className="absolute top-full mt-2 w-full bg-white rounded-md shadow-lg py-1 z-30">
+              {suggestions.map((suggestion, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+                >
+                  {suggestion}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Navigasi Tengah (Desktop) */}
@@ -78,7 +142,6 @@ const Navbar = () => {
           <Link href="/kereta" className="hover:text-gray-200 transition-colors duration-200">Kereta</Link>
           <Link href="/todo" className="hover:text-gray-200 transition-colors duration-200">To Do</Link>
           
-          {/* Dropdown "Lainnya" */}
           <div className="relative">
             <button 
               onClick={() => setIsDropdownOpen(!isDropdownOpen)} 

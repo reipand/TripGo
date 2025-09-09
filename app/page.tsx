@@ -284,9 +284,9 @@ export default function Home() {
       description: "Perjalanan lebih hemat dengan cashback spesial."
     },
     {
-      imageUrl: "/images/promo-surabaya.png", // Menggunakan gambar lokal
-      title: "Penawaran Hotel di Surabaya",
-      description: "Menginap nyaman dengan harga teman."
+      imageUrl: "/images/promo-whoosh.jpg", // Menggunakan gambar lokal
+      title: "Penawaran Whoosh di Bandung",
+      description: "Perjalanan Jakarta - bandung hanya 30 menit."
     }
   ];
 
