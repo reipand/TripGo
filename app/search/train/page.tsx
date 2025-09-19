@@ -1,48 +1,174 @@
-import { type NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabaseClient';
+'use client';
 
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 
-  // Mengambil parameter dari URL
-  const origin = searchParams.get('origin');
-  const destination = searchParams.get('destination');
-  const departureDate = searchParams.get('departureDate');
+// Tipe data untuk hasil kereta dari API
+interface Train {
+  id: number;
+  waktu_berangkat: string;
+  waktu_tiba: string;
+  harga: number;
+  stok_kursi: number;
+  routes: {
+    kota_asal: string;
+    kota_tujuan: string;
+  };
+  transportations: {
+    nama_transportasi: string;
+    tipe: string;
+  };
+}
 
-  // Validasi dasar
-  if (!origin || !destination || !departureDate) {
-    return NextResponse.json({ error: 'Parameter origin, destination, dan departureDate diperlukan' }, { status: 400 });
-  }
+// --- Komponen Ikon ---
+const TrainIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block -mt-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+    </svg>
+);
 
-  try {
-    // Membangun query ke Supabase, dengan filter tipe 'kereta'
-    const { data, error } = await supabase
-      .from('schedules')
-      .select(`
-        id,
-        waktu_berangkat,
-        waktu_tiba,
-        harga,
-        stok_kursi,
-        routes!inner (kota_asal, kota_tujuan),
-        transportations!inner (nama_transportasi, tipe)
-      `)
-      .eq('transportations.tipe', 'kereta') // <-- Perubahan utama di sini
-      .eq('routes.kota_asal', origin)
-      .eq('routes.kota_tujuan', destination)
-      .gte('waktu_berangkat', `${departureDate}T00:00:00.000Z`)
-      .lte('waktu_berangkat', `${departureDate}T23:59:59.999Z`);
+// --- Komponen Kartu Tiket Kereta ---
+const TrainTicketCard = ({ train }: { train: Train }) => {
+    // Fungsi untuk memformat waktu dan menghitung durasi
+    const departure = new Date(train.waktu_berangkat);
+    const arrival = new Date(train.waktu_tiba);
 
-    if (error) {
-      // Jika ada error dari Supabase, lemparkan error tersebut
-      throw error;
+    const departureTime = departure.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const arrivalTime = arrival.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    
+    const durationMinutes = (arrival.getTime() - departure.getTime()) / (1000 * 60);
+    const durationHours = Math.floor(durationMinutes / 60);
+    const remainingMinutes = durationMinutes % 60;
+    const duration = `${durationHours}j ${remainingMinutes}m`;
+
+    return (
+        <div className="bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl">
+            <Image 
+              src={`/images/train-logo-${train.transportations.nama_transportasi.toLowerCase().replace(' ', '-')}.png`} 
+              alt={`${train.transportations.nama_transportasi} logo`} 
+              width={96} 
+              height={96} 
+              className="w-24 h-auto object-contain"
+              onError={(e) => { e.currentTarget.src = '/images/train-logo-default.png'; }} // Fallback
+            />
+            
+            <div className="flex-grow flex flex-col md:flex-row items-center text-center md:text-left">
+                <div className="w-full md:w-1/3">
+                    <p className="text-xl font-bold text-gray-800">{departureTime}</p>
+                    <p className="text-sm text-gray-500">{train.routes.kota_asal}</p>
+                </div>
+                
+                <div className="w-full md:w-1/3 text-center my-2 md:my-0">
+                    <p className="text-sm text-gray-500">{duration}</p>
+                    <div className="w-full h-px bg-gray-200 relative my-1">
+                        <span className="absolute left-0 top-1/2 -mt-1.5 w-3 h-3 bg-gray-300 rounded-full"></span>
+                        <span className="absolute right-0 top-1/2 -mt-1.5 w-3 h-3 bg-gray-300 rounded-full"></span>
+                    </div>
+                    <p className="text-sm text-gray-500">Langsung</p>
+                </div>
+
+                <div className="w-full md:w-1/3">
+                    <p className="text-xl font-bold text-gray-800">{arrivalTime}</p>
+                    <p className="text-sm text-gray-500">{train.routes.kota_tujuan}</p>
+                </div>
+            </div>
+
+            <div className="md:border-l md:pl-4 text-center md:text-right">
+                <p className="text-xl font-bold text-orange-500">Rp {train.harga.toLocaleString('id-ID')}</p>
+                <p className="text-xs text-gray-500">/pax</p>
+                <button className="mt-2 w-full md:w-auto px-6 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors duration-300">
+                    Pilih
+                </button>
+            </div>
+        </div>
+    );
+};
+
+
+// --- Component for displaying search results ---
+const TrainResults = () => {
+    const searchParams = useSearchParams();
+    const [trains, setTrains] = useState<Train[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const origin = searchParams.get('origin') || 'Tidak Diketahui';
+    const destination = searchParams.get('destination') || 'Tidak Diketahui';
+    const departureDate = searchParams.get('departureDate');
+
+    useEffect(() => {
+        const fetchTrains = async () => {
+            if (!origin || !destination || !departureDate || origin === 'Tidak Diketahui') {
+                setLoading(false);
+                return;
+            }
+            
+            setLoading(true);
+            try {
+                const query = new URLSearchParams({ origin, destination, departureDate }).toString();
+                // Mengambil data dari API dengan cache yang dinonaktifkan
+                const response = await fetch(`/api/search/train?${query}`, { cache: 'no-store' });
+
+                if (!response.ok) {
+                    throw new Error('Gagal mengambil data kereta');
+                }
+                const data = await response.json();
+                setTrains(data);
+            } catch (error) {
+                console.error(error);
+                setTrains([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchTrains();
+    }, [origin, destination, departureDate]);
+
+    // Menangani kasus di mana halaman dimuat tanpa parameter
+    if (!searchParams.toString()) {
+        return (
+            <div className="container mx-auto px-4 py-8 text-center">
+                <h1 className="text-2xl font-bold text-gray-700">Mulai Pencarian Anda</h1>
+                <p className="text-gray-500 mt-2">Silakan isi form di halaman utama untuk mencari tiket kereta.</p>
+            </div>
+        );
     }
+    
+    return (
+        <div className="container mx-auto px-4 py-8">
+            <div className="mb-6">
+                <h1 className="text-3xl font-bold text-gray-800">Hasil Pencarian <TrainIcon /></h1>
+                <p className="text-gray-600">
+                    {origin} → {destination}
+                    <span className="mx-2 text-gray-400">|</span>
+                    {departureDate && new Date(departureDate + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+            </div>
 
-    // Jika berhasil, kembalikan data sebagai JSON
-    return NextResponse.json(data);
+            {loading ? (
+                <p className="text-center text-gray-500 mt-10">Mencari kereta terbaik...</p>
+            ) : (
+                <div className="space-y-4">
+                    {trains.length > 0 ? (
+                        trains.map(train => (
+                            <TrainTicketCard key={train.id} train={train} />
+                        ))
+                    ) : (
+                        <p className="text-center text-gray-500 mt-10">Tidak ada kereta yang ditemukan untuk rute dan tanggal ini.</p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
-  } catch (error: any) {
-    console.error('Supabase query error:', error);
-    return NextResponse.json({ error: 'Gagal mengambil data dari database', details: error.message }, { status: 500 });
-  }
+
+// --- Halaman Utama Hasil Pencarian ---
+export default function SearchTrainPage() {
+    return (
+        <Suspense fallback={<p className="text-center text-gray-500 mt-10">Memuat hasil pencarian...</p>}>
+            <TrainResults />
+        </Suspense>
+    );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 
@@ -83,8 +83,9 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
     );
 };
 
-// --- Halaman Utama Hasil Pencarian ---
-export default function SearchFlightsPage() {
+// --- 1. Create a new component for the search results ---
+// This component will contain the logic that uses searchParams.
+function FlightResults() {
     const searchParams = useSearchParams();
     const [flights, setFlights] = useState<Flight[]>([]);
     const [loading, setLoading] = useState(true);
@@ -156,6 +157,18 @@ export default function SearchFlightsPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+
+// --- 2. Modify the main page component ---
+// This component will now set up the Suspense boundary.
+export default function SearchFlightsPage() {
+    return (
+        // Wrap the client component in Suspense
+        <Suspense fallback={<p className="text-center text-gray-500 mt-10">Loading search results...</p>}>
+            <FlightResults />
+        </Suspense>
     );
 }
 

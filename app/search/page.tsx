@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 // TIDAK PERLU impor Navbar dan Footer di sini karena sudah ada di layout.tsx
 
@@ -51,8 +51,8 @@ const TicketCard = ({ flight }: { flight: any }) => (
     </div>
 );
 
-// --- Halaman Utama Hasil Pencarian ---
-export default function SearchFlightsPage() {
+// --- Komponen untuk menampilkan hasil pencarian ---
+const SearchResults = () => {
     const searchParams = useSearchParams();
 
     // Mengambil data dari URL
@@ -68,7 +68,6 @@ export default function SearchFlightsPage() {
     ];
 
     return (
-
         <div className="container mx-auto px-4 py-8">
             <div className="mb-6">
                 <h1 className="text-3xl font-bold text-gray-800">Hasil Pencarian <PlaneTakeoffIcon /></h1>
@@ -89,6 +88,15 @@ export default function SearchFlightsPage() {
                 )}
             </div>
         </div>
+    );
+};
+
+// --- Halaman Utama Hasil Pencarian ---
+export default function SearchFlightsPage() {
+    return (
+        <Suspense fallback={<p className="text-center text-gray-500 mt-10">Memuat hasil pencarian...</p>}>
+            <SearchResults />
+        </Suspense>
     );
 }
 
