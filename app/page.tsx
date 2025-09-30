@@ -1,23 +1,40 @@
 'use client'; 
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 
-const getIconPath = (name: 'plane' | 'train' | 'calendar' | 'user' | 'switch' | 'search' | 'price' | 'complete' | 'support', isActive: boolean = false) => {
-    const fileName = `${name}.png`; 
-    
-    // Define background color based on icon type and state
-    let color = isActive ? '0A58CA' : 'F8F9FA';
-    
-    // Special cases for specific icons
-    if (name === 'search') {
-        color = 'FD7E14'; // Orange for search
-    } else if (['price', 'complete', 'support'].includes(name)) {
-        color = '0A58CA'; // Blue for feature icons
-    }
-    
-    const textColor = (name === 'search' || name === 'price' || name === 'complete' || name === 'support') ? 'ffffff' : '000000';
-    
-    return `https://placehold.co/24x24/${color}/${textColor}?text=${name.toUpperCase()}`;
+// --- Kumpulan Ikon (Diubah ke Path Gambar Lokal) ---
+
+const getIconPath = (
+  name: 'plane' | 'train' | 'calendar' | 'user' | 'switch' | 'search' | 'price' | 'complete' | 'support',
+  isActive: boolean = false
+) => {
+ 
+  // const basePath = '/images';
+
+
+  const basePath = '/images/icons';
+
+  if (name === 'plane' || name === 'train') {
+    return `${basePath}/${name}${isActive ? '-active' : ''}.png`;
+  }
+  
+  // Special handling for utility icons with hover states
+  if (name === 'switch') {
+    return `${basePath}/utils/${name}.png`; // Dark version for better visibility
+  }
+  
+  // Regular utility icons
+  if (name === 'calendar' || name === 'user') {
+    return `${basePath}/utils/${name}.png`;
+  }
+
+  if (name === 'price' || name === 'complete' || name === 'support') {
+    return `${basePath}/features/${name}.png`;
+  }
+  
+  // All other utility icons
+  return `${basePath}/utils/${name}.png`;
 };
 
 const IconComponent = ({ path, className = '', alt }: { path: string, className?: string, alt: string }) => (
@@ -27,7 +44,7 @@ const IconComponent = ({ path, className = '', alt }: { path: string, className?
 const PlaneIcon = ({ isActive }: { isActive: boolean }) => (
   <IconComponent 
     path={getIconPath('plane', isActive)} 
-    className={`mr-2 transition-colors duration-300 ${isActive ? 'text-[#0A58CA]' : 'text-gray-500'}`}
+    className={`mr-2 transition-colors duration-300`}
     alt="Ikon Pesawat"
   />
 );
@@ -35,7 +52,7 @@ const PlaneIcon = ({ isActive }: { isActive: boolean }) => (
 const TrainIcon = ({ isActive }: { isActive: boolean }) => (
   <IconComponent 
     path={getIconPath('train', isActive)} 
-    className={`mr-2 transition-colors duration-300 ${isActive ? 'text-[#0A58CA]' : 'text-gray-500'}`}
+    className={`mr-2 transition-colors duration-300`}
     alt="Ikon Kereta"
   />
 );
@@ -74,6 +91,8 @@ const FeatureIconContainer = ({ children }: { children: React.ReactNode }) => (
 // --- Komponen Form Pencarian Interaktif ---
 
 const SearchWidget = () => {
+  const router = useRouter();
+  
   const [activeTab, setActiveTab] = useState('pesawat');
   const [tripType, setTripType] = useState('oneWay'); // oneWay atau roundTrip
   
@@ -85,16 +104,16 @@ const SearchWidget = () => {
   }, []);
 
   const [flightData, setFlightData] = useState({
-    origin: '',
-    destination: '',
+    origin: 'Jakarta',
+    destination: 'Bali (Denpasar)',
     departureDate: today, // Set default ke besok
     returnDate: '',
     passengers: '1 Dewasa',
   });
 
   const [trainData, setTrainData] = useState({
-    origin: '',
-    destination: '',
+    origin: 'Jakarta',
+    destination: 'Yogyakarta',
     departureDate: today, // Set default ke besok
     returnDate: '',
     passengers: '1 Dewasa',
@@ -122,16 +141,15 @@ const SearchWidget = () => {
 
     if (name === 'departureDate' && tripType === 'roundTrip' && value) {
       const departure = new Date(value);
-      departure.setDate(departure.getDate() + 1);
-      const nextDay = formatDate(departure);
+      // Tambahkan satu hari ke tanggal berangkat untuk dijadikan tanggal pulang minimal
+      const nextDay = formatDate(new Date(departure.getTime() + 86400000));
       
       // Pastikan tanggal pulang tidak mendahului tanggal pergi
-      // Jika returnDate null/kosong atau lebih awal dari departure date baru, reset
-      if (!currentData.returnDate || new Date(currentData.returnDate) <= departure) {
+      if (!currentData.returnDate || new Date(currentData.returnDate) < new Date(nextDay)) {
          setData(prev => ({ ...prev, returnDate: nextDay }));
       }
     }
-};
+  };
   
   useEffect(() => {
     // Reset returnDate saat tipe perjalanan diubah menjadi sekali jalan
@@ -166,8 +184,9 @@ const SearchWidget = () => {
   };
 
   const handleSearchSubmit = () => {
-    // Menggunakan pengganti alert yang lebih baik (misalnya modal atau notifikasi)
-    const showMessage = (msg: string) => console.log(`[Validation Error] ${msg}`); // Placeholder
+    const showMessage = (msg: string) => {
+      alert(msg); // Replace console.log with actual alert for better UX
+    };
     
     if (activeTab === 'pesawat') {
       const dataToSubmit = tripType === 'oneWay' ? { ...flightData, returnDate: '' } : flightData;
@@ -175,18 +194,16 @@ const SearchWidget = () => {
         showMessage('Harap lengkapi kota/bandara asal, tujuan, dan tanggal pergi.');
         return;
       }
-      // Simulasi navigasi dengan console.log
       const query = new URLSearchParams(dataToSubmit as any).toString();
-      console.log(`[NAVIGATING] Simulating search for Flights: /search/flights?${query}`);
+      router.push(`/search/flights?${query}`);
     } else {
-        const dataToSubmit = tripType === 'oneWay' ? { ...trainData, returnDate: '' } : trainData;
-        if (!dataToSubmit.origin || !dataToSubmit.destination || !dataToSubmit.departureDate) {
-            showMessage('Harap lengkapi stasiun asal, tujuan, dan tanggal berangkat.');
-            return;
-        }
-        // Simulasi navigasi dengan console.log
-        const query = new URLSearchParams(dataToSubmit as any).toString();
-        console.log(`[NAVIGATING] Simulating search for Trains: /search/trains?${query}`);
+      const dataToSubmit = tripType === 'oneWay' ? { ...trainData, returnDate: '' } : trainData;
+      if (!dataToSubmit.origin || !dataToSubmit.destination || !dataToSubmit.departureDate) {
+        showMessage('Harap lengkapi stasiun asal, tujuan, dan tanggal berangkat.');
+        return;
+      }
+      const query = new URLSearchParams(dataToSubmit as any).toString();
+      router.push(`/search/trains?${query}`);
     }
   };
 
@@ -270,17 +287,22 @@ const SearchWidget = () => {
   return (
     <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-5xl">
       <div className="flex border-b border-gray-200 mb-4">
+            {/* TAB PESAWAT */}
             <button
               onClick={() => setActiveTab('pesawat')}
-              className={`flex items-center pb-3 pt-1 px-1 text-base font-semibold transition-colors duration-300 ${activeTab === 'pesawat' ? 'border-b-2 border-[#0A58CA] text-[#0A58CA]' : 'text-gray-500 hover:text-gray-800'}`}
+              className={`flex items-center pb-3 pt-1 px-4 text-base font-semibold transition-colors duration-300 ${activeTab === 'pesawat' ? 'border-b-2 border-[#0A58CA] text-[#0A58CA]' : 'text-gray-500 hover:text-gray-800'}`}
             >
-              <PlaneIcon isActive={activeTab === 'pesawat'} /> Pesawat
+              <PlaneIcon isActive={activeTab === 'pesawat'} /> 
+              <span>Pesawat</span>
             </button>
+            
+            {/* TAB KERETA API */}
             <button
               onClick={() => setActiveTab('kereta')}
               className={`flex items-center pb-3 pt-1 px-4 text-base font-semibold transition-colors duration-300 ${activeTab === 'kereta' ? 'border-b-2 border-[#0A58CA] text-[#0A58CA]' : 'text-gray-500 hover:text-gray-800'}`}
             >
-              <TrainIcon isActive={activeTab === 'kereta'} /> Kereta Api
+              <TrainIcon isActive={activeTab === 'kereta'} />
+              <span>Kereta Api</span>
             </button>
       </div>
 
@@ -419,17 +441,17 @@ export default function Home() {
 
   const promos = [
     {
-      imageUrl: "https://placehold.co/400x200/0A58CA/ffffff?text=Promo+Bali", 
+      imageUrl: "/images/promo-bali.png", 
       title: "Diskon Penerbangan ke Bali",
       description: "Nikmati potongan hingga 30% untuk liburan impianmu."
     },
     {
-      imageUrl: "https://placehold.co/400x200/FD7E14/ffffff?text=Promo+Kereta+Jogja",
+      imageUrl: "/images/promo-jogja.png",
       title: "Promo Kereta ke Yogyakarta",
       description: "Perjalanan lebih hemat dengan cashback spesial."
     },
     {
-      imageUrl: "https://placehold.co/400x200/28A745/ffffff?text=Penawaran+Whoosh",
+      imageUrl: "/images/promo-whoosh.jpg",
       title: "Tiket Cepat Jakarta - Bandung",
       description: "Perjalanan super kilat dengan Whoosh hanya 30 menit."
     }
@@ -437,25 +459,25 @@ export default function Home() {
 
   const destinations = [
     {
-      imageUrl: "https://placehold.co/400x400/007bff/ffffff?text=Bali",
+      imageUrl: "/images/bali-dest.png",
       name: "Bali, Indonesia",
       price: "Rp 650.000",
       link: "/destination/bali"
     },
     {
-      imageUrl: "https://placehold.co/400x400/6c757d/ffffff?text=Yogyakarta",
+      imageUrl: "/images/jogja-dest.png",
       name: "Yogyakarta, Indonesia",
       price: "Rp 150.000",
       link: "/destination/yogyakarta"
     },
     {
-      imageUrl: "https://placehold.co/400x400/ffc107/343a40?text=Tokyo",
+      imageUrl: "/images/tokyo-dest.png",
       name: "Tokyo, Jepang",
       price: "Rp 3.500.000",
       link: "/destination/tokyo"
     },
     {
-      imageUrl: "https://placehold.co/400x400/17a2b8/ffffff?text=Surabaya",
+      imageUrl: "/images/surabaya-dest.png",
       name: "Surabaya, Indonesia",
       price: "Rp 400.000",
       link: "/destination/surabaya"
@@ -549,6 +571,6 @@ export default function Home() {
             &copy; {new Date().getFullYear()} TripGO. Semua Hak Dilindungi.
         </div>
       </footer>
-    </div>
+    </div>  
   );
 }

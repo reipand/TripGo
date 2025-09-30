@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 
 const SearchIcon = () => (
   <Image
-    src="/images/search-icon.png"
+    src="/images/icons/search.png"
     alt="Search Icon"
     width={20}
     height={20}
