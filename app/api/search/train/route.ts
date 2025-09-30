@@ -16,14 +16,24 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Validasi & format tanggal
+  const date = new Date(departureDate);
+  if (isNaN(date.getTime())) {
+    return NextResponse.json(
+      { error: 'Format tanggal tidak valid. Gunakan YYYY-MM-DD' },
+      { status: 400 }
+    );
+  }
+
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const startStr = startOfDay.toISOString().slice(0, 19);
+  const endStr = endOfDay.toISOString().slice(0, 19);
+
   try {
-    // Format tanggal dengan benar (tanpa timezone Z)
-    const startOfDay = `${departureDate}T00:00:00`;
-    const endOfDay = `${departureDate}T23:59:59`;
-
-    console.log('Query params:', { origin, destination, startOfDay, endOfDay });
-
-    // Query dengan penanganan join yang lebih baik
     const { data, error } = await supabase
       .from('schedules')
       .select(`
@@ -32,36 +42,25 @@ export async function GET(request: NextRequest) {
         waktu_tiba,
         harga,
         stok_kursi,
-        routes(kota_asal, kota_tujuan),
-        transportations(nama, tipe)
+        routes!inner(kota_asal, kota_tujuan),
+        transportations!inner(nama:nama_transportasi, tipe)
       `)
       .eq('routes.kota_asal', origin)
       .eq('routes.kota_tujuan', destination)
       .eq('transportations.tipe', 'kereta')
-      .gte('waktu_berangkat', startOfDay)
-      .lte('waktu_berangkat', endOfDay);
+      .gte('waktu_berangkat', startStr)
+      .lte('waktu_berangkat', endStr)
+      .order('waktu_berangkat', { ascending: true });
 
     if (error) {
       console.error('Supabase error:', error);
       return NextResponse.json(
-        { error: 'Gagal mengambil data dari database', details: error.message },
+        { error: 'Gagal mengambil data jadwal kereta', details: error.message },
         { status: 500 }
       );
     }
 
-    console.log('Data fetched:', data);
-
-    // Transformasi data untuk memastikan struktur yang konsisten
-    const transformedData = data?.map(item => ({
-      ...item,
-      routes: item.routes,
-      transportations: {
-        nama_transportasi: item.transportations?.nama,
-        tipe: item.transportations?.tipe
-      }
-    })) || [];
-
-    return NextResponse.json(transformedData);
+    return NextResponse.json(data || []);
   } catch (error: any) {
     console.error('Unexpected error:', error);
     return NextResponse.json(
