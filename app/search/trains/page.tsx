@@ -4,26 +4,27 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 
-// Tipe data untuk hasil penerbangan dari API
-interface Flight {
+// Tipe data untuk hasil kereta dari API
+interface Train {
   id: number;
   waktu_berangkat: string;
   waktu_tiba: string;
   harga: number;
-  stok_kursi: number; // Menambahkan properti stok_kursi
+  stok_kursi: number;
   routes: {
     kota_asal: string;
     kota_tujuan: string;
   };
   transportations: {
     nama_transportasi: string;
+    tipe: string;
   };
 }
 
 // --- Komponen Ikon ---
-const PlaneTakeoffIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block -mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L6 12z" />
+const TrainIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block -mt-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
     </svg>
 );
 
@@ -39,11 +40,11 @@ const SortIcon = () => (
     </svg>
 );
 
-// --- Komponen Kartu Tiket ---
-const TicketCard = ({ flight }: { flight: Flight }) => {
+// --- Komponen Kartu Tiket Kereta ---
+const TrainTicketCard = ({ train }: { train: Train }) => {
     // Fungsi untuk memformat waktu dan menghitung durasi
-    const departure = new Date(flight.waktu_berangkat);
-    const arrival = new Date(flight.waktu_tiba);
+    const departure = new Date(train.waktu_berangkat);
+    const arrival = new Date(train.waktu_tiba);
 
     const departureTime = departure.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const arrivalTime = arrival.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -52,25 +53,26 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
     const durationHours = Math.floor(durationMinutes / 60);
     const remainingMinutes = durationMinutes % 60;
     const duration = `${durationHours}j ${remainingMinutes}m`;
-
-    const isSoldOut = flight.stok_kursi === 0;
-    const isLimited = flight.stok_kursi > 0 && flight.stok_kursi <= 5;
+    
+    // Logika untuk menampilkan status tiket
+    const isSoldOut = train.stok_kursi <= 0;
+    const isLimited = train.stok_kursi > 0 && train.stok_kursi <= 5;
 
     return (
         <div className="bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl">
             <Image 
-              src={`/images/airline-logo-${flight.transportations.nama_transportasi.toLowerCase().replace(' ', '-')}.png`} 
-              alt={`${flight.transportations.nama_transportasi} logo`} 
+              src={`/images/train-logo-${train.transportations.nama_transportasi.toLowerCase().replace(' ', '-')}.png`} 
+              alt={`${train.transportations.nama_transportasi} logo`} 
               width={96} 
               height={96} 
               className="w-24 h-auto object-contain"
-              onError={(e) => { e.currentTarget.src = '/images/airline-logo-default.png'; }}
+              onError={(e) => { e.currentTarget.src = '/images/train-logo-default.png'; }} // Fallback
             />
             
             <div className="flex-grow flex flex-col md:flex-row items-center text-center md:text-left">
                 <div className="w-full md:w-1/3">
                     <p className="text-xl font-bold text-gray-800">{departureTime}</p>
-                    <p className="text-sm text-gray-500">{flight.routes.kota_asal}</p>
+                    <p className="text-sm text-gray-500">{train.routes.kota_asal}</p>
                 </div>
                 
                 <div className="w-full md:w-1/3 text-center my-2 md:my-0">
@@ -84,12 +86,12 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
 
                 <div className="w-full md:w-1/3">
                     <p className="text-xl font-bold text-gray-800">{arrivalTime}</p>
-                    <p className="text-sm text-gray-500">{flight.routes.kota_tujuan}</p>
+                    <p className="text-sm text-gray-500">{train.routes.kota_tujuan}</p>
                 </div>
             </div>
 
             <div className="md:border-l md:pl-4 text-center md:text-right">
-                <p className="text-xl font-bold text-orange-500">Rp {flight.harga.toLocaleString('id-ID')}</p>
+                <p className="text-xl font-bold text-orange-500">Rp {train.harga.toLocaleString('id-ID')}</p>
                 <p className="text-xs text-gray-500">/pax</p>
                 {isLimited && (
                     <p className="text-red-500 text-sm font-semibold mt-1">Tersisa sedikit!</p>
@@ -183,10 +185,11 @@ const FilterAndSort = ({ onSort, onFilter }: { onSort: (sortType: string) => voi
 };
 
 // --- Komponen untuk menampilkan hasil pencarian ---
-const FlightResults = () => {
+const TrainResults = () => {
     const searchParams = useSearchParams();
-    const [flights, setFlights] = useState<Flight[]>([]);
+    const [trains, setTrains] = useState<Train[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [sortType, setSortType] = useState<string>('');
     const [filterType, setFilterType] = useState<string>('');
 
@@ -195,27 +198,58 @@ const FlightResults = () => {
     const departureDate = searchParams.get('departureDate');
 
     useEffect(() => {
-        const fetchFlights = async () => {
+        const fetchTrains = async () => {
             if (!origin || !destination || !departureDate || origin === 'Tidak Diketahui') {
                 setLoading(false);
                 return;
             }
             
             setLoading(true);
+            setError(null);
+            
             try {
-                const query = new URLSearchParams({ origin, destination, departureDate }).toString();
-                const response = await fetch(`/api/search/flights?${query}`, { cache: 'no-store' });
+                const query = new URLSearchParams({ 
+                    origin, 
+                    destination, 
+                    departureDate 
+                }).toString();
+                
+                console.log('Fetching with query:', query); // Debug: lihat parameter yang dikirim
+                
+                // Mengambil data dari API dengan cache yang dinonaktifkan
+                const response = await fetch(`/api/search/train?${query}`, { 
+                    cache: 'no-store',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
 
+                // Debug: lihat status response
+                console.log('Response status:', response.status);
+                
                 if (!response.ok) {
-                    throw new Error('Gagal mengambil data penerbangan');
+                    // Coba dapatkan pesan error dari response body
+                    let errorMessage = 'Gagal mengambil data kereta';
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.message || errorMessage;
+                    } catch (e) {
+                        // Jika response tidak bisa di-parse sebagai JSON
+                        const errorText = await response.text();
+                        errorMessage = `${errorMessage}: ${errorText}`;
+                    }
+                    
+                    throw new Error(`${errorMessage} (Status: ${response.status})`);
                 }
-                const data: Flight[] = await response.json();
+                
+                const data: Train[] = await response.json();
+                console.log('Data received:', data); // Debug: lihat data yang diterima
                 
                 // Terapkan filter dan sort
                 let filteredData = [...data];
                 if (filterType) {
-                    filteredData = filteredData.filter(flight => {
-                        const departureHour = new Date(flight.waktu_berangkat).getHours();
+                    filteredData = filteredData.filter(train => {
+                        const departureHour = new Date(train.waktu_berangkat).getHours();
                         if (filterType === 'morning') return departureHour >= 0 && departureHour < 12;
                         if (filterType === 'afternoon') return departureHour >= 12 && departureHour < 18;
                         if (filterType === 'night') return departureHour >= 18 && departureHour <= 23;
@@ -236,16 +270,17 @@ const FlightResults = () => {
                     });
                 }
 
-                setFlights(filteredData);
+                setTrains(filteredData);
             } catch (error) {
-                console.error(error);
-                setFlights([]);
+                console.error('Error fetching trains:', error);
+                setError(error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui');
+                setTrains([]);
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchFlights();
+        fetchTrains();
     }, [origin, destination, departureDate, sortType, filterType]);
 
     // Menangani kasus di mana halaman dimuat tanpa parameter
@@ -253,7 +288,7 @@ const FlightResults = () => {
         return (
             <div className="container mx-auto px-4 py-8 text-center">
                 <h1 className="text-2xl font-bold text-gray-700">Mulai Pencarian Anda</h1>
-                <p className="text-gray-500 mt-2">Silakan isi form di halaman utama untuk mencari penerbangan.</p>
+                <p className="text-gray-500 mt-2">Silakan isi form di halaman utama untuk mencari tiket kereta.</p>
             </div>
         );
     }
@@ -261,7 +296,7 @@ const FlightResults = () => {
     return (
         <div className="container mx-auto px-4 py-8">
             <div className="mb-6">
-                <h1 className="text-3xl font-bold text-gray-800">Hasil Pencarian <PlaneTakeoffIcon /></h1>
+                <h1 className="text-3xl font-bold text-gray-800">Hasil Pencarian <TrainIcon /></h1>
                 <p className="text-gray-600">
                     {origin} → {destination}
                     <span className="mx-2 text-gray-400">|</span>
@@ -275,15 +310,33 @@ const FlightResults = () => {
             />
 
             {loading ? (
-                <p className="text-center text-gray-500 mt-10">Mencari penerbangan terbaik...</p>
+                <p className="text-center text-gray-500 mt-10">Mencari kereta terbaik...</p>
+            ) : error ? (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                    <div className="flex">
+                        <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div className="ml-3">
+                            <p className="text-sm text-red-700">
+                                {error}
+                            </p>
+                            <p className="mt-2 text-sm text-red-600">
+                                Silakan coba lagi nanti atau periksa koneksi internet Anda.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             ) : (
                 <div className="space-y-4">
-                    {flights.length > 0 ? (
-                        flights.map(flight => (
-                            <TicketCard key={flight.id} flight={flight} />
+                    {trains.length > 0 ? (
+                        trains.map(train => (
+                            <TrainTicketCard key={train.id} train={train} />
                         ))
                     ) : (
-                        <p className="text-center text-gray-500 mt-10">Tidak ada penerbangan yang ditemukan untuk rute dan tanggal ini.</p>
+                        <p className="text-center text-gray-500 mt-10">Tidak ada kereta yang ditemukan untuk rute dan tanggal ini.</p>
                     )}
                 </div>
             )}
@@ -291,12 +344,10 @@ const FlightResults = () => {
     );
 };
 
-
-// --- Halaman Utama Hasil Pencarian ---
-export default function SearchFlightsPage() {
+export default function SearchTrainPage() {
     return (
         <Suspense fallback={<p className="text-center text-gray-500 mt-10">Memuat hasil pencarian...</p>}>
-            <FlightResults />
+            <TrainResults />
         </Suspense>
     );
 }

@@ -21,28 +21,26 @@ export async function GET(request: NextRequest) {
         waktu_tiba,
         harga,
         stok_kursi,
-        routes!inner (kota_asal, kota_tujuan),
+        routes!inner (
+          origin_city_id!inner (name, code),
+          destination_city_id!inner (name, code)
+        ),
         transportations!inner (nama_transportasi, tipe)
       `)
-      .eq('transportations.tipe', 'pesawat')
-      .eq('routes.kota_asal', origin)
-      .eq('routes.kota_tujuan', destination)
+      .eq('transportations.tipe', 'Pesawat')
+      .eq('routes.origin_city_id.name', origin)
+      .eq('routes.destination_city_id.name', destination)
       .gte('waktu_berangkat', `${departureDate}T00:00:00.000Z`)
       .lte('waktu_berangkat', `${departureDate}T23:59:59.999Z`);
 
     if (error) {
-      // PERBAIKAN: Lemparkan error dengan pesan yang lebih spesifik
-      // Ini akan ditangkap oleh blok catch di bawah
       throw new Error(`Supabase error: ${error.message}`);
     }
 
-    // Jika tidak ada error, kembalikan data (bisa berupa array kosong jika tidak ditemukan)
     return NextResponse.json(data);
 
   } catch (error: any) {
     console.error('API Error:', error.message);
-    // PERBAIKAN: Kembalikan pesan error yang lebih informatif ke frontend
     return NextResponse.json({ error: 'Gagal mengambil data dari database.', details: error.message }, { status: 500 });
   }
 }
-
