@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
       route_id: string;
       transportation_id: string;
       routes: {
+        [x: string]: any;
         origin_city_id: number;
         destination_city_id: number;
       };
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    // First, update the Supabase query
     const { data, error } = await supabase
       .from('schedules')
       .select(`
@@ -79,27 +81,27 @@ export async function GET(request: NextRequest) {
         booked_seats,
         route_id,
         transportation_id,
-        routes!inner (
+        routes (
           origin_city_id,
-          destination_city_id
+          destination_city_id,
+          origin:cities!origin_city_id (
+            name,
+            code
+          ),
+          destination:cities!destination_city_id (
+            name,
+            code
+          )
         ),
-        transportations!inner (
+        transportations (
           name,
           type,
           logo_url
-        ),
-        origin:routes!inner.origin_city_id!inner (
-          name,
-          code
-        ),
-        destination:routes!inner.destination_city_id!inner (
-          name,
-          code
         )
       `)
       .eq('transportations.type', 'Pesawat')
-      .eq('origin.name', origin)
-      .eq('destination.name', destination)
+      .eq('routes.cities.name', origin)
+      .eq('routes.cities.name', destination)
       .gte('departure_time', startStr)
       .lte('departure_time', endStr) as { data: SupabaseFlightRow[] | null, error: any };
 
@@ -112,7 +114,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Transform data
+    // Then update the data transformation
     const transformedData = (data || []).map(item => ({
       id: item.id,
       waktu_berangkat: item.departure_time,
@@ -120,17 +122,17 @@ export async function GET(request: NextRequest) {
       harga: item.price,
       kursi_tersedia: item.total_seats - item.booked_seats,
       transportasi: {
-        nama: item.transportations.name,
-        tipe: item.transportations.type,
-        logo: item.transportations.logo_url
+        nama: item.transportations?.name || '',
+        tipe: item.transportations?.type || '',
+        logo: item.transportations?.logo_url || ''
       },
       origin: {
-        name: item.origin.name,
-        code: item.origin.code
+        name: item.routes?.origin?.name || '',
+        code: item.routes?.origin?.code || ''
       },
       destination: {
-        name: item.destination.name,
-        code: item.destination.code
+        name: item.routes?.destination?.name || '',
+        code: item.routes?.destination?.code || ''
       }
     }));
 

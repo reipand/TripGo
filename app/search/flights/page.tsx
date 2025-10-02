@@ -6,17 +6,27 @@ import Image from 'next/image';
 
 // --- Tipe Data ---
 interface Flight {
-  id: number;
+  id: string;
   waktu_berangkat: string;
   waktu_tiba: string;
   harga: number;
-  stok_kursi: number;
+  kursi_tersedia: number;
+  transportasi: {
+    nama: string;
+    tipe: string;
+    logo: string;
+  };
   routes: {
     kota_asal: string;
     kota_tujuan: string;
   };
-  transportations: {
-    nama_transportasi: string;
+  origin: {
+    name: string;
+    code: string;
+  };
+  destination: {
+    name: string;
+    code: string;
   };
 }
 
@@ -47,10 +57,9 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
   const departureTime = departure.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   const arrivalTime = arrival.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-  // Handle durasi lintas hari
   let durationMs = arrival.getTime() - departure.getTime();
   if (durationMs < 0) {
-    durationMs += 24 * 60 * 60 * 1000; // tambah 1 hari
+    durationMs += 24 * 60 * 60 * 1000;
   }
 
   const durationMinutes = durationMs / (1000 * 60);
@@ -58,26 +67,26 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
   const remainingMinutes = Math.round(durationMinutes % 60);
   const duration = `${durationHours}j ${remainingMinutes}m`;
 
-  const isSoldOut = flight.stok_kursi <= 0;
-  const isLimited = flight.stok_kursi > 0 && flight.stok_kursi <= 5;
+  const isSoldOut = flight.kursi_tersedia <= 0;
+  const isLimited = flight.kursi_tersedia > 0 && flight.kursi_tersedia <= 5;
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl">
       <Image 
-        src={`/images/airline-logo-${flight.transportations.nama_transportasi.toLowerCase().replace(/\s+/g, '-')}.png`} 
-        alt={`${flight.transportations.nama_transportasi} logo`} 
+        src={`/images/airline-logo-${flight.transportasi.nama.toLowerCase().replace(/\s+/g, '-')}.png`} 
+        alt={`${flight.transportasi.nama} logo`} 
         width={96} 
         height={96} 
         className="w-24 h-auto object-contain"
         onError={(e) => { e.currentTarget.src = '/images/airline-logo-default.png'; }}
         placeholder="blur"
-        blurDataURL="image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8+vR5PQAI/AL9pJ3lUAAAAABJRU5ErkJggg=="
+        blurDataURL="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8+vR5PQAI/AL9pJ3lUAAAAABJRU5ErkJggg=="
       />
       
       <div className="flex-grow flex flex-col md:flex-row items-center text-center md:text-left">
         <div className="w-full md:w-1/3">
           <p className="text-xl font-bold text-gray-800">{departureTime}</p>
-          <p className="text-sm text-gray-500">{flight.routes.kota_asal}</p>
+          <p className="text-sm text-gray-500">{flight.origin.name}</p>
         </div>
         
         <div className="w-full md:w-1/3 text-center my-2 md:my-0">
@@ -91,7 +100,7 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
 
         <div className="w-full md:w-1/3">
           <p className="text-xl font-bold text-gray-800">{arrivalTime}</p>
-          <p className="text-sm text-gray-500">{flight.routes.kota_tujuan}</p>
+          <p className="text-sm text-gray-500">{flight.destination.name}</p>
         </div>
       </div>
 
@@ -218,24 +227,17 @@ const FlightResults = () => {
           headers: { 'Content-Type': 'application/json' }
         });
 
+        const data = await response.json();
+        
         if (!response.ok) {
-          let errorMessage = 'Gagal mengambil data penerbangan';
-          try {
-            const errorData = await response.json();
-            errorMessage = errorData.error || errorData.message || errorMessage;
-          } catch (e) {
-            const errorText = await response.text();
-            errorMessage = `${errorMessage}: ${errorText}`;
-          }
-          throw new Error(errorMessage);
+          throw new Error(data.error || 'Failed to fetch flights');
         }
 
-        const Flight: Flight[] = await response.json();
-        setAllFlights(Flight);
-        setFilteredAndSortedFlights(Flight);
+        setAllFlights(data);
+        setFilteredAndSortedFlights(data);
       } catch (error) {
         console.error('Error fetching flights:', error);
-        setError(error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui');
+        setError(error instanceof Error ? error.message : 'An unknown error occurred');
         setAllFlights([]);
         setFilteredAndSortedFlights([]);
       } finally {

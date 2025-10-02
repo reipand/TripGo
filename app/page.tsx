@@ -104,19 +104,19 @@ const SearchWidget = () => {
   }, []);
 
   const [flightData, setFlightData] = useState({
-    origin: 'Jakarta',
-    destination: 'Bali (Denpasar)',
+    origin: '',
+    destination: '',
     departureDate: today, // Set default ke besok
     returnDate: '',
-    passengers: '1 Dewasa',
+    passengers: '',
   });
 
   const [trainData, setTrainData] = useState({
-    origin: 'Jakarta',
-    destination: 'Yogyakarta',
+    origin: '',
+    destination: '',
     departureDate: today, // Set default ke besok
     returnDate: '',
-    passengers: '1 Dewasa',
+    passengers: '',
   });
 
   const formatDate = (date: Date) => {
