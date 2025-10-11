@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 // --- Komponen Ikon ---
 const EyeIcon = () => (
@@ -34,6 +35,7 @@ const LockIcon = () => (
 // --- Halaman Login ---
 export default function LoginPage() {
   const router = useRouter();
+  const { signIn } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -57,22 +59,14 @@ export default function LoginPage() {
     setError('');
 
     try {
-      // Simulasi login API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { error } = await signIn(formData.email, formData.password);
       
-      // Validasi sederhana
-      if (formData.email === 'user@tripgo.com' && formData.password === 'password123') {
-        // Simulasi menyimpan token
-        localStorage.setItem('authToken', 'mock-jwt-token');
-        localStorage.setItem('userEmail', formData.email);
-        
-        // Redirect ke halaman utama
-        router.push('/');
-      } else {
-        setError('Email atau password salah');
+      if (error) {
+        setError(error.message || 'Email atau password salah');
       }
-    } catch (err) {
-      setError('Terjadi kesalahan saat login');
+      // If successful, the AuthContext will handle the redirect
+    } catch (err: any) {
+      setError(err.message || 'Terjadi kesalahan saat login');
     } finally {
       setLoading(false);
     }
@@ -81,18 +75,9 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0A58CA] to-[#0548AD] flex items-center justify-center p-4">
       <div className="max-w-md w-full">
-        {/* Logo */}
+        {/* Header */}
         <div className="text-center mb-8">
-          <Link href="/" className="inline-block">
-            <Image
-              src="/images/logo_tg2.svg"
-              alt="TripGO Logo"
-              width={150}
-              height={40}
-              className="mx-auto"
-            />
-          </Link>
-          <h1 className="text-2xl font-bold text-white mt-4">Masuk ke Akun Anda</h1>
+          <h1 className="text-2xl font-bold text-white">Masuk ke Akun Anda</h1>
           <p className="text-blue-100 mt-2">Selamat datang kembali di TripGO</p>
         </div>
 

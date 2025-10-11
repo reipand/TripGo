@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 // --- Komponen Ikon ---
 const EyeIcon = () => (
@@ -46,6 +47,7 @@ const PhoneIcon = () => (
 // --- Halaman Register ---
 export default function RegisterPage() {
   const router = useRouter();
+  const { signUp, loading: authLoading } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -96,23 +98,23 @@ export default function RegisterPage() {
     setError('');
 
     try {
-      // Simulasi register API
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Simulasi menyimpan data user
       const userData = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
         phone: formData.phone
       };
+
+      const { error, needsVerification } = await signUp(formData.email, formData.password, userData);
       
-      localStorage.setItem('userData', JSON.stringify(userData));
-      localStorage.setItem('authToken', 'mock-jwt-token');
-      localStorage.setItem('userEmail', formData.email);
-      
-      // Redirect ke halaman utama
-      router.push('/');
+      if (error) {
+        setError(error.message || 'Terjadi kesalahan saat mendaftar');
+      } else if (needsVerification) {
+        // Redirect to verification page with email parameter
+        router.push(`/auth/verify-email?email=${encodeURIComponent(formData.email)}`);
+      } else {
+        // If no verification needed, redirect to dashboard
+        router.push('/dashboard');
+      }
     } catch (err) {
       setError('Terjadi kesalahan saat mendaftar');
     } finally {
@@ -123,18 +125,9 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0A58CA] to-[#0548AD] flex items-center justify-center p-4">
       <div className="max-w-md w-full">
-        {/* Logo */}
+        {/* Header */}
         <div className="text-center mb-8">
-          <Link href="/" className="inline-block">
-            <Image
-              src="/images/logo_tg2.svg"
-              alt="TripGO Logo"
-              width={150}
-              height={40}
-              className="mx-auto"
-            />
-          </Link>
-          <h1 className="text-2xl font-bold text-white mt-4">Buat Akun Baru</h1>
+          <h1 className="text-2xl font-bold text-white">Buat Akun Baru</h1>
           <p className="text-blue-100 mt-2">Bergabunglah dengan TripGO hari ini</p>
         </div>
 
@@ -308,10 +301,10 @@ export default function RegisterPage() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || authLoading}
               className="w-full bg-[#FD7E14] hover:bg-[#E06700] disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300 flex items-center justify-center"
             >
-              {loading ? (
+              {loading || authLoading ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                   Membuat Akun...
