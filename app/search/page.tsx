@@ -1,7 +1,7 @@
 'use client';
 
 import React, { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 // TIDAK PERLU impor Navbar dan Footer di sini karena sudah ada di layout.tsx
 
 // --- Komponen Ikon ---
@@ -12,60 +12,95 @@ const PlaneTakeoffIcon = () => (
 );
 
 // --- Komponen Kartu Tiket ---
-const TicketCard = ({ flight }: { flight: any }) => (
-    <div className="bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl">
-        <img src={`/images/airline-logo-${flight.airline.toLowerCase()}.png`} alt={`${flight.airline} logo`} className="w-24 h-auto object-contain" />
-        
-        <div className="flex-grow flex flex-col md:flex-row items-center text-center md:text-left">
-            {/* Waktu Berangkat */}
-            <div className="w-full md:w-1/3">
-                <p className="text-xl font-bold text-gray-800">{flight.departureTime}</p>
-                <p className="text-sm text-gray-500">{flight.originCode}</p>
-            </div>
+const TicketCard = ({ flight }: { flight: any }) => {
+    const router = useRouter();
+    
+    const handleSelectFlight = () => {
+        router.push(`/flight/${flight.id}`);
+    };
+
+    return (
+        <div className="bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl">
+            <img src={`/images/airline-logo-${flight.airline.toLowerCase()}.png`} alt={`${flight.airline} logo`} className="w-24 h-auto object-contain" />
             
-            {/* Durasi */}
-            <div className="w-full md:w-1/3 text-center my-2 md:my-0">
-                <p className="text-sm text-gray-500">{flight.duration}</p>
-                <div className="w-full h-px bg-gray-200 relative my-1">
-                    <span className="absolute left-0 top-1/2 -mt-1.5 w-3 h-3 bg-gray-300 rounded-full"></span>
-                    <span className="absolute right-0 top-1/2 -mt-1.5 w-3 h-3 bg-gray-300 rounded-full"></span>
+            <div className="flex-grow flex flex-col md:flex-row items-center text-center md:text-left">
+                {/* Waktu Berangkat */}
+                <div className="w-full md:w-1/3">
+                    <p className="text-xl font-bold text-gray-800">{flight.departureTime}</p>
+                    <p className="text-sm text-gray-500">{flight.originCode}</p>
                 </div>
-                <p className="text-sm text-gray-500">Langsung</p>
+                
+                {/* Durasi */}
+                <div className="w-full md:w-1/3 text-center my-2 md:my-0">
+                    <p className="text-sm text-gray-500">{flight.duration}</p>
+                    <div className="w-full h-px bg-gray-200 relative my-1">
+                        <span className="absolute left-0 top-1/2 -mt-1.5 w-3 h-3 bg-gray-300 rounded-full"></span>
+                        <span className="absolute right-0 top-1/2 -mt-1.5 w-3 h-3 bg-gray-300 rounded-full"></span>
+                    </div>
+                    <p className="text-sm text-gray-500">Langsung</p>
+                </div>
+
+                {/* Waktu Tiba */}
+                <div className="w-full md:w-1/3">
+                    <p className="text-xl font-bold text-gray-800">{flight.arrivalTime}</p>
+                    <p className="text-sm text-gray-500">{flight.destinationCode}</p>
+                </div>
             </div>
 
-            {/* Waktu Tiba */}
-            <div className="w-full md:w-1/3">
-                <p className="text-xl font-bold text-gray-800">{flight.arrivalTime}</p>
-                <p className="text-sm text-gray-500">{flight.destinationCode}</p>
+            {/* Harga */}
+            <div className="md:border-l md:pl-4 text-center md:text-right">
+                <p className="text-xl font-bold text-orange-500">Rp {flight.price.toLocaleString('id-ID')}</p>
+                <p className="text-xs text-gray-500">/pax</p>
+                <button 
+                    onClick={handleSelectFlight}
+                    className="mt-2 w-full md:w-auto px-6 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors duration-300"
+                >
+                    Pilih
+                </button>
             </div>
         </div>
-
-        {/* Harga */}
-        <div className="md:border-l md:pl-4 text-center md:text-right">
-            <p className="text-xl font-bold text-orange-500">Rp {flight.price.toLocaleString('id-ID')}</p>
-            <p className="text-xs text-gray-500">/pax</p>
-            <button className="mt-2 w-full md:w-auto px-6 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors duration-300">
-                Pilih
-            </button>
-        </div>
-    </div>
-);
+    );
+};
 
 // --- Komponen untuk menampilkan hasil pencarian ---
 const SearchResults = () => {
     const searchParams = useSearchParams();
 
-    // Mengambil data dari URL
-    const origin = searchParams.get('origin') || 'Tidak Diketahui';
-    const destination = searchParams.get('destination') || 'Tidak Diketahui';
-    const departureDate = searchParams.get('departureDate');
+    // Mengambil data dari URL - support both q parameter and individual parameters
+    const query = searchParams.get('q');
+    const origin = searchParams.get('origin') || (query ? 'Jakarta' : 'Tidak Diketahui');
+    const destination = searchParams.get('destination') || (query ? query : 'Tidak Diketahui');
+    const departureDate = searchParams.get('departureDate') || 'Hari ini';
     
-    // Data dummy untuk ditampilkan
-    const dummyFlights = [
-        { id: 1, airline: 'Garuda', departureTime: '07:30', arrivalTime: '09:00', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 1250000 },
-        { id: 2, airline: 'Citilink', departureTime: '08:15', arrivalTime: '09:45', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 980000 },
-        { id: 3, airline: 'Lion', departureTime: '09:00', arrivalTime: '10:30', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 850000 },
-    ];
+    // Data dummy untuk ditampilkan berdasarkan query
+    const getDummyFlights = (searchQuery: string | null) => {
+        if (searchQuery && searchQuery.toLowerCase().includes('bali')) {
+            return [
+                { id: 1, airline: 'Garuda', departureTime: '07:30', arrivalTime: '09:00', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 1250000 },
+                { id: 2, airline: 'Citilink', departureTime: '08:15', arrivalTime: '09:45', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 980000 },
+                { id: 3, airline: 'Lion', departureTime: '09:00', arrivalTime: '10:30', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 850000 },
+            ];
+        } else if (searchQuery && searchQuery.toLowerCase().includes('yogyakarta')) {
+            return [
+                { id: 1, airline: 'Garuda', departureTime: '08:00', arrivalTime: '09:30', duration: '1j 30m', originCode: 'CGK', destinationCode: 'JOG', price: 950000 },
+                { id: 2, airline: 'Lion', departureTime: '10:15', arrivalTime: '11:45', duration: '1j 30m', originCode: 'CGK', destinationCode: 'JOG', price: 780000 },
+            ];
+        } else if (searchQuery && searchQuery.toLowerCase().includes('surabaya')) {
+            return [
+                { id: 1, airline: 'Garuda', departureTime: '07:45', arrivalTime: '09:15', duration: '1j 30m', originCode: 'CGK', destinationCode: 'SUB', price: 1100000 },
+                { id: 2, airline: 'Citilink', departureTime: '14:30', arrivalTime: '16:00', duration: '1j 30m', originCode: 'CGK', destinationCode: 'SUB', price: 890000 },
+            ];
+        } else {
+            // Default flights
+            return [
+                { id: 1, airline: 'Garuda', departureTime: '07:30', arrivalTime: '09:00', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 1250000 },
+                { id: 2, airline: 'Citilink', departureTime: '08:15', arrivalTime: '09:45', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 980000 },
+                { id: 3, airline: 'Lion', departureTime: '09:00', arrivalTime: '10:30', duration: '1j 30m', originCode: 'CGK', destinationCode: 'DPS', price: 850000 },
+            ];
+        }
+    };
+
+    const dummyFlights = getDummyFlights(query);
 
     return (
         <div className="container mx-auto px-4 py-8">
@@ -76,6 +111,11 @@ const SearchResults = () => {
                     <span className="mx-2 text-gray-400">|</span>
                     {departureDate}
                 </p>
+                {query && (
+                    <p className="text-sm text-gray-500 mt-2">
+                        Menampilkan hasil untuk: <span className="font-semibold">"{query}"</span>
+                    </p>
+                )}
             </div>
 
             <div className="space-y-4">

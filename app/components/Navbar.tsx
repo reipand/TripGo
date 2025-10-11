@@ -177,12 +177,12 @@ const Navbar = () => {
 
         {/* Tombol Masuk & Daftar (Desktop) */}
         <div className="hidden md:flex items-center space-x-4 ml-8">
-          <button className="px-5 py-2 rounded-full bg-white text-[#0A58CA] font-semibold hover:bg-gray-100 transition-colors duration-200">
+          <Link href="/auth/login" className="px-5 py-2 rounded-full bg-white text-[#0A58CA] font-semibold hover:bg-gray-100 transition-colors duration-200">
             Masuk
-          </button>
-          <button className="px-5 py-2 rounded-full bg-[#FD7E14] text-white font-semibold hover:bg-[#E06700] transition-colors duration-200">
+          </Link>
+          <Link href="/auth/register" className="px-5 py-2 rounded-full bg-[#FD7E14] text-white font-semibold hover:bg-[#E06700] transition-colors duration-200">
             Daftar
-          </button>
+          </Link>
         </div>
         
         {/* Tombol Hamburger (Mobile) */}
@@ -202,12 +202,12 @@ const Navbar = () => {
             <Link href="/todo" className="block hover:bg-gray-100 p-2 rounded">To Do</Link>
             <hr/>
             <div className="flex flex-col space-y-2 pt-2">
-                <button className="w-full px-5 py-2 rounded-full border border-[#0A58CA] text-[#0A58CA] font-semibold hover:bg-gray-100 transition-colors duration-200">
+                <Link href="/auth/login" className="w-full px-5 py-2 rounded-full border border-[#0A58CA] text-[#0A58CA] font-semibold hover:bg-gray-100 transition-colors duration-200 text-center">
                     Masuk
-                </button>
-                <button className="w-full px-5 py-2 rounded-full bg-[#FD7E14] text-white font-semibold hover:bg-[#E06700] transition-colors duration-200">
+                </Link>
+                <Link href="/auth/register" className="w-full px-5 py-2 rounded-full bg-[#FD7E14] text-white font-semibold hover:bg-[#E06700] transition-colors duration-200 text-center">
                     Daftar
-                </button>
+                </Link>
             </div>
         </div>
       )}

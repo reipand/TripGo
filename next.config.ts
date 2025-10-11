@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Allow cross-origin requests during development
+  allowedDevOrigins: ['http://192.168.0.133:3000', 'http://localhost:3000'],
 };
 
 export default nextConfig;

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 
 // --- Tipe Data ---
@@ -51,6 +51,7 @@ const SortIcon = () => (
 
 // --- Komponen Kartu Tiket ---
 const TicketCard = ({ flight }: { flight: Flight }) => {
+  const router = useRouter();
   const departure = new Date(flight.waktu_berangkat);
   const arrival = new Date(flight.waktu_tiba);
 
@@ -69,6 +70,10 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
 
   const isSoldOut = flight.kursi_tersedia <= 0;
   const isLimited = flight.kursi_tersedia > 0 && flight.kursi_tersedia <= 5;
+
+  const handleSelectFlight = () => {
+    router.push(`/flight/${flight.id}`);
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl">
@@ -115,7 +120,10 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
             Habis
           </button>
         ) : (
-          <button className="mt-2 w-full md:w-auto px-6 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors duration-300">
+          <button 
+            onClick={handleSelectFlight}
+            className="mt-2 w-full md:w-auto px-6 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors duration-300"
+          >
             Pilih
           </button>
         )}
