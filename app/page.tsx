@@ -185,7 +185,7 @@ const SearchWidget = () => {
 
   const handleSearchSubmit = () => {
     const showMessage = (msg: string) => {
-      alert(msg); // Replace console.log with actual alert for better UX
+      alert(msg); 
     };
     
     if (activeTab === 'pesawat') {
