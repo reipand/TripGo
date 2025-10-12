@@ -13,10 +13,13 @@ interface AuthContextType {
   signUp: (email: string, password: string, userData?: any) => Promise<{ error: AuthError | null; needsVerification?: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
+  resetPassword: (email: string) => Promise<{ error: AuthError | null; success?: boolean }>;
+  updatePassword: (newPassword: string) => Promise<{ error: AuthError | null; success?: boolean }>;
   verifyEmail: (email: string, code: string) => Promise<{ error: AuthError | null; success?: boolean }>;
   resendVerificationCode: (email: string) => Promise<{ error: AuthError | null; success?: boolean }>;
+  verifyEmailWithToken: (token: string) => Promise<{ error: AuthError | null; success?: boolean }>;
   fetchUserProfile: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -109,12 +112,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signUp = async (email: string, password: string, userData?: any) => {
     try {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return { error: { message: 'Format email tidak valid' } as AuthError };
+      }
+
+      // Validate password strength
+      if (password.length < 8) {
+        return { error: { message: 'Password minimal 8 karakter' } as AuthError };
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: userData,
-          emailRedirectTo: `${window.location.origin}/auth/verify-email`
+          emailRedirectTo: `${window.location.origin}/auth/verify-email?email=${encodeURIComponent(email)}`
         }
       });
 
@@ -126,6 +140,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         if (error.message.includes('Password should contain')) {
           return { error: { message: 'Password harus mengandung minimal 1 huruf kecil, 1 huruf besar, dan 1 angka' } as AuthError };
+        }
+        if (error.message.includes('User already registered')) {
+          return { error: { message: 'Email sudah terdaftar. Silakan gunakan email lain atau login' } as AuthError };
+        }
+        if (error.message.includes('Invalid email')) {
+          return { error: { message: 'Email tidak valid' } as AuthError };
         }
         return { error };
       }
@@ -144,6 +164,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return { error: { message: 'Format email tidak valid' } as AuthError };
+      }
+
+      if (!password || password.length === 0) {
+        return { error: { message: 'Password tidak boleh kosong' } as AuthError };
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -156,7 +186,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return { error: { message: 'Email atau password salah' } as AuthError };
         }
         if (error.message.includes('Email not confirmed')) {
-          return { error: { message: 'Email belum diverifikasi. Silakan cek email Anda' } as AuthError };
+          return { error: { message: 'Email belum diverifikasi. Silakan cek email Anda dan klik link verifikasi' } as AuthError };
+        }
+        if (error.message.includes('Too many requests')) {
+          return { error: { message: 'Terlalu banyak percobaan login. Silakan coba lagi nanti' } as AuthError };
+        }
+        if (error.message.includes('User not found')) {
+          return { error: { message: 'Email tidak terdaftar. Silakan daftar terlebih dahulu' } as AuthError };
         }
         return { error };
       }
@@ -197,59 +233,170 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const resetPassword = async (email: string) => {
     try {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return { error: { message: 'Format email tidak valid' } as AuthError, success: false };
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       });
 
       if (error) {
-        return { error };
+        console.error('Reset Password Error:', error);
+        if (error.message.includes('User not found')) {
+          return { error: { message: 'Email tidak terdaftar' } as AuthError, success: false };
+        }
+        if (error.message.includes('Too many requests')) {
+          return { error: { message: 'Terlalu banyak permintaan. Silakan coba lagi nanti' } as AuthError, success: false };
+        }
+        return { error, success: false };
       }
 
-      alert('Link reset password telah dikirim ke email Anda!');
-      return { error: null };
+      return { error: null, success: true };
     } catch (error) {
-      return { error: error as AuthError };
+      console.error('Reset Password Exception:', error);
+      return { error: error as AuthError, success: false };
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    try {
+      // Validate password strength
+      if (newPassword.length < 8) {
+        return { error: { message: 'Password minimal 8 karakter' } as AuthError, success: false };
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) {
+        console.error('Update Password Error:', error);
+        if (error.message.includes('Password should contain')) {
+          return { error: { message: 'Password harus mengandung minimal 1 huruf kecil, 1 huruf besar, dan 1 angka' } as AuthError, success: false };
+        }
+        return { error, success: false };
+      }
+
+      return { error: null, success: true };
+    } catch (error) {
+      console.error('Update Password Exception:', error);
+      return { error: error as AuthError, success: false };
     }
   };
 
   const verifyEmail = async (email: string, code: string) => {
     try {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return { error: { message: 'Format email tidak valid' } as AuthError, success: false };
+      }
+
+      // Validate code format (6 digits)
+      if (!/^\d{6}$/.test(code)) {
+        return { error: { message: 'Kode verifikasi harus 6 digit angka' } as AuthError, success: false };
+      }
+
       const { data, error } = await supabase.rpc('verify_email_with_code', {
         user_email: email,
         input_code: code
       });
 
       if (error) {
-        return { error };
+        console.error('Verify Email Error:', error);
+        return { error, success: false };
       }
 
       if (data && data.success) {
         return { error: null, success: true };
       } else {
-        return { error: { message: data?.message || 'Verification failed' } as AuthError };
+        return { error: { message: data?.message || 'Kode verifikasi tidak valid atau sudah expired' } as AuthError, success: false };
       }
     } catch (error) {
-      return { error: error as AuthError };
+      console.error('Verify Email Exception:', error);
+      return { error: error as AuthError, success: false };
     }
   };
 
   const resendVerificationCode = async (email: string) => {
     try {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return { error: { message: 'Format email tidak valid' } as AuthError, success: false };
+      }
+
       const { data, error } = await supabase.rpc('resend_verification_code', {
         user_email: email
       });
 
       if (error) {
-        return { error };
+        console.error('Resend Verification Code Error:', error);
+        return { error, success: false };
       }
 
       if (data && data.success) {
         return { error: null, success: true };
       } else {
-        return { error: { message: data?.message || 'Failed to resend code' } as AuthError };
+        return { error: { message: data?.message || 'Gagal mengirim ulang kode verifikasi' } as AuthError, success: false };
       }
     } catch (error) {
-      return { error: error as AuthError };
+      console.error('Resend Verification Code Exception:', error);
+      return { error: error as AuthError, success: false };
+    }
+  };
+
+  const verifyEmailWithToken = async (token: string) => {
+    try {
+      if (!token) {
+        return { error: { message: 'Token verifikasi tidak valid' } as AuthError, success: false };
+      }
+
+      const { data, error } = await supabase.auth.verifyOtp({
+        token_hash: token,
+        type: 'email'
+      });
+
+      if (error) {
+        console.error('Verify Email Token Error:', error);
+        if (error.message.includes('Token has expired')) {
+          return { error: { message: 'Token verifikasi sudah expired. Silakan minta kode baru' } as AuthError, success: false };
+        }
+        if (error.message.includes('Invalid token')) {
+          return { error: { message: 'Token verifikasi tidak valid' } as AuthError, success: false };
+        }
+        return { error, success: false };
+      }
+
+      if (data.user) {
+        return { error: null, success: true };
+      } else {
+        return { error: { message: 'Verifikasi gagal' } as AuthError, success: false };
+      }
+    } catch (error) {
+      console.error('Verify Email Token Exception:', error);
+      return { error: error as AuthError, success: false };
+    }
+  };
+
+  const refreshSession = async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.error('Refresh Session Error:', error);
+        return;
+      }
+      
+      if (data.session) {
+        setSession(data.session);
+        setUser(data.session.user);
+        await fetchUserProfile();
+      }
+    } catch (error) {
+      console.error('Refresh Session Exception:', error);
     }
   };
 
@@ -262,22 +409,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signIn,
     signOut,
     resetPassword,
+    updatePassword,
     fetchUserProfile,
+    refreshSession,
     verifyEmail: async (email: string, code: string) => {
       const result = await verifyEmail(email, code);
-      if (result.error && result.error !== null) {
-        // Always provide AuthError or null
-        return { error: result.error as AuthError, success: result.success };
-      }
-      return { error: null, success: result.success };
+      return { error: result.error as AuthError | null, success: result.success };
     },
     resendVerificationCode: async (email: string) => {
       const result = await resendVerificationCode(email);
-      if (result.error && result.error !== null) {
-        // Always provide AuthError or null
-        return { error: result.error as AuthError, success: result.success };
-      }
-      return { error: null, success: result.success };
+      return { error: result.error as AuthError | null, success: result.success };
+    },
+    verifyEmailWithToken: async (token: string) => {
+      const result = await verifyEmailWithToken(token);
+      return { error: result.error, success: result.success };
     },
   };
 

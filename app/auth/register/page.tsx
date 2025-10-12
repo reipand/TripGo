@@ -76,8 +76,14 @@ export default function RegisterPage() {
       setError('Password dan konfirmasi password tidak sama');
       return false;
     }
-    if (formData.password.length < 6) {
-      setError('Password minimal 6 karakter');
+    if (formData.password.length < 8) {
+      setError('Password minimal 8 karakter');
+      return false;
+    }
+    
+    // Validate password strength
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+      setError('Password harus mengandung minimal 1 huruf kecil, 1 huruf besar, dan 1 angka');
       return false;
     }
     if (!formData.agreeToTerms) {
