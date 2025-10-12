@@ -539,7 +539,10 @@ export default function FlightDetailPage() {
     console.log('Payment successful:', result);
     const newBookingId = `TRP${Date.now()}`;
     setBookingId(newBookingId);
-    setCurrentStep('ticket');
+    
+    // Redirect to payment success page with order details
+    const successUrl = `/payment/success?order_id=${result.order_id}&transaction_status=${result.status}&transaction_id=${result.transaction_id || ''}`;
+    window.location.href = successUrl;
     
     // Prepare payment data for e-ticket
     setPaymentData({
@@ -696,22 +699,23 @@ export default function FlightDetailPage() {
           </BookingProtection>
         )}
 
-        {currentStep === 'payment' && paymentData && (
-          <BookingProtection>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <PaymentGateway 
-                  paymentData={paymentData}
-                  onPaymentSuccess={handlePaymentSuccess}
-                  onPaymentError={handlePaymentError}
-                />
-              </div>
-              <div className="lg:col-span-1">
-                <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
-              </div>
-            </div>
-          </BookingProtection>
-        )}
+            {currentStep === 'payment' && paymentData && (
+              <BookingProtection>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-2">
+                    <PaymentGateway
+                      paymentData={paymentData}
+                      onPaymentSuccess={handlePaymentSuccess}
+                      onPaymentError={handlePaymentError}
+                      showStatus={true}
+                    />
+                  </div>
+                  <div className="lg:col-span-1">
+                    <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
+                  </div>
+                </div>
+              </BookingProtection>
+            )}
 
         {currentStep === 'ticket' && bookingId && (
           <ETicket 

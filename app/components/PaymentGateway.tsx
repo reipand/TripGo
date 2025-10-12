@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/app/contexts/AuthContext';
+import RealtimePaymentStatus from './RealtimePaymentStatus';
 
 // Types
 interface PaymentMethod {
@@ -44,6 +45,7 @@ interface PaymentGatewayProps {
   paymentData: PaymentData;
   onPaymentSuccess: (result: any) => void;
   onPaymentError: (error: any) => void;
+  showStatus?: boolean;
 }
 
 // Midtrans Sandbox Configuration
@@ -115,13 +117,16 @@ const PAYMENT_METHODS: PaymentMethod[] = [
 const PaymentGateway: React.FC<PaymentGatewayProps> = ({
   paymentData,
   onPaymentSuccess,
-  onPaymentError
+  onPaymentError,
+  showStatus = false
 }) => {
   const { user, userProfile } = useAuth();
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [loading, setLoading] = useState(false);
   const [paymentToken, setPaymentToken] = useState<string | null>(null);
   const [snapLoaded, setSnapLoaded] = useState(false);
+  const [paymentInitiated, setPaymentInitiated] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState<any>(null);
 
   // Load Midtrans Snap.js
   useEffect(() => {
@@ -204,6 +209,7 @@ const PaymentGateway: React.FC<PaymentGatewayProps> = ({
     }
 
     try {
+      setPaymentInitiated(true);
       const token = await generatePaymentToken(paymentMethod);
       
       // Initialize Snap.js
@@ -211,19 +217,26 @@ const PaymentGateway: React.FC<PaymentGatewayProps> = ({
         window.snap.pay(token, {
           onSuccess: (result: any) => {
             console.log('Payment success:', result);
+            setCurrentStatus({ ...result, status: 'success' });
             onPaymentSuccess(result);
           },
           onPending: (result: any) => {
             console.log('Payment pending:', result);
+            setCurrentStatus({ ...result, status: 'pending' });
             // Handle pending payment (e.g., bank transfer)
             onPaymentSuccess({ ...result, status: 'pending' });
           },
           onError: (error: any) => {
             console.error('Payment error:', error);
+            setCurrentStatus({ 
+              message: error?.message || 'Payment failed',
+              status: 'error' 
+            });
             onPaymentError(error);
           },
           onClose: () => {
             console.log('Payment popup closed');
+            setPaymentInitiated(false);
           }
         });
       } else {
@@ -231,7 +244,21 @@ const PaymentGateway: React.FC<PaymentGatewayProps> = ({
       }
     } catch (error) {
       console.error('Payment processing error:', error);
+      setCurrentStatus({ 
+        message: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error' 
+      });
       onPaymentError(error);
+    }
+  };
+
+  // Handle payment status change
+  const handleStatusChange = (status: any) => {
+    setCurrentStatus(status);
+    if (status.status === 'capture' || status.status === 'settlement') {
+      onPaymentSuccess(status);
+    } else if (status.status === 'deny' || status.status === 'failure') {
+      onPaymentError(status);
     }
   };
 
@@ -248,8 +275,18 @@ const PaymentGateway: React.FC<PaymentGatewayProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6">
-      <h3 className="text-xl font-bold text-gray-800 mb-6">Metode Pembayaran</h3>
+    <div className="space-y-6">
+      {/* Real-time Payment Status */}
+      {(showStatus || paymentInitiated) && (
+        <RealtimePaymentStatus
+          orderId={paymentData.orderId}
+          onStatusChange={handleStatusChange}
+        />
+      )}
+
+      {/* Payment Gateway */}
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-6">Metode Pembayaran</h3>
       
       {/* Payment Methods Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -371,6 +408,7 @@ const PaymentGateway: React.FC<PaymentGatewayProps> = ({
           </p>
         </div>
       )}
+      </div>
     </div>
   );
 };
