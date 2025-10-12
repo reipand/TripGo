@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
+import BookNowButton from '../../components/BookNowButton';
 
 // --- Tipe Data ---
 interface Flight {
@@ -120,12 +121,14 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
             Habis
           </button>
         ) : (
-          <button 
-            onClick={handleSelectFlight}
-            className="mt-2 w-full md:w-auto px-6 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors duration-300"
+          <BookNowButton
+            flightId={flight.id}
+            variant="primary"
+            size="md"
+            className="mt-2 w-full md:w-auto bg-[#FD7E14] hover:bg-[#E06700]"
           >
             Pilih
-          </button>
+          </BookNowButton>
         )}
       </div>
     </div>

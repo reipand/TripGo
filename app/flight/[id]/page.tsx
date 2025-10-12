@@ -6,6 +6,7 @@ import Image from 'next/image';
 import SeatMap from '../../components/SeatMap';
 import PaymentGateway from '../../components/PaymentGateway';
 import ETicket from '../../components/ETicket';
+import BookingProtection from '../../components/BookingProtection';
 
 // --- Komponen Ikon ---
 const PlaneIcon = () => (
@@ -659,51 +660,57 @@ export default function FlightDetailPage() {
           </div>
         </div>
 
-        {/* Content based on current step */}
-        {currentStep === 'details' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-6">
-              <FlightInfoCard flight={flight} />
-              <PassengerForm 
-                passengerCount={passengerCount}
-                onPassengerDataChange={handlePassengerDataChange}
-              />
-            </div>
-            <div className="lg:col-span-1">
-              <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
-            </div>
-          </div>
-        )}
+            {/* Content based on current step */}
+            {currentStep === 'details' && (
+              <BookingProtection>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-2 space-y-6">
+                    <FlightInfoCard flight={flight} />
+                    <PassengerForm 
+                      passengerCount={passengerCount}
+                      onPassengerDataChange={handlePassengerDataChange}
+                    />
+                  </div>
+                  <div className="lg:col-span-1">
+                    <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
+                  </div>
+                </div>
+              </BookingProtection>
+            )}
 
         {currentStep === 'seats' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-              <SeatMap 
-                flightId={flight.id}
-                onSeatSelection={handleSeatSelect}
-                selectedSeats={selectedSeats}
-                maxSeats={passengerCount}
-              />
+          <BookingProtection>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <SeatMap 
+                  flightId={flight.id}
+                  onSeatSelection={handleSeatSelect}
+                  selectedSeats={selectedSeats}
+                  maxSeats={passengerCount}
+                />
+              </div>
+              <div className="lg:col-span-1">
+                <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
+              </div>
             </div>
-            <div className="lg:col-span-1">
-              <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
-            </div>
-          </div>
+          </BookingProtection>
         )}
 
         {currentStep === 'payment' && paymentData && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-              <PaymentGateway 
-                paymentData={paymentData}
-                onPaymentSuccess={handlePaymentSuccess}
-                onPaymentError={handlePaymentError}
-              />
+          <BookingProtection>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2">
+                <PaymentGateway 
+                  paymentData={paymentData}
+                  onPaymentSuccess={handlePaymentSuccess}
+                  onPaymentError={handlePaymentError}
+                />
+              </div>
+              <div className="lg:col-span-1">
+                <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
+              </div>
             </div>
-            <div className="lg:col-span-1">
-              <PriceSummary flight={flight} passengerCount={passengerCount} selectedSeats={selectedSeats} />
-            </div>
-          </div>
+          </BookingProtection>
         )}
 
         {currentStep === 'ticket' && bookingId && (

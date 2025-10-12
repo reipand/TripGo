@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/app/contexts/AuthContext';
@@ -44,9 +44,10 @@ const PhoneIcon = () => (
   </svg>
 );
 
-// --- Halaman Register ---
-export default function RegisterPage() {
+// --- Komponen Register Content ---
+function RegisterContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signUp, loading: authLoading } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
@@ -61,6 +62,15 @@ export default function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+
+  // Get redirect URL from query params
+  useEffect(() => {
+    const redirect = searchParams.get('redirect');
+    if (redirect) {
+      setRedirectUrl(redirect);
+    }
+  }, [searchParams]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -115,11 +125,17 @@ export default function RegisterPage() {
       if (error) {
         setError(error.message || 'Terjadi kesalahan saat mendaftar');
       } else if (needsVerification) {
-        // Redirect to verification page with email parameter
-        router.push(`/auth/verify-email?email=${encodeURIComponent(formData.email)}`);
+        // Redirect to verification page with email and redirect parameters
+        const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(formData.email)}`;
+        const finalUrl = redirectUrl ? `${verifyUrl}&redirect=${encodeURIComponent(redirectUrl)}` : verifyUrl;
+        router.push(finalUrl);
       } else {
-        // If no verification needed, redirect to dashboard
-        router.push('/dashboard');
+        // If no verification needed, redirect to original URL or dashboard
+        if (redirectUrl) {
+          router.push(decodeURIComponent(redirectUrl));
+        } else {
+          router.push('/dashboard');
+        }
       }
     } catch (err) {
       setError('Terjadi kesalahan saat mendaftar');
@@ -135,6 +151,13 @@ export default function RegisterPage() {
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-white">Buat Akun Baru</h1>
           <p className="text-blue-100 mt-2">Bergabunglah dengan TripGO hari ini</p>
+          {redirectUrl && (
+            <div className="mt-3 p-2 bg-blue-500 bg-opacity-20 rounded-lg">
+              <p className="text-blue-100 text-sm">
+                Anda akan diarahkan kembali setelah registrasi berhasil
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Form Register */}
@@ -359,7 +382,10 @@ export default function RegisterPage() {
             <div className="text-center">
               <p className="text-gray-600">
                 Sudah punya akun?{' '}
-                <Link href="/auth/login" className="text-blue-600 hover:text-blue-500 font-medium">
+                <Link 
+                  href={redirectUrl ? `/auth/login?redirect=${encodeURIComponent(redirectUrl)}` : '/auth/login'} 
+                  className="text-blue-600 hover:text-blue-500 font-medium"
+                >
                   Masuk di sini
                 </Link>
               </p>
@@ -368,5 +394,26 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading component
+function RegisterLoading() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#0A58CA] to-[#0548AD] flex items-center justify-center p-4">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+        <p className="text-white">Memuat halaman registrasi...</p>
+      </div>
+    </div>
+  );
+}
+
+// Main component dengan Suspense
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<RegisterLoading />}>
+      <RegisterContent />
+    </Suspense>
   );
 }

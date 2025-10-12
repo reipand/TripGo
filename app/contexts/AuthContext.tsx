@@ -99,7 +99,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setTimeout(() => {
             fetchUserProfile();
           }, 100);
-          router.push('/dashboard');
+          
+          // Check if there's a redirect URL in localStorage
+          const redirectUrl = localStorage.getItem('tripgo_redirect_url');
+          if (redirectUrl) {
+            localStorage.removeItem('tripgo_redirect_url');
+            router.push(redirectUrl);
+          } else {
+            router.push('/dashboard');
+          }
         } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           router.push('/');

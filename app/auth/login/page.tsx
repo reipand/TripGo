@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/app/contexts/AuthContext';
@@ -32,9 +32,10 @@ const LockIcon = () => (
   </svg>
 );
 
-// --- Halaman Login ---
-export default function LoginPage() {
+// --- Komponen Login Content ---
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signIn } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
@@ -43,6 +44,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+
+  // Get redirect URL from query params
+  useEffect(() => {
+    const redirect = searchParams.get('redirect');
+    if (redirect) {
+      setRedirectUrl(redirect);
+    }
+  }, [searchParams]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -63,8 +73,14 @@ export default function LoginPage() {
       
       if (error) {
         setError(error.message || 'Email atau password salah');
+      } else {
+        // Login successful, redirect to original URL or dashboard
+        if (redirectUrl) {
+          router.push(decodeURIComponent(redirectUrl));
+        } else {
+          router.push('/dashboard');
+        }
       }
-      // If successful, the AuthContext will handle the redirect
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat login');
     } finally {
@@ -79,6 +95,13 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-white">Masuk ke Akun Anda</h1>
           <p className="text-blue-100 mt-2">Selamat datang kembali di TripGO</p>
+          {redirectUrl && (
+            <div className="mt-3 p-2 bg-blue-500 bg-opacity-20 rounded-lg">
+              <p className="text-blue-100 text-sm">
+                Anda akan diarahkan kembali setelah login berhasil
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Form Login */}
@@ -209,7 +232,10 @@ export default function LoginPage() {
             <div className="text-center">
               <p className="text-gray-600">
                 Belum punya akun?{' '}
-                <Link href="/auth/register" className="text-blue-600 hover:text-blue-500 font-medium">
+                <Link 
+                  href={redirectUrl ? `/auth/register?redirect=${encodeURIComponent(redirectUrl)}` : '/auth/register'} 
+                  className="text-blue-600 hover:text-blue-500 font-medium"
+                >
                   Daftar sekarang
                 </Link>
               </p>
@@ -227,5 +253,26 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading component
+function LoginLoading() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#0A58CA] to-[#0548AD] flex items-center justify-center p-4">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+        <p className="text-white">Memuat halaman login...</p>
+      </div>
+    </div>
+  );
+}
+
+// Main component dengan Suspense
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginContent />
+    </Suspense>
   );
 }
