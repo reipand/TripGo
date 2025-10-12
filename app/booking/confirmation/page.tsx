@@ -3,6 +3,8 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 // --- Komponen Ikon ---
 const CheckCircleIcon = () => (
@@ -125,50 +127,123 @@ const PassengerDetails = ({ passengers }: { passengers: any[] }) => (
 );
 
 // --- Komponen Ringkasan Pembayaran ---
-const PaymentSummary = ({ booking }: { booking: any }) => (
-  <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-    <h3 className="text-xl font-bold text-gray-800 mb-4">Ringkasan Pembayaran</h3>
-    
-    <div className="space-y-3">
-      <div className="flex justify-between">
-        <span className="text-gray-600">Harga Tiket ({booking.passengerCount} orang)</span>
-        <span className="font-medium">Rp {booking.totalBasePrice.toLocaleString('id-ID')}</span>
+const PaymentSummary = ({ booking }: { booking: any }) => {
+  const getPaymentStatusInfo = (status: string) => {
+    switch (status) {
+      case 'capture':
+      case 'settlement':
+        return {
+          text: 'Lunas',
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200'
+        };
+      case 'pending':
+        return {
+          text: 'Menunggu Pembayaran',
+          color: 'text-yellow-600',
+          bgColor: 'bg-yellow-50',
+          borderColor: 'border-yellow-200'
+        };
+      case 'deny':
+      case 'failure':
+        return {
+          text: 'Gagal',
+          color: 'text-red-600',
+          bgColor: 'bg-red-50',
+          borderColor: 'border-red-200'
+        };
+      default:
+        return {
+          text: 'Unknown',
+          color: 'text-gray-600',
+          bgColor: 'bg-gray-50',
+          borderColor: 'border-gray-200'
+        };
+    }
+  };
+
+  const statusInfo = getPaymentStatusInfo(booking.paymentStatus);
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+      <h3 className="text-xl font-bold text-gray-800 mb-4">Ringkasan Pembayaran</h3>
+      
+      <div className="space-y-3">
+        <div className="flex justify-between">
+          <span className="text-gray-600">Harga Tiket ({booking.passengerCount} orang)</span>
+          <span className="font-medium">Rp {booking.totalBasePrice.toLocaleString('id-ID')}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">Pajak & Fee</span>
+          <span className="font-medium">Rp {booking.tax.toLocaleString('id-ID')}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">Biaya Layanan</span>
+          <span className="font-medium">Rp {booking.serviceFee.toLocaleString('id-ID')}</span>
+        </div>
+        <hr className="border-gray-200" />
+        <div className="flex justify-between text-lg font-bold">
+          <span>Total Dibayar</span>
+          <span className="text-green-600">Rp {booking.totalPrice.toLocaleString('id-ID')}</span>
+        </div>
       </div>
-      <div className="flex justify-between">
-        <span className="text-gray-600">Pajak & Fee</span>
-        <span className="font-medium">Rp {booking.tax.toLocaleString('id-ID')}</span>
+      
+      <div className={`mt-4 p-3 ${statusInfo.bgColor} ${statusInfo.borderColor} border rounded-lg`}>
+        <p className="text-sm text-gray-700">
+          <strong>Metode Pembayaran:</strong> {booking.paymentMethod}
+        </p>
+        <p className={`text-sm ${statusInfo.color}`}>
+          <strong>Status:</strong> {statusInfo.text}
+        </p>
+        {booking.orderId && (
+          <p className="text-sm text-gray-700">
+            <strong>Order ID:</strong> {booking.orderId}
+          </p>
+        )}
       </div>
-      <div className="flex justify-between">
-        <span className="text-gray-600">Biaya Layanan</span>
-        <span className="font-medium">Rp {booking.serviceFee.toLocaleString('id-ID')}</span>
-      </div>
-      <hr className="border-gray-200" />
-      <div className="flex justify-between text-lg font-bold">
-        <span>Total Dibayar</span>
-        <span className="text-green-600">Rp {booking.totalPrice.toLocaleString('id-ID')}</span>
-      </div>
+
+      {/* Payment Status Actions */}
+      {booking.paymentStatus === 'pending' && (
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-700 mb-2">
+            <strong>Pembayaran sedang diproses.</strong> Silakan selesaikan pembayaran sesuai dengan metode yang dipilih.
+          </p>
+          <Link
+            href={`/payment/status/${booking.orderId}`}
+            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+          >
+            Pantau Status Pembayaran →
+          </Link>
+        </div>
+      )}
+
+      {(booking.paymentStatus === 'deny' || booking.paymentStatus === 'failure') && (
+        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm text-red-700 mb-2">
+            <strong>Pembayaran gagal.</strong> Silakan coba metode pembayaran lain.
+          </p>
+          <Link
+            href={`/payment/status/${booking.orderId}`}
+            className="text-red-600 hover:text-red-700 text-sm font-medium"
+          >
+            Lihat Detail Pembayaran →
+          </Link>
+        </div>
+      )}
     </div>
-    
-    <div className="mt-4 p-3 bg-green-50 rounded-lg">
-      <p className="text-sm text-green-700">
-        <strong>Metode Pembayaran:</strong> {booking.paymentMethod}
-      </p>
-      <p className="text-sm text-green-700">
-        <strong>Status:</strong> Lunas
-      </p>
-    </div>
-  </div>
-);
+  );
+};
 
 // --- Komponen Aksi ---
-const ActionButtons = ({ bookingId }: { bookingId: string }) => {
+const ActionButtons = ({ bookingId, paymentStatus }: { bookingId: string; paymentStatus: string }) => {
   const handleDownloadTicket = () => {
-    // Simulasi download tiket
-    alert('Fitur download tiket akan segera tersedia!');
+    // Redirect to e-ticket page
+    window.open(`/ticket/${bookingId}`, '_blank');
   };
 
   const handleShareBooking = () => {
-    // Simulasi share booking
+    // Share booking
     if (navigator.share) {
       navigator.share({
         title: 'Konfirmasi Booking TripGO',
@@ -182,26 +257,50 @@ const ActionButtons = ({ bookingId }: { bookingId: string }) => {
     }
   };
 
+  const isPaymentComplete = paymentStatus === 'capture' || paymentStatus === 'settlement';
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
       <h3 className="text-xl font-bold text-gray-800 mb-4">Aksi</h3>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <button
-          onClick={handleDownloadTicket}
-          className="flex items-center justify-center space-x-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300"
+      <div className="space-y-4">
+        {/* E-Ticket Button */}
+        <Link
+          href={`/ticket/${bookingId}`}
+          className="flex items-center justify-center space-x-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300 w-full"
         >
           <DownloadIcon />
-          <span>Download Tiket</span>
-        </button>
+          <span>Lihat E-Ticket</span>
+        </Link>
         
+        {/* Download Button (only if payment is complete) */}
+        {isPaymentComplete && (
+          <button
+            onClick={handleDownloadTicket}
+            className="flex items-center justify-center space-x-2 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300 w-full"
+          >
+            <DownloadIcon />
+            <span>Download Tiket</span>
+          </button>
+        )}
+        
+        {/* Share Button */}
         <button
           onClick={handleShareBooking}
-          className="flex items-center justify-center space-x-2 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300"
+          className="flex items-center justify-center space-x-2 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300 w-full"
         >
           <ShareIcon />
           <span>Bagikan Booking</span>
         </button>
+
+        {/* Payment Status Info */}
+        {!isPaymentComplete && (
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-700">
+              <strong>E-ticket akan tersedia setelah pembayaran selesai.</strong>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -211,48 +310,41 @@ const ActionButtons = ({ bookingId }: { bookingId: string }) => {
 const BookingConfirmationContent = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { user } = useAuth();
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulasi data booking berdasarkan parameter URL
-    const bookingId = searchParams.get('id') || 'TRP' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    
-    const bookingData = {
-      id: bookingId,
-      flight: {
-        airline: 'Garuda',
-        flightNumber: 'GA-123',
-        departureTime: '07:30',
-        arrivalTime: '09:00',
-        duration: '1j 30m',
-        originCode: 'CGK',
-        destinationCode: 'DPS',
-        origin: 'Jakarta',
-        destination: 'Bali',
-        departureDate: '2024-01-15',
-        class: 'Ekonomi'
-      },
-      passengers: [
-        {
-          title: 'Mr',
-          firstName: 'John',
-          lastName: 'Doe',
-          dateOfBirth: '1990-01-01',
-          passportNumber: 'A1234567',
-          nationality: 'Indonesia'
+    const fetchBookingData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const bookingId = searchParams.get('id');
+        if (!bookingId) {
+          throw new Error('Booking ID tidak ditemukan');
         }
-      ],
-      passengerCount: 1,
-      totalBasePrice: 1250000,
-      tax: 125000,
-      serviceFee: 50000,
-      totalPrice: 1425000,
-      paymentMethod: 'Kartu Kredit'
+
+        const response = await fetch(`/api/bookings/${bookingId}`);
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error('Booking tidak ditemukan');
+          }
+          throw new Error('Gagal mengambil data booking');
+        }
+        
+        const bookingData = await response.json();
+        setBooking(bookingData);
+      } catch (err) {
+        console.error('Error fetching booking:', err);
+        setError(err instanceof Error ? err.message : 'Terjadi kesalahan');
+      } finally {
+        setLoading(false);
+      }
     };
-    
-    setBooking(bookingData);
-    setLoading(false);
+
+    fetchBookingData();
   }, [searchParams]);
 
   if (loading) {
@@ -266,17 +358,29 @@ const BookingConfirmationContent = () => {
     );
   }
 
-  if (!booking) {
+  if (error || !booking) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-600">Booking tidak ditemukan</p>
-          <button 
-            onClick={() => router.push('/')}
-            className="mt-4 bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            Kembali ke Beranda
-          </button>
+          <div className="text-red-500 text-6xl mb-4">❌</div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Booking Tidak Ditemukan</h1>
+          <p className="text-gray-600 mb-6">{error || 'Booking tidak ditemukan'}</p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button 
+              onClick={() => router.push('/')}
+              className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+            >
+              Kembali ke Beranda
+            </button>
+            {user && (
+              <button 
+                onClick={() => router.push('/dashboard')}
+                className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+              >
+                Lihat Dashboard
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -309,14 +413,25 @@ const BookingConfirmationContent = () => {
           <div className="flex justify-center mb-4">
             <CheckCircleIcon />
           </div>
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">Booking Berhasil!</h2>
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">
+            {booking.paymentStatus === 'capture' || booking.paymentStatus === 'settlement' 
+              ? 'Booking Berhasil!' 
+              : 'Booking Dibuat!'}
+          </h2>
           <p className="text-gray-600 mb-4">
-            Terima kasih telah memesan tiket melalui TripGO. Detail booking Anda telah dikirim ke email.
+            {booking.paymentStatus === 'capture' || booking.paymentStatus === 'settlement'
+              ? 'Terima kasih telah memesan tiket melalui TripGO. Detail booking Anda telah dikirim ke email.'
+              : 'Booking Anda telah dibuat. Silakan selesaikan pembayaran untuk mengkonfirmasi tiket.'}
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 inline-block">
             <p className="text-blue-800 font-semibold">
               Booking ID: <span className="font-mono">{booking.id}</span>
             </p>
+            {booking.orderId && (
+              <p className="text-blue-800 font-semibold mt-1">
+                Order ID: <span className="font-mono">{booking.orderId}</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -330,7 +445,7 @@ const BookingConfirmationContent = () => {
 
           {/* Sidebar */}
           <div className="lg:col-span-1">
-            <ActionButtons bookingId={booking.id} />
+            <ActionButtons bookingId={booking.id} paymentStatus={booking.paymentStatus} />
           </div>
         </div>
 
