@@ -209,7 +209,7 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
               <select
                 value={passenger.title}
                 onChange={(e) => handlePassengerChange(index, 'title', e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="w-full p-3 border border-gray-300 text-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               >
                 <option value="Mr">Mr</option>
                 <option value="Mrs">Mrs</option>
@@ -288,7 +288,7 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
               <select
                 value={passenger.nationality}
                 onChange={(e) => handlePassengerChange(index, 'nationality', e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="w-full p-3 border border-gray-300 text-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               >
                 <option value="Indonesia">Indonesia</option>
                 <option value="Malaysia">Malaysia</option>
