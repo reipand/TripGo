@@ -1,6 +1,6 @@
                                     'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/app/contexts/AuthContext';
@@ -18,7 +18,8 @@ const ResendIcon = () => (
   </svg>
 );
 
-export default function VerifyEmailPage() {                                                                                                                                                             
+// Komponen untuk konten yang menggunakan useSearchParams
+function VerifyEmailContent() {
   const router = useRouter();                                                                                                                       
   const searchParams = useSearchParams();
   const { verifyEmail, resendVerificationCode } = useAuth();
@@ -275,5 +276,26 @@ export default function VerifyEmailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading component
+function VerifyEmailLoading() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#0A58CA] to-[#0548AD] flex items-center justify-center p-4">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+        <p className="text-white">Memuat halaman verifikasi...</p>
+      </div>
+    </div>
+  );
+}
+
+// Main component dengan Suspense
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={<VerifyEmailLoading />}>
+      <VerifyEmailContent />
+    </Suspense>
   );
 }
