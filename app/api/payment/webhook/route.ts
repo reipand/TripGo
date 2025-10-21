@@ -9,6 +9,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Midtrans webhook signature verification
+<<<<<<< HEAD
 // Refer to Midtrans docs: signature_key = sha512(order_id + status_code + gross_amount + server_key)
 const verifySignature = (payload: any): boolean => {
   try {
@@ -21,15 +22,32 @@ const verifySignature = (payload: any): boolean => {
   } catch {
     return false;
   }
+=======
+const verifySignature = (requestBody: string, signature: string): boolean => {
+  const serverKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-YourServerKey';
+  const expectedSignature = crypto
+    .createHash('sha512')
+    .update(requestBody + serverKey)
+    .digest('hex');
+  
+  return signature === expectedSignature;
+>>>>>>> 93a879e (fix fitur)
 };
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
+<<<<<<< HEAD
     const notification = JSON.parse(body);
 
     // Verify webhook signature using signature_key
     if (!verifySignature(notification)) {
+=======
+    const signature = request.headers.get('x-midtrans-signature') || '';
+    
+    // Verify webhook signature
+    if (!verifySignature(body, signature)) {
+>>>>>>> 93a879e (fix fitur)
       console.error('Invalid webhook signature');
       return NextResponse.json(
         { error: 'Invalid signature' },
@@ -37,6 +55,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+<<<<<<< HEAD
+=======
+    const notification = JSON.parse(body);
+>>>>>>> 93a879e (fix fitur)
     const {
       order_id,
       transaction_status,

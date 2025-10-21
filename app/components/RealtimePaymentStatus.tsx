@@ -102,16 +102,20 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
       setLoading(true);
       setError(null);
 
+<<<<<<< HEAD
       if (!orderId) {
         setError('Order ID tidak valid');
         setLoading(false);
         return;
       }
 
+=======
+>>>>>>> 93a879e (fix fitur)
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
         .eq('order_id', orderId)
+<<<<<<< HEAD
         .maybeSingle();
 
       if (error) {
@@ -152,6 +156,21 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
       if (err?.code === 'PGRST116') {
         setError(null);
       }
+=======
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        setPaymentStatus(data);
+        onStatusChange?.(data);
+      }
+    } catch (err: any) {
+      console.error('Error fetching payment status:', err);
+      setError(err.message || 'Gagal mengambil status pembayaran');
+>>>>>>> 93a879e (fix fitur)
     } finally {
       setLoading(false);
     }

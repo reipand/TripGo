@@ -18,6 +18,7 @@
 
 ## 3. Konfigurasi Environment Variables
 
+<<<<<<< HEAD
 Tambahkan ke file `.env.local` (Sandbox):
 
 ```env
@@ -26,6 +27,14 @@ MIDTRANS_SERVER_KEY=SB-Mid-server-xxxxxxxxxxxxxxxx
 NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=SB-Mid-client-xxxxxxxxxxxxxxxx
 NEXT_PUBLIC_MIDTRANS_SNAP_URL=https://app.sandbox.midtrans.com/snap/snap.js
 MIDTRANS_BASE_URL=https://api.sandbox.midtrans.com/v2
+=======
+Tambahkan ke file `.env.local`:
+
+```env
+# Midtrans Configuration
+MIDTRANS_SERVER_KEY=SB-Mid-server-xxxxxxxxxxxxxxxx
+MIDTRANS_CLIENT_KEY=SB-Mid-client-xxxxxxxxxxxxxxxx
+>>>>>>> 93a879e (fix fitur)
 
 # Application Configuration
 NEXT_PUBLIC_BASE_URL=http://localhost:3000

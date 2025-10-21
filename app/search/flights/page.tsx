@@ -346,6 +346,7 @@ const FlightResults = () => {
           headers: { 'Content-Type': 'application/json' }
         });
 
+<<<<<<< HEAD
         let result;
         try {
           result = await response.json();
@@ -367,6 +368,12 @@ const FlightResults = () => {
             return;
           }
           throw new Error(result.error || 'Gagal mengambil data penerbangan');
+=======
+        const result = await response.json();
+        
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Failed to fetch flights');
+>>>>>>> 93a879e (fix fitur)
         }
 
         const data = result.data || [];
@@ -374,11 +381,19 @@ const FlightResults = () => {
         setFilteredAndSortedFlights(data);
         
         // Extract available airlines and price range
+<<<<<<< HEAD
         const airlines = [...new Set(data.map((flight: Flight) => flight.transportasi.nama))] as string[];
         setAvailableAirlines(airlines);
         
         if (data.length > 0) {
           const prices = data.map((flight: Flight) => flight.harga);
+=======
+        const airlines = [...new Set(data.map(flight => flight.transportasi.nama))];
+        setAvailableAirlines(airlines);
+        
+        if (data.length > 0) {
+          const prices = data.map(flight => flight.harga);
+>>>>>>> 93a879e (fix fitur)
           setPriceRange({
             min: Math.min(...prices),
             max: Math.max(...prices)

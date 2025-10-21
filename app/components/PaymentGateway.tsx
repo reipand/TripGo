@@ -48,10 +48,19 @@ interface PaymentGatewayProps {
   showStatus?: boolean;
 }
 
+<<<<<<< HEAD
 // Midtrans Sandbox Configuration (client-side)
 const MIDTRANS_CONFIG = {
   clientKey: process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || 'SB-Mid-client-yourSandboxClientKey',
   snapUrl: process.env.NEXT_PUBLIC_MIDTRANS_SNAP_URL || 'https://app.sandbox.midtrans.com/snap/snap.js'
+=======
+// Midtrans Sandbox Configuration
+const MIDTRANS_CONFIG = {
+  clientKey: 'Mid-client-pSkjZZCMxWR2cBec', // Replace with actual sandbox client key
+  serverKey: 'Mid-server-oSNG3QLRva2jGYuvtZiJ6M2A', // Replace with actual sandbox server key
+  baseUrl: 'https://api.sandbox.midtrans.com/v2',
+  snapUrl: 'https://app.sandbox.midtrans.com/snap/snap.js'
+>>>>>>> 93a879e (fix fitur)
 };
 
 // Payment Methods
@@ -184,6 +193,7 @@ const PaymentGateway: React.FC<PaymentGatewayProps> = ({
       });
 
       if (!response.ok) {
+<<<<<<< HEAD
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         const errorMessage = errorData?.error || errorData?.details || 'Failed to create transaction';
         throw new Error(errorMessage);
@@ -201,6 +211,17 @@ const PaymentGateway: React.FC<PaymentGatewayProps> = ({
       console.error('Error generating payment token:', error);
       const errorMessage = error?.message || 'Gagal membuat transaksi pembayaran. Silakan coba lagi.';
       onPaymentError(new Error(errorMessage));
+=======
+        throw new Error('Failed to create transaction');
+      }
+
+      const result = await response.json();
+      setPaymentToken(result.token);
+      return result.token;
+    } catch (error) {
+      console.error('Error generating payment token:', error);
+      onPaymentError(error);
+>>>>>>> 93a879e (fix fitur)
       throw error;
     } finally {
       setLoading(false);
