@@ -1,576 +1,638 @@
-'use client'; 
+// app/page.tsx
+'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
-// --- Kumpulan Ikon (Diubah ke Path Gambar Lokal) ---
-
-const getIconPath = (
-  name: 'plane' | 'train' | 'calendar' | 'user' | 'switch' | 'search' | 'price' | 'complete' | 'support',
-  isActive: boolean = false
-) => {
- 
-  // const basePath = '/images';
-
-
-  const basePath = '/images/icons';
-
-  if (name === 'plane' || name === 'train') {
-    return `${basePath}/${name}${isActive ? '-active' : ''}.png`;
-  }
-  
-  // Special handling for utility icons with hover states
-  if (name === 'switch') {
-    return `${basePath}/utils/${name}.png`; // Dark version for better visibility
-  }
-  
-  // Regular utility icons
-  if (name === 'calendar' || name === 'user') {
-    return `${basePath}/utils/${name}.png`;
-  }
-
-  if (name === 'price' || name === 'complete' || name === 'support') {
-    return `${basePath}/features/${name}.png`;
-  }
-  
-  // All other utility icons
-  return `${basePath}/utils/${name}.png`;
-};
-
-const IconComponent = ({ path, className = '', alt }: { path: string, className?: string, alt: string }) => (
-    <img src={path} alt={alt} className={`h-5 w-5 ${className}`} />
+// Icon Components
+const PlaneIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-6 h-6 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+  </svg>
 );
 
-const PlaneIcon = ({ isActive }: { isActive: boolean }) => (
-  <IconComponent 
-    path={getIconPath('plane', isActive)} 
-    className={`mr-2 transition-colors duration-300`}
-    alt="Ikon Pesawat"
-  />
+const TrainIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-6 h-6 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+  </svg>
 );
 
-const TrainIcon = ({ isActive }: { isActive: boolean }) => (
-  <IconComponent 
-    path={getIconPath('train', isActive)} 
-    className={`mr-2 transition-colors duration-300`}
-    alt="Ikon Kereta"
-  />
+const SwitchIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-5 h-5 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+  </svg>
 );
 
-const CalendarIcon = () => (
-  <IconComponent 
-    path={getIconPath('calendar')} 
-    className="text-gray-400" 
-    alt="Ikon Kalender"
-  />
+const LocationIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-5 h-5 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
 );
 
-const UserIcon = () => (
-    <IconComponent 
-      path={getIconPath('user')} 
-      className="text-gray-400"
-      alt="Ikon Pengguna" 
-    />
+const CalendarIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-5 h-5 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>
 );
 
-const SwitchIcon = ({ onClick }: { onClick: () => void }) => (
-  <img 
-    onClick={onClick} 
-    src={getIconPath('switch')} 
-    alt="Ikon Tukar Lokasi" 
-    className="h-5 w-5 text-gray-400 mx-2 cursor-pointer hover:text-gray-600 transition-colors duration-200"
-  />
+const UserIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-5 h-5 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
 );
 
-const FeatureIconContainer = ({ children }: { children: React.ReactNode }) => (
-    <div className="p-4 bg-blue-100 rounded-full text-[#0A58CA] mb-3">
-        {children}
-    </div>
+const SeatIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-5 h-5 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+  </svg>
 );
 
-// --- Komponen Form Pencarian Interaktif ---
+const TrendingUpIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-6 h-6 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+  </svg>
+);
 
-const SearchWidget = () => {
+const StarIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-5 h-5 ${className}`} fill="currentColor" viewBox="0 0 20 20">
+    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+  </svg>
+);
+
+const ShieldIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-6 h-6 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+  </svg>
+);
+
+const ClockIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-6 h-6 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const SupportIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-6 h-6 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192L5.636 18.364M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+// Search Widget Component
+const TravelSearchWidget = () => {
   const router = useRouter();
-  
-  const [activeTab, setActiveTab] = useState('pesawat');
-  const [tripType, setTripType] = useState('oneWay'); // oneWay atau roundTrip
-  
-  // Ambil tanggal hari ini untuk batas minimal input
+  const [transportType, setTransportType] = useState<'flight' | 'train'>('flight');
+  const [tripType, setTripType] = useState<'oneWay' | 'roundTrip'>('oneWay');
+  const [searchData, setSearchData] = useState({
+    origin: 'Jakarta',
+    destination: 'Surabaya',
+    departureDate: '',
+    returnDate: '',
+    passengers: '1',
+    class: 'economy'
+  });
+
   const today = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() + 1); // minimal besok
+    d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   }, []);
 
-  const [flightData, setFlightData] = useState({
-    origin: '',
-    destination: '',
-    departureDate: today, // Set default ke besok
-    returnDate: '',
-    passengers: '',
-  });
+ const popularDestinations: Array<{
+  code: string;
+  name: string;
+  price: string;
+  type: 'flight' | 'train'; // Explicitly define the type
+}> = [
+  { 
+    code: 'DPS', 
+    name: 'Denpasar', 
+    price: 'Rp 650rb',
+    type: 'flight'
+  },
+  { 
+    code: 'JOG', 
+    name: 'Yogyakarta', 
+    price: 'Rp 150rb',
+    type: 'flight'
+  },
+  { 
+    code: 'SUB', 
+    name: 'Surabaya', 
+    price: 'Rp 400rb',
+    type: 'flight'
+  },
+  { 
+    code: 'BDO', 
+    name: 'Bandung', 
+    price: 'Rp 300rb',
+    type: 'flight'
+  },
+  { 
+    code: 'GMR', 
+    name: 'Gambir', 
+    price: 'Rp 200rb',
+    type: 'train'
+  },
+  { 
+    code: 'PSE', 
+    name: 'Pasar Senen', 
+    price: 'Rp 180rb',
+    type: 'train'
+  },
+];
 
-  const [trainData, setTrainData] = useState({
-    origin: '',
-    destination: '',
-    departureDate: today, // Set default ke besok
-    returnDate: '',
-    passengers: '',
-  });
-
-  const formatDate = (date: Date) => {
-    const d = new Date(date);
-    let month = '' + (d.getMonth() + 1);
-    let day = '' + d.getDate();
-    const year = d.getFullYear();
-
-    if (month.length < 2) month = '0' + month;
-    if (day.length < 2) day = '0' + day;
-
-    return [year, month, day].join('-');
-  }
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    const isFlight = activeTab === 'pesawat';
-    const setData = isFlight ? setFlightData : setTrainData;
-    const currentData = isFlight ? flightData : trainData;
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = new URLSearchParams({
+      transport: transportType,
+      type: tripType,
+      from: searchData.origin,
+      to: searchData.destination,
+      depart: searchData.departureDate,
+      ...(tripType === 'roundTrip' && { return: searchData.returnDate }),
+      passengers: searchData.passengers,
+      class: searchData.class
+    }).toString();
     
-    setData(prev => ({ ...prev, [name]: value }));
-
-    if (name === 'departureDate' && tripType === 'roundTrip' && value) {
-      const departure = new Date(value);
-      // Tambahkan satu hari ke tanggal berangkat untuk dijadikan tanggal pulang minimal
-      const nextDay = formatDate(new Date(departure.getTime() + 86400000));
-      
-      // Pastikan tanggal pulang tidak mendahului tanggal pergi
-      if (!currentData.returnDate || new Date(currentData.returnDate) < new Date(nextDay)) {
-         setData(prev => ({ ...prev, returnDate: nextDay }));
-      }
-    }
-  };
-  
-  useEffect(() => {
-    // Reset returnDate saat tipe perjalanan diubah menjadi sekali jalan
-    if (tripType === 'oneWay') {
-      setFlightData(prev => ({...prev, returnDate: ''}));
-      setTrainData(prev => ({...prev, returnDate: ''}));
-    }
-  }, [tripType]);
-
-
-  const handleFlightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFlightData({ ...flightData, [e.target.name]: e.target.value });
-  };
-  const handleTrainChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTrainData({ ...trainData, [e.target.name]: e.target.value });
+    router.push(`/search?${query}`);
   };
 
-  const handleSwitchLocations = () => {
-    if (activeTab === 'pesawat') {
-        setFlightData(prev => ({
-            ...prev,
-            origin: prev.destination,
-            destination: prev.origin,
-        }));
-    } else {
-        setTrainData(prev => ({
-            ...prev,
-            origin: prev.destination,
-            destination: prev.origin,
-        }));
-    }
-  };
-
-  const handleSearchSubmit = () => {
-    const showMessage = (msg: string) => {
-      alert(msg); 
-    };
+  const handleQuickSearch = (destination: string, type: 'flight' | 'train') => {
+    const query = new URLSearchParams({
+      transport: type,
+      type: 'oneWay',
+      from: type === 'flight' ? 'Jakarta (CGK)' : 'Jakarta',
+      to: destination,
+      depart: today,
+      passengers: '1',
+      class: 'economy'
+    }).toString();
     
-    if (activeTab === 'pesawat') {
-      const dataToSubmit = tripType === 'oneWay' ? { ...flightData, returnDate: '' } : flightData;
-      if (!dataToSubmit.origin || !dataToSubmit.destination || !dataToSubmit.departureDate) {
-        showMessage('Harap lengkapi kota/bandara asal, tujuan, dan tanggal pergi.');
-        return;
-      }
-      const query = new URLSearchParams(dataToSubmit as any).toString();
-      router.push(`/search/flights?${query}`);
-    } else {
-      const dataToSubmit = tripType === 'oneWay' ? { ...trainData, returnDate: '' } : trainData;
-      if (!dataToSubmit.origin || !dataToSubmit.destination || !dataToSubmit.departureDate) {
-        showMessage('Harap lengkapi stasiun asal, tujuan, dan tanggal berangkat.');
-        return;
-      }
-      const query = new URLSearchParams(dataToSubmit as any).toString();
-      router.push(`/search/trains?${query}`);
-    }
+    router.push(`/search?${query}`);
   };
 
-  const renderForm = () => {
-    const isFlight = activeTab === 'pesawat';
-    const data = isFlight ? flightData : trainData;
-    const genericHandler = isFlight ? handleFlightChange : handleTrainChange;
-    
-    const gridCols = tripType === 'roundTrip' ? 'lg:grid-cols-5' : 'lg:grid-cols-4';
-    // Menghitung minDate untuk Tanggal Pulang
-    const minReturnDate = data.departureDate ? formatDate(new Date(new Date(data.departureDate).getTime() + 86400000)) : today;
-
-    return (
-      <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4 items-end`}>
-        {isFlight ? (
-             <div className="md:col-span-2 lg:col-span-2">
-                <label className="text-gray-800 text-sm font-medium">Asal & Tujuan</label>
-                <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-                    <input type="text" name="origin" value={data.origin} onChange={genericHandler} placeholder="Kota atau Bandara Asal" className="bg-transparent w-full focus:outline-none placeholder-gray-400 text-gray-900" />
-                    <SwitchIcon onClick={handleSwitchLocations} />
-                    <input type="text" name="destination" value={data.destination} onChange={genericHandler} placeholder="Kota atau Bandara Tujuan" className="bg-transparent w-full focus:outline-none text-right placeholder-gray-400 text-gray-900" />
-                </div>
-            </div>
-        ) : (
-            <>
-                <div className="lg:col-span-1">
-                    <label className="text-gray-800 text-sm font-medium">Asal</label>
-                    <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-                        <input type="text" name="origin" value={data.origin} onChange={genericHandler} placeholder="Stasiun Asal" className="bg-transparent w-full focus:outline-none placeholder-gray-400 text-gray-900" />
-                    </div>
-                </div>
-                <div className="lg:col-span-1 relative">
-                    <label className="text-gray-800 text-sm font-medium">Tujuan</label>
-                    <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-                        <input type="text" name="destination" value={data.destination} onChange={genericHandler} placeholder="Stasiun Tujuan" className="bg-transparent w-full focus:outline-none placeholder-gray-400 text-gray-900" />
-                    </div>
-                    {/* Switch icon untuk kereta api diletakkan di tengah antara Asal dan Tujuan */}
-                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 mt-1 z-10" onClick={handleSwitchLocations}>
-                         <SwitchIcon onClick={() => {}} />
-                    </div>
-                </div>
-            </>
-        )}
-        
-        <div>
-          <label className="text-gray-800 text-sm font-medium">Tanggal Pergi</label>
-          <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-            <CalendarIcon />
-            <input type="date" name="departureDate" value={data.departureDate} onChange={handleDateChange} min={today} className="bg-transparent w-full focus:outline-none ml-2 text-gray-900"/>
-          </div>
-        </div>
-        
-        {tripType === 'roundTrip' && (
-            <div>
-              <label className="text-gray-800 text-sm font-medium">Tanggal Pulang</label>
-              <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-                <CalendarIcon />
-                <input 
-                    type="date" 
-                    name="returnDate" 
-                    value={data.returnDate} 
-                    onChange={handleDateChange} 
-                    min={minReturnDate} 
-                    className="bg-transparent w-full focus:outline-none ml-2 text-gray-900"
-                />
-              </div>
-            </div>
-        )}
-
-        <div className={tripType === 'roundTrip' && !isFlight ? 'lg:col-start-5' : ''}>
-          <label className="text-gray-800 text-sm font-medium">Penumpang</label>
-          <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-              <UserIcon />
-              <input type="text" name="passengers" value={data.passengers} onChange={genericHandler} placeholder="Jumlah Penumpang" className="bg-transparent w-full focus:outline-none ml-2 placeholder-gray-400 text-gray-900" />
-          </div>
-        </div>
-      </div>
-    );
+  const switchLocations = () => {
+    setSearchData(prev => ({
+      ...prev,
+      origin: prev.destination,
+      destination: prev.origin
+    }));
   };
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-5xl">
-      <div className="flex border-b border-gray-200 mb-4">
-            {/* TAB PESAWAT */}
-            <button
-              onClick={() => setActiveTab('pesawat')}
-              className={`flex items-center pb-3 pt-1 px-4 text-base font-semibold transition-colors duration-300 ${activeTab === 'pesawat' ? 'border-b-2 border-[#0A58CA] text-[#0A58CA]' : 'text-gray-500 hover:text-gray-800'}`}
-            >
-              <PlaneIcon isActive={activeTab === 'pesawat'} /> 
-              <span>Pesawat</span>
-            </button>
-            
-            {/* TAB KERETA API */}
-            <button
-              onClick={() => setActiveTab('kereta')}
-              className={`flex items-center pb-3 pt-1 px-4 text-base font-semibold transition-colors duration-300 ${activeTab === 'kereta' ? 'border-b-2 border-[#0A58CA] text-[#0A58CA]' : 'text-gray-500 hover:text-gray-800'}`}
-            >
-              <TrainIcon isActive={activeTab === 'kereta'} />
-              <span>Kereta Api</span>
-            </button>
+    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-4xl mx-auto border border-gray-200">
+      {/* Transport Type Selector */}
+      <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setTransportType('flight')}
+          className={`px-6 py-3 rounded-lg font-semibold transition-all flex items-center space-x-2 ${
+            transportType === 'flight'
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          <PlaneIcon className="w-5 h-5" />
+          <span>Pesawat</span>
+        </button>
+        <button
+          onClick={() => setTransportType('train')}
+          className={`px-6 py-3 rounded-lg font-semibold transition-all flex items-center space-x-2 ${
+            transportType === 'train'
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          <TrainIcon className="w-5 h-5" />
+          <span>Kereta</span>
+        </button>
       </div>
 
-       {/* Pilihan Tipe Perjalanan */}
-       <div className="flex items-center space-x-6 mb-4">
-        <label className="flex items-center cursor-pointer">
-            <input type="radio" name="tripType" value="oneWay" checked={tripType === 'oneWay'} onChange={() => setTripType('oneWay')} className="hidden" />
-            <span className={`w-5 h-5 rounded-full border-2 ${tripType === 'oneWay' ? 'border-[#0A58CA] bg-white' : 'border-gray-300' } flex items-center justify-center`}>
-                {tripType === 'oneWay' && <span className="w-2.5 h-2.5 bg-[#0A58CA] rounded-full"></span>}
-            </span>
-            <span className="ml-2 font-medium text-gray-800">Sekali Jalan</span>
-        </label>
-        <label className="flex items-center cursor-pointer">
-            <input type="radio" name="tripType" value="roundTrip" checked={tripType === 'roundTrip'} onChange={() => setTripType('roundTrip')} className="hidden" />
-            <span className={`w-5 h-5 rounded-full border-2 ${tripType === 'roundTrip' ? 'border-[#0A58CA] bg-white' : 'border-gray-300'} flex items-center justify-center`}>
-                {tripType === 'roundTrip' && <span className="w-2.5 h-2.5 bg-[#0A58CA] rounded-full"></span>}
-            </span>
-            <span className="ml-2 font-medium text-gray-800">Pulang-Pergi</span>
-        </label>
+      {/* Trip Type Selector */}
+      <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setTripType('oneWay')}
+          className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            tripType === 'oneWay'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          Sekali Jalan
+        </button>
+        <button
+          onClick={() => setTripType('roundTrip')}
+          className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            tripType === 'roundTrip'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          Pulang Pergi
+        </button>
       </div>
-      
-      {/* Form Content */}
-      <div className="space-y-4">
-        {renderForm()}
-        <div className="flex justify-end pt-6">
-          <button onClick={handleSearchSubmit} className="w-full md:w-auto px-10 py-3 bg-[#FD7E14] text-white font-bold text-lg rounded-full hover:bg-[#E06700] transition-colors duration-300 flex items-center justify-center shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40">
-            {/* Ikon Kaca Pembesar diganti dengan path */}
-            <img 
-                src={getIconPath('search')} 
-                alt="Ikon Cari" 
-                className="h-6 w-6 mr-2" 
-            />
-            Cari Tiket
+
+      {/* Search Form */}
+      <form onSubmit={handleSearch} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
+          {/* Origin */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-700">
+              {transportType === 'flight' ? 'Kota Asal atau Bandara' : 'Stasiun Asal'}
+            </label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                <LocationIcon />
+              </div>
+              <input
+                type="text"
+                placeholder={transportType === 'flight' ? "Kota atau bandara asal" : "Stasiun asal"}
+                value={searchData.origin}
+                onChange={(e) => setSearchData(prev => ({ ...prev, origin: e.target.value }))}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Switch Button */}
+          <button
+            type="button"
+            onClick={switchLocations}
+            className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition-all shadow-lg border-2 border-white"
+          >
+            <SwitchIcon className="w-4 h-4" />
           </button>
+
+          {/* Destination */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-700">
+              {transportType === 'flight' ? 'Kota Tujuan atau Bandara' : 'Stasiun Tujuan'}
+            </label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                <LocationIcon />
+              </div>
+              <input
+                type="text"
+                placeholder={transportType === 'flight' ? "Kota atau bandara tujuan" : "Stasiun tujuan"}
+                value={searchData.destination}
+                onChange={(e) => setSearchData(prev => ({ ...prev, destination: e.target.value }))}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Departure Date */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-700">Tanggal Pergi</label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                <CalendarIcon />
+              </div>
+              <input
+                type="date"
+                value={searchData.departureDate}
+                onChange={(e) => setSearchData(prev => ({ ...prev, departureDate: e.target.value }))}
+                min={today}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Return Date */}
+          {tripType === 'roundTrip' && (
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Tanggal Pulang</label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                  <CalendarIcon />
+                </div>
+                <input
+                  type="date"
+                  value={searchData.returnDate}
+                  onChange={(e) => setSearchData(prev => ({ ...prev, returnDate: e.target.value }))}
+                  min={searchData.departureDate || today}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Passengers & Class */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Penumpang</label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                  <UserIcon />
+                </div>
+                <select
+                  value={searchData.passengers}
+                  onChange={(e) => setSearchData(prev => ({ ...prev, passengers: e.target.value }))}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
+                >
+                  {[1,2,3,4,5,6,7,8,9].map(num => (
+                    <option key={num} value={num}>{num} {num === 1 ? 'Penumpang' : 'Penumpang'}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-700">Kelas</label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                  <SeatIcon />
+                </div>
+                <select
+                  value={searchData.class}
+                  onChange={(e) => setSearchData(prev => ({ ...prev, class: e.target.value }))}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
+                >
+                  <option value="economy">Economy</option>
+                  <option value="premium_economy">Premium Economy</option>
+                  <option value="business">Business</option>
+                  <option value="first">First Class</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Button */}
+        <button
+          type="submit"
+          className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 px-6 rounded-lg transition-all duration-300 text-lg flex items-center justify-center space-x-3 mt-6 shadow-lg"
+        >
+          {transportType === 'flight' ? <PlaneIcon className="w-5 h-5" /> : <TrainIcon className="w-5 h-5" />}
+          <span>CARI {transportType === 'flight' ? 'TIKET PESAWAT' : 'TIKET KERETA'}</span>
+        </button>
+      </form>
+
+      {/* Popular Destinations */}
+      <div className="mt-8 pt-6 border-t border-gray-200">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+          Destinasi Populer
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {popularDestinations.map((dest, index) => (
+            <button
+              key={index}
+              onClick={() => handleQuickSearch(dest.name, dest.type)}
+              className="group text-center p-3 border border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all duration-200"
+            >
+              <div className={`w-12 h-12 mx-auto mb-2 rounded-full flex items-center justify-center text-white group-hover:scale-110 transition-all ${
+                dest.type === 'flight' 
+                  ? 'bg-gradient-to-br from-blue-400 to-purple-500 group-hover:from-blue-500 group-hover:to-purple-600'
+                  : 'bg-gradient-to-br from-green-400 to-blue-500 group-hover:from-green-500 group-hover:to-blue-600'
+              }`}>
+                {dest.type === 'flight' ? <PlaneIcon className="w-4 h-4" /> : <TrainIcon className="w-4 h-4" />}
+              </div>
+              <div className="font-semibold text-gray-800 text-xs mb-1">{dest.code}</div>
+              <div className="text-xs text-gray-600 mb-1 truncate">{dest.name}</div>
+              <div className="text-orange-500 font-bold text-xs">{dest.price}</div>
+            </button>
+          ))}
         </div>
       </div>
     </div>
   );
 };
 
-
-// --- Komponen Kartu Promo ---
-const PromoCard = ({ imageUrl, title, description }: { imageUrl: string, title: string, description: string }) => (
-    <div className="bg-white rounded-xl shadow-lg overflow-hidden transform hover:-translate-y-2 transition-transform duration-300 cursor-pointer border border-gray-100" data-aos="fade-right">
-        <div className="h-40 w-full relative">
-            <img 
-                src={imageUrl} 
-                alt={title} 
-                className="w-full h-40 object-cover" 
-                loading="lazy"
-            />
-        </div>
-        <div className="p-4">
-            <h3 className="font-bold text-lg mb-1 text-[#0A58CA]">{title}</h3>
-            <p className="text-gray-600 text-sm">{description}</p>
-        </div>
-    </div>
-);
-
-
-// --- Komponen Kartu Destinasi Populer ---
-const DestinationCard = ({ imageUrl, name, price, link, delay }: { imageUrl: string, name: string, price: string, link: string, delay: number }) => (
-    <a href={link} className="block group" data-aos="fade-up" data-aos-delay={delay}>
-        <div className="relative overflow-hidden rounded-xl h-64 shadow-md hover:shadow-xl transition-shadow duration-300">
-            <img 
-                src={imageUrl} 
-                alt={name} 
-                className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                loading="lazy"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-4 flex flex-col justify-end">
-                <h3 className="text-xl font-bold text-white mb-1">{name}</h3>
-                <p className="text-sm font-medium text-amber-400">Mulai dari {price}</p>
-            </div>
-        </div>
-    </a>
-);
-
-
-// --- Komponen Kartu Keunggulan (Why Choose Us) ---
-const FeatureCard = ({ title, description, iconPath }: { title: string, description: string, iconPath: string }) => (
-    <div className="p-6 text-center bg-white rounded-xl shadow-lg border border-blue-50 hover:shadow-xl transition-shadow duration-300" data-aos="fade-up">
-        <FeatureIconContainer>
-          <img src={iconPath} alt={`Ikon ${title}`} className="h-6 w-6"/>
-        </FeatureIconContainer>
-        <h3 className="font-bold text-lg mb-2 text-gray-800">{title}</h3>
-        <p className="text-sm text-gray-600">{description}</p>
-    </div>
-);
-
-
-// --- Komponen Halaman Utama ---
-
-declare global {
-    interface Window {
-        AOS: any;
-    }
-}
-
-export default function Home() {
-    useEffect(() => {
-        let aosLink: HTMLLinkElement | null = null;
-        let aosScript: HTMLScriptElement | null = null;
-
-        // Load AOS CSS
-        const link = document.createElement('link');
-        link.href = "https://unpkg.com/aos@2.3.4/dist/aos.css";
-        link.rel = "stylesheet";
-        document.head.appendChild(link);
-        aosLink = link;
-
-        // Load AOS JS
-        const script = document.createElement('script');
-        script.src = "https://unpkg.com/aos@2.3.4/dist/aos.js";
-        script.onload = () => {
-            if (typeof window !== 'undefined' && window.AOS) {
-                window.AOS.init({
-                    duration: 1000,
-                    once: true,
-                });
-            }
-        };
-        document.body.appendChild(script);
-        aosScript = script;
-
-        // Cleanup
-        return () => {
-            if (aosLink && document.head.contains(aosLink)) {
-                document.head.removeChild(aosLink);
-            }
-            if (aosScript && document.body.contains(aosScript)) {
-                document.body.removeChild(aosScript);
-            }
-        };
-    }, []);
-
-  const promos = [
-    {
-      imageUrl: "/images/promo-bali.png", 
-      title: "Diskon Penerbangan ke Bali",
-      description: "Nikmati potongan hingga 30% untuk liburan impianmu."
-    },
-    {
-      imageUrl: "/images/promo-jogja.png",
-      title: "Promo Kereta ke Yogyakarta",
-      description: "Perjalanan lebih hemat dengan cashback spesial."
-    },
-    {
-      imageUrl: "/images/promo-whoosh.jpg",
-      title: "Tiket Cepat Jakarta - Bandung",
-      description: "Perjalanan super kilat dengan Whoosh hanya 30 menit."
-    }
-  ];
-
-  const destinations = [
-    {
-      imageUrl: "/images/bali-dest.png",
-      name: "Bali, Indonesia",
-      price: "Rp 650.000",
-      link: "/destination/bali"
-    },
-    {
-      imageUrl: "/images/jogja-dest.png",
-      name: "Yogyakarta, Indonesia",
-      price: "Rp 150.000",
-      link: "/destination/yogyakarta"
-    },
-    {
-      imageUrl: "/images/tokyo-dest.png",
-      name: "Tokyo, Jepang",
-      price: "Rp 3.500.000",
-      link: "/destination/tokyo"
-    },
-    {
-      imageUrl: "/images/surabaya-dest.png",
-      name: "Surabaya, Indonesia",
-      price: "Rp 400.000",
-      link: "/destination/surabaya"
-    }
-  ];
-
-  // Definisikan path gambar placeholder untuk fitur (keunggulan)
-  const featureIconPaths = {
-    price: getIconPath('price'),
-    complete: getIconPath('complete'),
-    support: getIconPath('support')
+// Feature Card Component
+const FeatureCard = ({ icon, title, description, color = "blue" }: { 
+  icon: React.ReactNode; 
+  title: string; 
+  description: string;
+  color?: "blue" | "green" | "orange";
+}) => {
+  const colorClasses = {
+    blue: "bg-blue-100 text-blue-600",
+    green: "bg-green-100 text-green-600", 
+    orange: "bg-orange-100 text-orange-600"
   };
 
+  return (
+    <div className="bg-white rounded-xl p-6 text-center shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 hover:-translate-y-1">
+      <div className={`w-14 h-14 ${colorClasses[color]} rounded-full flex items-center justify-center mx-auto mb-4`}>
+        {icon}
+      </div>
+      <h3 className="font-bold text-gray-800 mb-2 text-lg">{title}</h3>
+      <p className="text-gray-600 text-sm leading-relaxed">{description}</p>
+    </div>
+  );
+};
+
+// Main Landing Page
+export default function HomePage() {
   const features = [
     {
-        title: "Harga Terbaik",
-        description: "Kami menjamin Anda mendapatkan harga paling kompetitif untuk semua rute.",
-        iconPath: featureIconPaths.price
+      icon: <TrendingUpIcon />,
+      title: "Harga Terbaik",
+      description: "Garansi harga terbaik dengan penawaran eksklusif",
+      color: "orange" as const
     },
     {
-        title: "Pilihan Terlengkap",
-        description: "Ratusan maskapai dan jaringan kereta api terintegrasi di seluruh Indonesia.",
-        iconPath: featureIconPaths.complete
+      icon: <ShieldIcon />,
+      title: "Aman & Terpercaya",
+      description: "Transaksi aman dengan garansi uang kembali 100%",
+      color: "blue" as const
     },
     {
-        title: "Dukungan 24/7",
-        description: "Tim layanan pelanggan siap membantu Anda kapan saja, di mana saja.",
-        iconPath: featureIconPaths.support
+      icon: <ClockIcon />,
+      title: "Cepat & Mudah",
+      description: "Pesan tiket hanya dalam hitungan menit",
+      color: "green" as const
     },
+    {
+      icon: <SupportIcon />,
+      title: "24/7 Support",
+      description: "Tim support siap membantu kapan saja",
+      color: "blue" as const
+    }
+  ];
+
+  const promotions = [
+    {
+      title: "Flash Sale",
+      discount: "50%",
+      description: "Khusus pembelian melalui app",
+      color: "bg-red-500"
+    },
+    {
+      title: "New User",
+      discount: "Rp 100rb",
+      description: "Voucher untuk pengguna baru",
+      color: "bg-green-500"
+    },
+    {
+      title: "Weekend Deal",
+      discount: "30%",
+      description: "Setiap akhir pekan",
+      color: "bg-purple-500"
+    }
+  ];
+
+  const airlines = [
+    { name: "Garuda Indonesia", rating: 5 },
+    { name: "Lion Air", rating: 4 },
+    { name: "Citilink", rating: 4 },
+    { name: "AirAsia", rating: 4 },
+    { name: "Batik Air", rating: 5 },
+    { name: "Sriwijaya Air", rating: 3 }
   ];
 
   return (
-    <div className="font-sans">
+    <div className="min-h-screen bg-gray-50">
       {/* Hero Section */}
-      <section 
-        className="relative flex items-center justify-center h-[70vh] min-h-[600px] bg-cover bg-center text-white" 
-        style={{ backgroundImage: "url('/images/hero-background.jpg')" }} 
-      >
-        <div className="absolute inset-0 bg-black opacity-50"></div>
-        <div className="relative z-10 container mx-auto px-4 flex flex-col items-center text-center">
-          <h1 className="text-4xl md:text-6xl font-extrabold mb-4 drop-shadow-lg" data-aos="zoom-in">Mau ke mana?</h1>
-          <p className="text-lg md:text-xl mb-8 drop-shadow-md" data-aos="zoom-in" data-aos-delay="300">Pesan tiket pesawat dan kereta api dengan harga terbaik!</p>
-          <div data-aos="fade-up" data-aos-delay="500">
-            <SearchWidget />
+      <section className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-purple-800 py-12">
+        <div className="absolute inset-0 bg-black bg-opacity-20"></div>
+        <div className="relative z-10 container mx-auto px-4">
+          <div className="text-center mb-8 text-white">
+            <h1 className="text-4xl md:text-5xl font-extrabold mb-4 drop-shadow-lg">
+              Hi Kamu! Mau ke mana?
+            </h1>
+            <p className="text-xl text-blue-100 drop-shadow-md max-w-2xl mx-auto">
+              Pesan tiket pesawat & kereta dengan harga terbaik. Perjalananmu, prioritas kami.
+            </p>
+          </div>
+          
+          <TravelSearchWidget />
+        </div>
+      </section>
+
+      {/* Promotions Section */}
+      <section className="py-12 bg-white">
+        <div className="container mx-auto px-4">
+          <h2 className="text-2xl font-bold text-gray-800 mb-8 text-center">Promo Spesial</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            {promotions.map((promo, index) => (
+              <div key={index} className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200 text-center hover:shadow-lg transition-all duration-300">
+                <div className={`w-16 h-16 ${promo.color} rounded-full flex items-center justify-center mx-auto mb-4 text-white font-bold text-xl`}>
+                  {promo.discount}
+                </div>
+                <h3 className="font-bold text-gray-800 text-lg mb-2">{promo.title}</h3>
+                <p className="text-gray-600 text-sm">{promo.description}</p>
+                <button className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                  Klaim Sekarang
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Keunggulan Aplikasi (Why Choose Us) */}
-      <section className="py-16 bg-white">
-          <div className="container mx-auto px-4">
-              <h2 className="text-3xl font-bold text-center mb-2 text-gray-800" data-aos="fade-down">Kenapa Memilih TripGO?</h2>
-              <p className="text-center text-gray-600 mb-10" data-aos="fade-down" data-aos-delay="200">Kami membuat perjalanan Anda mudah, cepat, dan terjangkau.</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-                  {features.map((feature, index) => (
-                      <FeatureCard key={index} {...feature} />
-                  ))}
-              </div>
-          </div>
-      </section>
-      
-      {/* Destinasi Populer */}
+      {/* Features Section */}
       <section className="py-16 bg-gray-50">
-          <div className="container mx-auto px-4">
-              <h2 className="text-3xl font-bold text-center mb-2 text-[#0A58CA]" data-aos="fade-down">Destinasi Populer</h2>
-              <p className="text-center text-gray-600 mb-10" data-aos="fade-down" data-aos-delay="200">Jelajahi tempat-tempat favorit dengan penawaran penerbangan dan kereta termurah.</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  {destinations.map((dest, index) => (
-                      <DestinationCard key={index} {...dest} delay={index * 100} />
-                  ))}
-              </div>
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">
+              Kenapa Memilih TripGo?
+            </h2>
+            <p className="text-gray-600 max-w-2xl mx-auto">
+              Platform terpercaya untuk memesan tiket pesawat dan kereta dengan pengalaman terbaik
+            </p>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
+            {features.map((feature, index) => (
+              <FeatureCard
+                key={index}
+                icon={feature.icon}
+                title={feature.title}
+                description={feature.description}
+                color={feature.color}
+              />
+            ))}
+          </div>
+        </div>
       </section>
 
-      {/* Promo Section */}
+      {/* Airlines Section */}
       <section className="py-16 bg-white">
-          <div className="container mx-auto px-4">
-              <h2 className="text-3xl font-bold text-center mb-2 text-[#FD7E14]" data-aos="fade-down">Jangan Lewatkan Promo!</h2>
-              <p className="text-center text-gray-600 mb-10" data-aos="fade-down" data-aos-delay="200">Dapatkan diskon dan penawaran terbaik hari ini.</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {promos.map((promo, index) => (
-                      <PromoCard key={index} {...promo} />
-                  ))}
-              </div>
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">
+              Maskapai Partner Kami
+            </h2>
+            <p className="text-gray-600">
+              Bekerja sama dengan maskapai terbaik untuk kenyamanan Anda
+            </p>
           </div>
-      </section>
-      
-      {/* Footer Placeholder (Opsional: untuk memberikan kesan lengkap) */}
-      <footer className="bg-[#0A58CA] text-white p-8 mt-12">
-        <div className="container mx-auto text-center text-sm">
-            &copy; {new Date().getFullYear()} TripGO. Semua Hak Dilindungi.
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 max-w-6xl mx-auto">
+            {airlines.map((airline, index) => (
+              <div key={index} className="bg-white rounded-lg p-4 text-center shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
+                <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center relative overflow-hidden">
+                  <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-xs">
+                    {airline.name.split(' ').map(word => word[0]).join('')}
+                  </div>
+                </div>
+                <h4 className="font-semibold text-gray-800 mb-2 text-sm">{airline.name}</h4>
+                <div className="flex items-center justify-center space-x-1">
+                  {[...Array(5)].map((_, i) => (
+                    <StarIcon
+                      key={i}
+                      className={`w-3 h-3 ${i < airline.rating ? 'text-yellow-400' : 'text-gray-300'}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </footer>
-    </div>  
+      </section>
+
+      {/* App Download Section */}
+      <section className="py-16 bg-gradient-to-r from-blue-600 to-blue-800 text-white">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col md:flex-row items-center justify-between max-w-6xl mx-auto">
+            <div className="md:w-1/2 mb-8 md:mb-0 text-center md:text-left">
+              <h2 className="text-2xl font-bold mb-4">Download Aplikasi TripGo</h2>
+              <p className="text-blue-100 mb-6 text-lg">
+                Dapatkan pengalaman memesan yang lebih baik dengan fitur eksklusif hanya di aplikasi mobile
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+                <button className="bg-black hover:bg-gray-900 text-white px-6 py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors">
+                  <span>Download di Play Store</span>
+                </button>
+                <button className="bg-black hover:bg-gray-900 text-white px-6 py-3 rounded-lg flex items-center justify-center space-x-2 transition-colors">
+                  <span>Download di App Store</span>
+                </button>
+              </div>
+            </div>
+            <div className="md:w-2/5 relative">
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                <h3 className="font-bold text-lg mb-4">Keuntungan di Aplikasi:</h3>
+                <ul className="space-y-3 text-blue-100">
+                  <li className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    <span>Promo dan voucher eksklusif</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    <span>Notifikasi harga terbaik</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    <span>Pemesanan lebih cepat</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    <span>Riwayat pemesanan mudah</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
