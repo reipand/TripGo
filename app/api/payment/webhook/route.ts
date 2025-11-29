@@ -9,23 +9,27 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Midtrans webhook signature verification
-const verifySignature = (requestBody: string, signature: string): boolean => {
-  const serverKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-YourServerKey';
-  const expectedSignature = crypto
-    .createHash('sha512')
-    .update(requestBody + serverKey)
-    .digest('hex');
-  
-  return signature === expectedSignature;
+// Refer to Midtrans docs: signature_key = sha512(order_id + status_code + gross_amount + server_key)
+const verifySignature = (payload: any): boolean => {
+  try {
+    const serverKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-YourServerKey';
+    const { order_id, status_code, gross_amount, signature_key } = payload || {};
+    if (!order_id || !status_code || !gross_amount || !signature_key) return false;
+    const raw = `${order_id}${status_code}${gross_amount}${serverKey}`;
+    const expected = crypto.createHash('sha512').update(raw).digest('hex');
+    return signature_key === expected;
+  } catch {
+    return false;
+  }
 };
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text();
-    const signature = request.headers.get('x-midtrans-signature') || '';
-    
-    // Verify webhook signature
-    if (!verifySignature(body, signature)) {
+    const notification = JSON.parse(body);
+
+    // Verify webhook signature using signature_key
+    if (!verifySignature(notification)) {
       console.error('Invalid webhook signature');
       return NextResponse.json(
         { error: 'Invalid signature' },
@@ -33,7 +37,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const notification = JSON.parse(body);
     const {
       order_id,
       transaction_status,

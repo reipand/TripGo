@@ -51,7 +51,11 @@ const SortIcon = () => (
 );
 
 // --- Komponen Kartu Tiket ---
-const TicketCard = ({ flight }: { flight: Flight }) => {
+const TicketCard = ({ flight, isSelected, onToggleCompare }: { 
+  flight: Flight, 
+  isSelected?: boolean, 
+  onToggleCompare?: (flightId: string) => void 
+}) => {
   const router = useRouter();
   const departure = new Date(flight.waktu_berangkat);
   const arrival = new Date(flight.waktu_tiba);
@@ -77,7 +81,20 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl">
+    <div className={`bg-white rounded-lg shadow-md p-4 flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 transition-all duration-300 hover:shadow-xl ${isSelected ? 'ring-2 ring-[#FD7E14]' : ''}`}>
+      {/* Compare checkbox */}
+      {onToggleCompare && (
+        <div className="flex items-center mb-2 md:mb-0">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleCompare(flight.id)}
+            className="h-4 w-4 text-[#FD7E14] focus:ring-[#FD7E14] border-gray-300 rounded"
+          />
+          <span className="ml-2 text-sm text-gray-600">Bandingkan</span>
+        </div>
+      )}
+      
       <Image 
         src={`/images/airline-logo-${flight.transportasi.nama.toLowerCase().replace(/\s+/g, '-')}.png`} 
         alt={`${flight.transportasi.nama} logo`} 
@@ -93,6 +110,7 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
         <div className="w-full md:w-1/3">
           <p className="text-xl font-bold text-gray-800">{departureTime}</p>
           <p className="text-sm text-gray-500">{flight.origin.name}</p>
+          <p className="text-xs text-gray-400">{flight.origin.code}</p>
         </div>
         
         <div className="w-full md:w-1/3 text-center my-2 md:my-0">
@@ -107,6 +125,7 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
         <div className="w-full md:w-1/3">
           <p className="text-xl font-bold text-gray-800">{arrivalTime}</p>
           <p className="text-sm text-gray-500">{flight.destination.name}</p>
+          <p className="text-xs text-gray-400">{flight.destination.code}</p>
         </div>
       </div>
 
@@ -116,86 +135,170 @@ const TicketCard = ({ flight }: { flight: Flight }) => {
         {isLimited && (
           <p className="text-red-500 text-sm font-semibold mt-1">Tersisa sedikit!</p>
         )}
-        {isSoldOut ? (
-          <button className="mt-2 w-full md:w-auto px-6 py-2 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed">
-            Habis
-          </button>
-        ) : (
-          <BookNowButton
-            flightId={flight.id}
-            variant="primary"
-            size="md"
-            className="mt-2 w-full md:w-auto bg-[#FD7E14] hover:bg-[#E06700]"
-          >
-            Pilih
-          </BookNowButton>
-        )}
+        <div className="mt-2 flex flex-col space-y-2">
+          {isSoldOut ? (
+            <button className="w-full md:w-auto px-6 py-2 bg-gray-400 text-white font-semibold rounded-lg cursor-not-allowed">
+              Habis
+            </button>
+          ) : (
+            <BookNowButton
+              flightId={flight.id}
+              variant="primary"
+              size="md"
+              className="w-full md:w-auto bg-[#FD7E14] hover:bg-[#E06700]"
+            >
+              Pilih
+            </BookNowButton>
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
 // --- Komponen Filter dan Sortir ---
-const FilterAndSort = ({ onSort, onFilter, activeSort, activeFilter }: { 
+const FilterAndSort = ({ 
+  onSort, 
+  onFilter, 
+  onAirlineFilter,
+  onPriceRangeFilter,
+  activeSort, 
+  activeFilter,
+  activeAirlineFilter,
+  priceRange,
+  availableAirlines 
+}: { 
   onSort: (sortType: string) => void, 
   onFilter: (filterType: string) => void,
+  onAirlineFilter: (airline: string) => void,
+  onPriceRangeFilter: (min: number, max: number) => void,
   activeSort: string,
-  activeFilter: string
+  activeFilter: string,
+  activeAirlineFilter: string,
+  priceRange: { min: number, max: number },
+  availableAirlines: string[]
 }) => {
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 mb-6 flex flex-col lg:flex-row lg:items-center justify-between">
-      {/* Bagian Sortir */}
-      <div className="flex items-center flex-wrap mb-4 lg:mb-0">
-        <div className="flex items-center text-sm font-semibold text-gray-700 mr-4 my-1">
-          <SortIcon /> Urutkan:
+    <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+      {/* Basic Filters */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-4">
+        {/* Bagian Sortir */}
+        <div className="flex items-center flex-wrap mb-4 lg:mb-0">
+          <div className="flex items-center text-sm font-semibold text-gray-700 mr-4 my-1">
+            <SortIcon /> Urutkan:
+          </div>
+          <div className="flex flex-wrap space-x-2">
+            <button 
+              onClick={() => onSort('price-asc')} 
+              className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeSort === 'price-asc' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              Harga Termurah
+            </button>
+            <button 
+              onClick={() => onSort('departure-asc')} 
+              className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeSort === 'departure-asc' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              Waktu Berangkat
+            </button>
+            <button 
+              onClick={() => onSort('duration-asc')} 
+              className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeSort === 'duration-asc' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              Durasi Tercepat
+            </button>
+          </div>
         </div>
-        <div className="flex flex-wrap space-x-2">
-          <button 
-            onClick={() => onSort('price-asc')} 
-            className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeSort === 'price-asc' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            Harga Termurah
-          </button>
-          <button 
-            onClick={() => onSort('departure-asc')} 
-            className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeSort === 'departure-asc' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            Waktu Berangkat
-          </button>
-          <button 
-            onClick={() => onSort('duration-asc')} 
-            className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeSort === 'duration-asc' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            Durasi Tercepat
-          </button>
+
+        {/* Bagian Filter Waktu */}
+        <div className="flex items-center flex-wrap">
+          <div className="flex items-center text-sm font-semibold text-gray-700 mr-4 my-1">
+            <FilterIcon /> Filter Waktu:
+          </div>
+          <div className="flex flex-wrap space-x-2">
+            <button 
+              onClick={() => onFilter('morning')} 
+              className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeFilter === 'morning' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              Pagi (00:00 - 11:59)
+            </button>
+            <button 
+              onClick={() => onFilter('afternoon')} 
+              className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeFilter === 'afternoon' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              Siang (12:00 - 17:59)
+            </button>
+            <button 
+              onClick={() => onFilter('night')} 
+              className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeFilter === 'night' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              Malam (18:00 - 23:59)
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Bagian Filter */}
-      <div className="flex items-center flex-wrap mt-4 lg:mt-0">
-        <div className="flex items-center text-sm font-semibold text-gray-700 mr-4 my-1">
-          <FilterIcon /> Filter Waktu:
-        </div>
-        <div className="flex flex-wrap space-x-2">
-          <button 
-            onClick={() => onFilter('morning')} 
-            className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeFilter === 'morning' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+      {/* Advanced Filters Toggle */}
+      <div className="border-t pt-4">
+        <button 
+          onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          className="flex items-center text-sm font-semibold text-[#0A58CA] hover:text-[#0548AD] transition-colors duration-200"
+        >
+          <FilterIcon />
+          Filter Lanjutan
+          <svg 
+            className={`ml-2 h-4 w-4 transition-transform duration-200 ${showAdvancedFilters ? 'rotate-180' : ''}`} 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
           >
-            Pagi (00:00 - 11:59)
-          </button>
-          <button 
-            onClick={() => onFilter('afternoon')} 
-            className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeFilter === 'afternoon' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            Siang (12:00 - 17:59)
-          </button>
-          <button 
-            onClick={() => onFilter('night')} 
-            className={`px-4 py-2 text-sm rounded-full transition-colors duration-200 ${activeFilter === 'night' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            Malam (18:00 - 23:59)
-          </button>
-        </div>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showAdvancedFilters && (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Airline Filter */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Maskapai:</label>
+              <div className="flex flex-wrap gap-2">
+                <button 
+                  onClick={() => onAirlineFilter('')} 
+                  className={`px-3 py-1 text-xs rounded-full transition-colors duration-200 ${activeAirlineFilter === '' ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                >
+                  Semua
+                </button>
+                {availableAirlines.map(airline => (
+                  <button 
+                    key={airline}
+                    onClick={() => onAirlineFilter(airline)} 
+                    className={`px-3 py-1 text-xs rounded-full transition-colors duration-200 ${activeAirlineFilter === airline ? 'bg-[#FD7E14] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                  >
+                    {airline}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Price Range Filter */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Rentang Harga: Rp {priceRange.min.toLocaleString('id-ID')} - Rp {priceRange.max.toLocaleString('id-ID')}
+              </label>
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="range" 
+                  min={priceRange.min} 
+                  max={priceRange.max} 
+                  value={priceRange.max}
+                  onChange={(e) => onPriceRangeFilter(priceRange.min, parseInt(e.target.value))}
+                  className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -210,6 +313,11 @@ const FlightResults = () => {
   const [error, setError] = useState<string | null>(null);
   const [sortType, setSortType] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('');
+  const [airlineFilter, setAirlineFilter] = useState<string>('');
+  const [priceRange, setPriceRange] = useState<{ min: number, max: number }>({ min: 0, max: 10000000 });
+  const [availableAirlines, setAvailableAirlines] = useState<string[]>([]);
+  const [selectedFlights, setSelectedFlights] = useState<string[]>([]);
+  const [showComparison, setShowComparison] = useState(false);
 
   const origin = searchParams.get('origin') || 'Tidak Diketahui';
   const destination = searchParams.get('destination') || 'Tidak Diketahui';
@@ -238,14 +346,44 @@ const FlightResults = () => {
           headers: { 'Content-Type': 'application/json' }
         });
 
-        const data = await response.json();
+        let result;
+        try {
+          result = await response.json();
+        } catch (parseError) {
+          throw new Error('Failed to parse response from server');
+        }
         
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch flights');
+          throw new Error(result?.error || result?.details || 'Gagal mengambil data penerbangan');
         }
 
+        if (!result.success) {
+          // If no flights found, return empty array instead of error
+          if (result.error?.includes('tidak ditemukan') || result.error?.includes('not found')) {
+            setAllFlights([]);
+            setFilteredAndSortedFlights([]);
+            setAvailableAirlines([]);
+            setPriceRange({ min: 0, max: 0 });
+            return;
+          }
+          throw new Error(result.error || 'Gagal mengambil data penerbangan');
+        }
+
+        const data = result.data || [];
         setAllFlights(data);
         setFilteredAndSortedFlights(data);
+        
+        // Extract available airlines and price range
+        const airlines = [...new Set(data.map((flight: Flight) => flight.transportasi.nama))] as string[];
+        setAvailableAirlines(airlines);
+        
+        if (data.length > 0) {
+          const prices = data.map((flight: Flight) => flight.harga);
+          setPriceRange({
+            min: Math.min(...prices),
+            max: Math.max(...prices)
+          });
+        }
       } catch (error) {
         console.error('Error fetching flights:', error);
         setError(error instanceof Error ? error.message : 'An unknown error occurred');
@@ -274,6 +412,14 @@ const FlightResults = () => {
       });
     }
 
+    // Filter by airline
+    if (airlineFilter) {
+      result = result.filter(flight => flight.transportasi.nama === airlineFilter);
+    }
+
+    // Filter by price range
+    result = result.filter(flight => flight.harga >= priceRange.min && flight.harga <= priceRange.max);
+
     // Sort
     if (sortType) {
       result.sort((a, b) => {
@@ -293,7 +439,19 @@ const FlightResults = () => {
     }
 
     setFilteredAndSortedFlights(result);
-  }, [sortType, filterType, allFlights]);
+  }, [sortType, filterType, airlineFilter, priceRange, allFlights]);
+
+  // Handle flight comparison
+  const handleToggleCompare = (flightId: string) => {
+    setSelectedFlights(prev => {
+      if (prev.includes(flightId)) {
+        return prev.filter(id => id !== flightId);
+      } else if (prev.length < 3) {
+        return [...prev, flightId];
+      }
+      return prev;
+    });
+  };
 
   // Scroll ke atas saat filter/sort berubah
   useEffect(() => {
@@ -329,19 +487,41 @@ const FlightResults = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Hasil Pencarian <PlaneTakeoffIcon /></h1>
-        <p className="text-gray-600">
-          {origin} → {destination}
-          <span className="mx-2 text-gray-400">|</span>
-          {formattedDate}
-        </p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800">Hasil Pencarian <PlaneTakeoffIcon /></h1>
+            <p className="text-gray-600">
+              {origin} → {destination}
+              <span className="mx-2 text-gray-400">|</span>
+              {formattedDate}
+            </p>
+          </div>
+          {selectedFlights.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">
+                {selectedFlights.length} penerbangan dipilih
+              </span>
+              <button
+                onClick={() => setShowComparison(!showComparison)}
+                className="px-4 py-2 bg-[#0A58CA] text-white rounded-lg hover:bg-[#0548AD] transition-colors duration-200"
+              >
+                {showComparison ? 'Sembunyikan' : 'Bandingkan'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       
       <FilterAndSort 
         onSort={setSortType} 
         onFilter={setFilterType}
+        onAirlineFilter={setAirlineFilter}
+        onPriceRangeFilter={(min, max) => setPriceRange({ min, max })}
         activeSort={sortType}
         activeFilter={filterType}
+        activeAirlineFilter={airlineFilter}
+        priceRange={priceRange}
+        availableAirlines={availableAirlines}
       />
 
       {loading ? (
@@ -396,10 +576,41 @@ const FlightResults = () => {
               Menampilkan {filteredAndSortedFlights.length} penerbangan
             </p>
           )}
+          {/* Comparison View */}
+          {showComparison && selectedFlights.length > 0 && (
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-blue-800 mb-4">Perbandingan Penerbangan</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {selectedFlights.map(flightId => {
+                  const flight = filteredAndSortedFlights.find(f => f.id === flightId);
+                  if (!flight) return null;
+                  return (
+                    <div key={flightId} className="bg-white p-4 rounded-lg border border-blue-200">
+                      <div className="text-center">
+                        <p className="font-semibold text-gray-800">{flight.transportasi.nama}</p>
+                        <p className="text-2xl font-bold text-orange-500">Rp {flight.harga.toLocaleString('id-ID')}</p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(flight.waktu_berangkat).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} - 
+                          {new Date(flight.waktu_tiba).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        <p className="text-xs text-gray-400">{flight.kursi_tersedia} kursi tersedia</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
             {filteredAndSortedFlights.length > 0 ? (
               filteredAndSortedFlights.map(flight => (
-                <TicketCard key={flight.id} flight={flight} />
+                <TicketCard 
+                  key={flight.id} 
+                  flight={flight} 
+                  isSelected={selectedFlights.includes(flight.id)}
+                  onToggleCompare={handleToggleCompare}
+                />
               ))
             ) : (
               <p className="text-center text-gray-500 mt-10">Tidak ada penerbangan yang ditemukan untuk rute dan tanggal ini.</p>

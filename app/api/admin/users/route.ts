@@ -2,10 +2,39 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/app/lib/supabaseClient';
 import { requireAdmin } from '@/app/lib/api-auth';
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest) {
+  const { user, error: authError } = await requireAdmin(request);
+  
+  if (authError) {
+    return NextResponse.json({ error: authError }, { status: authError === 'Unauthorized' ? 401 : 403 });
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+    const role = searchParams.get('role');
+    
+    let query = supabase.from('users').select('*');
+    
+    if (status) {
+      query = query.eq('email_verified', status === 'verified');
+    }
+    
+    if (role) {
+      query = query.eq('role', role);
+    }
+    
+    const { data, error } = await query.order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return NextResponse.json(data, { status: 200 });
+  } catch (error: any) {
+    console.error('Error fetching users:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
   const { user, error: authError } = await requireAdmin(request);
   
   if (authError) {
@@ -14,37 +43,11 @@ export async function PUT(
 
   try {
     const body = await request.json();
-    const { data, error } = await supabase
-      .from('users')
-      .update({ ...body, updated_at: new Date().toISOString() })
-      .eq('id', params.id)
-      .select();
-
+    const { data, error } = await supabase.from('users').insert(body).select();
     if (error) throw error;
-    return NextResponse.json(data, { status: 200 });
+    return NextResponse.json(data, { status: 201 });
   } catch (error: any) {
-    console.error('Error updating user:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { user, error: authError } = await requireAdmin(request);
-  
-  if (authError) {
-    return NextResponse.json({ error: authError }, { status: authError === 'Unauthorized' ? 401 : 403 });
-  }
-
-  try {
-    const { error } = await supabase.from('users').delete().eq('id', params.id);
-
-    if (error) throw error;
-    return NextResponse.json({ message: 'User deleted successfully' }, { status: 200 });
-  } catch (error: any) {
-    console.error('Error deleting user:', error);
+    console.error('Error creating user:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

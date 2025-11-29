@@ -102,23 +102,56 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
       setLoading(true);
       setError(null);
 
+      if (!orderId) {
+        setError('Order ID tidak valid');
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
         .eq('order_id', orderId)
-        .single();
+        .maybeSingle();
 
       if (error) {
-        throw error;
+        // Only throw error if it's not "not found" error
+        if (error.code !== 'PGRST116') {
+          throw error;
+        }
       }
 
       if (data) {
-        setPaymentStatus(data);
-        onStatusChange?.(data);
+        const statusData: PaymentStatus = {
+          order_id: data.order_id,
+          status: data.status as any,
+          fraud_status: data.fraud_status as any,
+          transaction_id: data.midtrans_transaction_id || '',
+          payment_type: data.payment_type || '',
+          amount: Number(data.amount || 0),
+          updated_at: data.updated_at || data.created_at || new Date().toISOString()
+        };
+        setPaymentStatus(statusData);
+        onStatusChange?.(statusData);
+      } else {
+        // Transaction not found yet - set as pending
+        setPaymentStatus({
+          order_id: orderId,
+          status: 'pending',
+          fraud_status: 'accept',
+          transaction_id: '',
+          payment_type: '',
+          amount: 0,
+          updated_at: new Date().toISOString()
+        });
       }
     } catch (err: any) {
       console.error('Error fetching payment status:', err);
-      setError(err.message || 'Gagal mengambil status pembayaran');
+      setError(err?.message || 'Gagal mengambil status pembayaran');
+      // Don't set error state if transaction just doesn't exist yet
+      if (err?.code === 'PGRST116') {
+        setError(null);
+      }
     } finally {
       setLoading(false);
     }
