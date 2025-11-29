@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 import Navbar from "./components/Navbar";
@@ -8,58 +8,40 @@ import { WalletProvider } from './contexts/WalletContext';
 import { LoadingProvider } from './contexts/LoadingContext';
 import { ToastProvider } from './contexts/ToastContext';
 
-// Optimized font loading with fallback
+// Optimized font loading with subset and preload
 const inter = Inter({ 
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
   display: 'swap',
   variable: '--font-inter',
+  preload: true,
+  adjustFontFallback: true,
 });
 
 const poppins = Poppins({
-  weight: ['400', '500', '600', '700'],
-  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  subsets: ['latin', 'latin-ext'],
   display: 'swap',
   variable: '--font-poppins',
+  preload: true,
+  adjustFontFallback: true,
 });
 
 export const metadata: Metadata = {
   title: {
-    default: "TripGo - Pesan Tiket Pesawat & Kereta dengan Mudah",
-    template: "%s | TripGo"
+    default: "TripGo - Pesan Tiket Pesawat & Kereta Api Online",
+    template: "%s | TripGo - Booking Tiket Travel Terpercaya"
   },
-  description: "Platform pemesanan tiket pesawat dan kereta terpercaya. Dapatkan harga terbaik dengan pengalaman booking yang mudah dan aman.",
-  keywords: ["tiket pesawat", "tiket kereta", "travel", "booking", "penerbangan", "perjalanan"],
+  description: "Booking tiket pesawat & kereta api online dengan harga promo. Garansi harga terbaik, pembayaran aman, dan dukungan customer service 24/7. Pesan sekarang!",
+  keywords: ["tiket pesawat", "tiket kereta", "booking tiket online", "travel murah", "penerbangan domestik", "kereta api indonesia", "promo tiket", "tripgo"],
   authors: [{ name: "TripGo Team" }],
-  creator: "TripGo",
-  publisher: "TripGo",
-  formatDetection: {
-    email: false,
-    address: false,
-    telephone: false,
-  },
-  metadataBase: new URL('https://tripgo.com'),
-  openGraph: {
-    type: 'website',
-    locale: 'id_ID',
-    url: 'https://tripgo.com',
-    title: 'TripGo - Pesan Tiket Pesawat & Kereta dengan Mudah',
-    description: 'Platform pemesanan tiket pesawat dan kereta terpercaya. Dapatkan harga terbaik dengan pengalaman booking yang mudah dan aman.',
-    siteName: 'TripGo',
-    images: [
-      {
-        url: '/images/og-image.jpg',
-        width: 1200,
-        height: 630,
-        alt: 'TripGo - Platform Pemesanan Tiket',
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'TripGo - Pesan Tiket Pesawat & Kereta dengan Mudah',
-    description: 'Platform pemesanan tiket pesawat dan kereta terpercaya.',
-    images: ['/images/og-image.jpg'],
-  },
+  creator: "TripGo Indonesia",
+  publisher: "PT. TripGo Digital Indonesia",
+  category: "Travel & Tourism",
+  classification: "Online Travel Agency",
+  
+  // Enhanced metadata
+  applicationName: "TripGo",
+  referrer: "origin-when-cross-origin",
   robots: {
     index: true,
     follow: true,
@@ -71,13 +53,80 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
+  
+  // Verification untuk search engines
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION,
+    yandex: process.env.YANDEX_VERIFICATION,
+  },
+  
+  // Alternates untuk multi-language (future proof)
+  alternates: {
+    canonical: "https://tripgo.com",
+    languages: {
+      'id-ID': 'https://tripgo.com',
+    },
+  },
+  
+  // Open Graph dengan data yang lebih lengkap
+  openGraph: {
+    type: 'website',
+    locale: 'id_ID',
+    url: 'https://tripgo.com',
+    siteName: 'TripGo - Platform Travel Terpercaya',
+    title: 'TripGo - Pesan Tiket Pesawat & Kereta Api Online',
+    description: 'Booking tiket pesawat & kereta api online dengan harga promo. Garansi harga terbaik dan pembayaran aman.',
+    images: [
+      {
+        url: '/images/og-image.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'TripGo - Platform Booking Tiket Pesawat dan Kereta Api',
+        type: 'image/jpeg',
+      },
+    ],
+    emails: ['support@tripgo.com'],
+    phoneNumbers: ['+62-21-1234-5678'],
+  },
+  
+  // Twitter Cards
+  twitter: {
+    card: 'summary_large_image',
+    title: 'TripGo - Booking Tiket Travel Online',
+    description: 'Platform pemesanan tiket pesawat & kereta terpercaya di Indonesia',
+    creator: '@tripgo_id',
+    site: '@tripgo_id',
+    images: ['/images/og-image.jpg'],
+  },
+  
+  // App Links untuk mobile deep linking
+  appLinks: {
+    web: {
+      url: 'https://tripgo.com',
+      should_fallback: false,
+    },
+  },
+  
+  // Format detection
+  formatDetection: {
+    telephone: true,
+    date: false,
+    address: false,
+    email: false,
+    url: false,
+  },
 };
 
-// Viewport export for Next.js 13+ (App Router)
-export const viewport = {
+export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#0A58CA',
+  maximumScale: 5,
+  userScalable: true,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#0A58CA' },
+    { media: '(prefers-color-scheme: dark)', color: '#1E40AF' },
+  ],
+  colorScheme: 'light dark',
 };
 
 interface RootLayoutProps {
@@ -85,28 +134,70 @@ interface RootLayoutProps {
   modal?: React.ReactNode;
 }
 
-export default function RootLayout({
-  children,
-  modal,
-}: Readonly<RootLayoutProps>) {
+export default function RootLayout({ children, modal }: Readonly<RootLayoutProps>) {
   return (
-    <html lang="id" className={`${inter.variable} ${poppins.variable}`}>
+    <html 
+      lang="id" 
+      className={`${inter.variable} ${poppins.variable} scroll-smooth`}
+      suppressHydrationWarning
+    >
       <head>
         {/* Preload critical resources */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://api.tripgo.com" />
         
-        {/* Favicon and app icons */}
+        {/* Preload critical images */}
+        <link rel="preload" href="/images/hero-background.jpg" as="image" type="image/jpeg" />
+        
+        {/* Favicon dan App Icons modern */}
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+        <link rel="manifest" href="/site.webmanifest" />
+        <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#0A58CA" />
         
-        {/* DNS prefetch for external domains */}
+        {/* DNS prefetch untuk performance */}
+        <link rel="dns-prefetch" href="//fonts.googleapis.com" />
+        <link rel="dns-prefetch" href="//fonts.gstatic.com" />
         <link rel="dns-prefetch" href="//api.tripgo.com" />
+        
+        {/* Additional meta tags */}
+        <meta name="apple-mobile-web-app-title" content="TripGo" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        
+        {/* Structured Data untuk SEO */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "TravelAgency",
+              "name": "TripGo",
+              "description": "Platform pemesanan tiket pesawat dan kereta api terpercaya di Indonesia",
+              "url": "https://tripgo.com",
+              "logo": "https://tripgo.com/logo.png",
+              "telephone": "+62-21-1234-5678",
+              "email": "support@tripgo.com",
+              "address": {
+                "@type": "PostalAddress",
+                "addressLocality": "Jakarta",
+                "addressCountry": "ID"
+              },
+              "sameAs": [
+                "https://facebook.com/tripgo",
+                "https://twitter.com/tripgo_id",
+                "https://instagram.com/tripgo_id"
+              ]
+            })
+          }}
+        />
       </head>
-      <body className={`font-sans bg-gray-50 antialiased`}>
-        {/* PERBAIKAN: ToastProvider harus berada di LUAR WalletProvider */}
+      <body className={`font-sans bg-gray-50 text-gray-900 antialiased selection:bg-blue-100 selection:text-blue-900`}>
         <ToastProvider>
           <LoadingProvider>
             <AuthProvider>
@@ -115,7 +206,7 @@ export default function RootLayout({
                   {/* Skip to main content for accessibility */}
                   <a
                     href="#main-content"
-                    className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-blue-600 text-white px-4 py-2 rounded-lg z-50"
+                    className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-blue-600 text-white px-4 py-2 rounded-lg z-50 transition-transform focus:scale-105"
                   >
                     Loncat ke konten utama
                   </a>
@@ -124,7 +215,8 @@ export default function RootLayout({
                   
                   <main 
                     id="main-content"
-                    className="flex-1 relative"
+                    className="flex-1 relative focus:outline-none"
+                    tabIndex={-1}
                   >
                     {children}
                   </main>
@@ -135,10 +227,25 @@ export default function RootLayout({
                 {/* Modal slot for parallel routes */}
                 {modal}
                 
-                {/* Global background elements */}
-                <div className="fixed inset-0 -z-10 overflow-hidden">
-                  <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-100 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse-slow"></div>
-                  <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-orange-100 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse-slow delay-1000"></div>
+                {/* Global background elements dengan performance optimization */}
+                <div 
+                  className="fixed inset-0 -z-10 overflow-hidden pointer-events-none"
+                  aria-hidden="true"
+                >
+                  <div 
+                    className="absolute -top-40 -right-40 w-80 h-80 bg-blue-100 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse-slow"
+                    style={{ 
+                      animationDelay: '0s',
+                      willChange: 'transform, opacity'
+                    }}
+                  ></div>
+                  <div 
+                    className="absolute -bottom-40 -left-40 w-80 h-80 bg-orange-100 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse-slow"
+                    style={{ 
+                      animationDelay: '2000ms',
+                      willChange: 'transform, opacity'
+                    }}
+                  ></div>
                 </div>
               </WalletProvider>
             </AuthProvider>

@@ -1,13 +1,13 @@
-// app/dashboard/page.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { useWallet } from '@/app/contexts/WalletContext';
 import { supabase } from '@/app/lib/supabaseClient';
+
 
 // --- Icon Components ---
 const UserIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>;
@@ -421,7 +421,7 @@ export default function DashboardPage() {
     }, [activeTab, user]);
 
     // Fetch bookings hanya untuk user yang login
-    const fetchBookings = async () => {
+    const fetchBookings =  useCallback(async () => {
         if (!user) {
             setBookings([]);
             setLoading(false);
@@ -465,8 +465,8 @@ export default function DashboardPage() {
         } finally {
             setLoading(false);
         }
-    };
-
+    }, [user]);
+    
     const handleRefresh = async () => {
         setRefreshing(true);
         if (user) {
@@ -572,7 +572,7 @@ export default function DashboardPage() {
     }, [user, userProfile]);
 
     // Statistik untuk guest dan logged in user
-    const stats = [
+    const stats = useMemo(() => [
         {
             title: 'Total Pesanan',
             value: user ? bookings.length.toString() : '0',
@@ -601,7 +601,7 @@ export default function DashboardPage() {
             icon: <PlaneIcon />,
             color: 'red' as const
         }
-    ];
+    ], [user, bookings.length, walletLoading, formatBalance, points]);
 
     // Tampilkan loading state hanya untuk auth loading (bukan untuk guest)
     if (authLoading && !user) {
@@ -614,7 +614,39 @@ export default function DashboardPage() {
             </div>
         );
     }
+// Tambahkan state untuk better error handling
+const [loadingStates, setLoadingStates] = useState({
+  bookings: false,
+  wallet: false,
+  profile: false
+});
 
+// Improved error component
+const ErrorState = ({ message, onRetry, type = 'warning' }: { 
+  message: string; 
+  onRetry: () => void;
+  type?: 'warning' | 'error' | 'info';
+}) => {
+  const config = {
+    warning: { bg: 'bg-yellow-50', border: 'border-yellow-200', icon: '⚠️' },
+    error: { bg: 'bg-red-50', border: 'border-red-200', icon: '❌' },
+    info: { bg: 'bg-blue-50', border: 'border-blue-200', icon: 'ℹ️' }
+  }[type];
+
+  return (
+    <div className={`${config.bg} ${config.border} rounded-xl border p-6 text-center`}>
+      <div className="text-2xl mb-2">{config.icon}</div>
+      <h4 className="font-semibold text-gray-800 mb-2">Terjadi Kesalahan</h4>
+      <p className="text-gray-600 mb-4 text-sm">{message}</p>
+      <button 
+        onClick={onRetry}
+        className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm"
+      >
+        Coba Lagi
+      </button>
+    </div>
+  );
+};
     return (
         <div className="min-h-screen bg-gray-50 font-sans">
             {/* Header */}

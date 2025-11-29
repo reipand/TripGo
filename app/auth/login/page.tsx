@@ -244,13 +244,13 @@ function LoginContent() {
         </div>
 
         {/* Demo Credentials */}
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        {/* <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <h3 className="text-sm font-semibold text-blue-800 mb-2">Demo Credentials:</h3>
           <p className="text-xs text-blue-700">
             Email: <span className="font-mono">user@tripgo.com</span><br/>
             Password: <span className="font-mono">password123</span>
           </p>
-        </div>
+        </div> */}
       </div>
     </div>
   );
