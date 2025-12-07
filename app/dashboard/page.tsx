@@ -391,7 +391,6 @@ const GuestBookingCard = () => (
 export default function DashboardPage() {
     const router = useRouter();
     const { user, userProfile, signOut, loading: authLoading } = useAuth();
-    
     const { 
         wallet,
         balance: walletBalance, 
@@ -404,24 +403,45 @@ export default function DashboardPage() {
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(false);
     const [bookings, setBookings] = useState<any[]>([]);
-    const [points, setPoints] = useState(user ? 1250 : 0);
+    const [points] = useState(user ? 1250 : 0); // Changed to const since not updated
     const [bookingsError, setBookingsError] = useState<string | null>(null);
-    const [notifications, setNotifications] = useState(user ? 3 : 0);
+    const [notifications] = useState(user ? 3 : 0); // Changed to const
     const [refreshing, setRefreshing] = useState(false);
+    const [navigationBlocked, setNavigationBlocked] = useState(false);
 
-    // Refresh data ketika tab berubah atau user berubah
+    // Prevent unwanted navigation
     useEffect(() => {
-        if (activeTab === 'bookings' && user) {
-            fetchBookings();
-        }
-        if (activeTab === 'wallet' && user) {
-            refreshWallet();
-            getTransactions();
-        }
-    }, [activeTab, user]);
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (navigationBlocked) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+
+        const handleClick = (e: MouseEvent) => {
+            // Check if click is on a Link component
+            const target = e.target as HTMLElement;
+            const link = target.closest('a');
+            
+            if (link && link.getAttribute('href') === '/') {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Navigation to home blocked');
+                return false;
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        document.addEventListener('click', handleClick, true);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            document.removeEventListener('click', handleClick, true);
+        };
+    }, [navigationBlocked]);
 
     // Fetch bookings hanya untuk user yang login
-    const fetchBookings =  useCallback(async () => {
+    const fetchBookings = useCallback(async () => {
         if (!user) {
             setBookings([]);
             setLoading(false);
@@ -432,20 +452,14 @@ export default function DashboardPage() {
             setLoading(true);
             setBookingsError(null);
             
-            console.log('📡 Fetching bookings for user:', user.id);
-            
             const { data, error } = await supabase
                 .from('bookings')
                 .select('*')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false });
 
-            if (error) {
-                console.error('❌ Supabase error:', error);
-                throw error;
-            }
+            if (error) throw error;
             
-            console.log('✅ Bookings fetched:', data?.length || 0);
             setBookings(data || []);
             
         } catch (error: any) {
@@ -466,14 +480,42 @@ export default function DashboardPage() {
             setLoading(false);
         }
     }, [user]);
-    
+
+    // Enhanced navigation handler
+    const handleNavigation = useCallback((path: string) => {
+        if (navigationBlocked) return;
+        
+        // Prevent navigation to dashboard if already on dashboard
+        if (path === '/dashboard' || path === '/') {
+            console.log('Navigation to dashboard blocked');
+            return;
+        }
+        
+        router.push(path);
+    }, [router, navigationBlocked]);
+
+    // Enhanced tab switching
+    const handleTabSwitch = useCallback((tabId: string) => {
+        if (!user && (tabId === 'bookings' || tabId === 'wallet' || tabId === 'profile')) {
+            handleNavigation('/auth/login');
+            return;
+        }
+        
+        // Prevent setting same tab
+        if (activeTab === tabId) return;
+        
+        setActiveTab(tabId);
+    }, [user, activeTab, handleNavigation]);
+
     const handleRefresh = async () => {
+        if (refreshing) return;
+        
         setRefreshing(true);
         if (user) {
             await fetchBookings();
             await refreshWallet();
         }
-        setRefreshing(false);
+        setTimeout(() => setRefreshing(false), 1000);
     };
 
     // Setup realtime subscription hanya untuk user yang login
@@ -497,16 +539,10 @@ export default function DashboardPage() {
                             filter: `user_id=eq.${user.id}` 
                         },
                         (payload) => {
-                            console.log('🔄 Realtime booking update:', payload);
                             fetchBookings();
                         }
                     )
-                    .subscribe((status) => {
-                        console.log('📡 Bookings subscription status:', status);
-                        if (status === 'SUBSCRIBED') {
-                            console.log('✅ Successfully subscribed to bookings changes');
-                        }
-                    });
+                    .subscribe();
 
             } catch (error) {
                 console.error('❌ Error setting up realtime:', error);
@@ -517,35 +553,75 @@ export default function DashboardPage() {
 
         return () => {
             if (subscription) {
-                console.log('🧹 Cleaning up bookings subscription');
                 supabase.removeChannel(subscription);
             }
         };
-    }, [user?.id]);
+    }, [user?.id, fetchBookings]);
 
     const handleLogout = async () => {
         try {
+            setNavigationBlocked(true);
             await signOut();
-            router.push('/');
+            // Use replace instead of push to prevent back navigation
+            router.replace('/');
         } catch (error) {
             console.error('❌ Error during logout:', error);
+            setNavigationBlocked(false);
         }
     };
 
     const handleLogin = () => {
-        router.push('/auth/login');
+        handleNavigation('/auth/login');
     };
 
     const handleSignUp = () => {
-        router.push('/auth/register');
+        handleNavigation('/auth/register');
     };
 
     const handleTopUp = () => {
         if (!user) {
-            router.push('/auth/login');
+            handleNavigation('/auth/login');
             return;
         }
-        router.push('/payment/topup');
+        handleNavigation('/payment/topup');
+    };
+
+    // Enhanced Link component to prevent unwanted navigation
+    const SafeLink = ({ 
+        href, 
+        children, 
+        onClick, 
+        className = "",
+        ...props 
+    }: {
+        href: string;
+        children: React.ReactNode;
+        onClick?: () => void;
+        className?: string;
+    } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+        const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+            // Prevent navigation to home/dashboard if it's causing issues
+            if (href === '/' || href === '/dashboard') {
+                e.preventDefault();
+                console.log('Navigation prevented for:', href);
+                return;
+            }
+            
+            if (onClick) {
+                onClick();
+            }
+        };
+
+        return (
+            <Link 
+                href={href} 
+                onClick={handleClick}
+                className={className}
+                {...props}
+            >
+                {children}
+            </Link>
+        );
     };
 
     // User data untuk guest dan logged in user
@@ -601,7 +677,7 @@ export default function DashboardPage() {
             icon: <PlaneIcon />,
             color: 'red' as const
         }
-    ], [user, bookings.length, walletLoading, formatBalance, points]);
+    ], [user, bookings, walletLoading, formatBalance, points]);
 
     // Tampilkan loading state hanya untuk auth loading (bukan untuk guest)
     if (authLoading && !user) {
@@ -614,50 +690,29 @@ export default function DashboardPage() {
             </div>
         );
     }
-// Tambahkan state untuk better error handling
-const [loadingStates, setLoadingStates] = useState({
-  bookings: false,
-  wallet: false,
-  profile: false
-});
 
-// Improved error component
-const ErrorState = ({ message, onRetry, type = 'warning' }: { 
-  message: string; 
-  onRetry: () => void;
-  type?: 'warning' | 'error' | 'info';
-}) => {
-  const config = {
-    warning: { bg: 'bg-yellow-50', border: 'border-yellow-200', icon: '⚠️' },
-    error: { bg: 'bg-red-50', border: 'border-red-200', icon: '❌' },
-    info: { bg: 'bg-blue-50', border: 'border-blue-200', icon: 'ℹ️' }
-  }[type];
-
-  return (
-    <div className={`${config.bg} ${config.border} rounded-xl border p-6 text-center`}>
-      <div className="text-2xl mb-2">{config.icon}</div>
-      <h4 className="font-semibold text-gray-800 mb-2">Terjadi Kesalahan</h4>
-      <p className="text-gray-600 mb-4 text-sm">{message}</p>
-      <button 
-        onClick={onRetry}
-        className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm"
-      >
-        Coba Lagi
-      </button>
-    </div>
-  );
-};
     return (
         <div className="min-h-screen bg-gray-50 font-sans">
             {/* Header */}
             <header className="bg-white shadow-sm sticky top-0 z-10 border-b border-gray-200">
                 <div className="container mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
-                    <Link href="/" className="flex items-center space-x-3">
+                    {/* Logo - menggunakan button bukan Link untuk mencegah navigasi */}
+                    <button 
+                        onClick={() => {
+                            // Hanya reset ke tab overview tanpa navigasi
+                            if (activeTab !== 'overview') {
+                                setActiveTab('overview');
+                                window.scrollTo(0, 0);
+                            }
+                        }}
+                        className="flex items-center space-x-3 focus:outline-none"
+                    >
                         <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
                             <span className="text-white font-bold text-lg">T</span>
                         </div>
                         <span className="font-bold text-2xl text-gray-800 hidden sm:block">TripGo</span>
-                    </Link>
+                    </button>
+                    
                     <div className="flex items-center space-x-4">
                         {user ? (
                             <>
@@ -665,10 +720,14 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                     onClick={handleRefresh}
                                     disabled={refreshing}
                                     className={`p-2 text-gray-600 hover:text-blue-600 transition-colors ${refreshing ? 'animate-spin' : ''}`}
+                                    title="Refresh data"
                                 >
                                     <RefreshIcon />
                                 </button>
-                                <button className="relative p-2 text-gray-600 hover:text-blue-600 transition-colors">
+                                <button 
+                                    className="relative p-2 text-gray-600 hover:text-blue-600 transition-colors"
+                                    title="Notifikasi"
+                                >
                                     <BellIcon />
                                     {notifications > 0 && (
                                         <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
@@ -754,18 +813,13 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                 ].map((item) => (
                                     <button
                                         key={item.id}
-                                        onClick={() => {
-                                            if (!user && (item.id === 'bookings' || item.id === 'wallet' || item.id === 'profile')) {
-                                                router.push('/auth/login');
-                                                return;
-                                            }
-                                            setActiveTab(item.id);
-                                        }}
+                                        onClick={() => handleTabSwitch(item.id)}
                                         className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                                             activeTab === item.id 
                                                 ? 'bg-blue-50 text-blue-600 border border-blue-200' 
                                                 : 'text-gray-600 hover:bg-gray-50'
                                         } ${!user && (item.id === 'bookings' || item.id === 'wallet' || item.id === 'profile') ? 'opacity-60' : ''}`}
+                                        disabled={activeTab === item.id}
                                     >
                                         {item.icon}
                                         <span className="font-medium">{item.label}</span>
@@ -828,13 +882,13 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                         >
                                             <RefreshIcon />
                                         </button>
-                                        <Link 
+                                        <SafeLink 
                                             href="/search/flights"
                                             className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center space-x-2 w-full sm:w-auto justify-center"
                                         >
                                             <PlaneIcon />
                                             <span>Pesan Tiket Baru</span>
-                                        </Link>
+                                        </SafeLink>
                                     </div>
                                 </div>
                                 
@@ -870,33 +924,43 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                         {[
                                             { label: 'Pesan Tiket', icon: '✈️', href: '/search/flights', color: 'blue' },
                                             { label: 'Top Up', icon: '💳', href: user ? '/payment/topup' : '/auth/login', color: 'green' },
-                                            { label: 'Riwayat', icon: '📜', href: '#', onClick: () => {
-                                                if (!user) {
-                                                    router.push('/auth/login');
-                                                    return;
-                                                }
-                                                setActiveTab('history');
-                                            }, color: 'yellow' },
+                                            { label: 'Riwayat', icon: '📜', onClick: () => handleTabSwitch('history'), color: 'yellow' },
                                             { label: 'Bantuan', icon: '❓', href: '/help', color: 'purple' },
                                         ].map((action, index) => (
-                                            <Link
-                                                key={index}
-                                                href={action.href || '#'}
-                                                onClick={action.onClick}
-                                                className={`flex flex-col items-center p-4 rounded-xl border border-gray-200 hover:shadow-md transition-all group
-                                                    ${action.color === 'blue' ? 'hover:border-blue-300 hover:bg-blue-50' : ''}
-                                                    ${action.color === 'green' ? 'hover:border-green-300 hover:bg-green-50' : ''}
-                                                    ${action.color === 'yellow' ? 'hover:border-yellow-300 hover:bg-yellow-50' : ''}
-                                                    ${action.color === 'purple' ? 'hover:border-purple-300 hover:bg-purple-50' : ''}
-                                                    ${!user && action.label !== 'Pesan Tiket' && action.label !== 'Bantuan' ? 'opacity-70' : ''}
-                                                `}
-                                            >
-                                                <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{action.icon}</span>
-                                                <span className="font-medium text-gray-700 text-sm text-center">{action.label}</span>
-                                                {!user && action.label !== 'Pesan Tiket' && action.label !== 'Bantuan' && (
-                                                    <span className="text-xs text-gray-500 mt-1">Login dulu</span>
-                                                )}
-                                            </Link>
+                                            action.href ? (
+                                                <SafeLink
+                                                    key={index}
+                                                    href={action.href}
+                                                    onClick={action.onClick}
+                                                    className={`flex flex-col items-center p-4 rounded-xl border border-gray-200 hover:shadow-md transition-all group
+                                                        ${action.color === 'blue' ? 'hover:border-blue-300 hover:bg-blue-50' : ''}
+                                                        ${action.color === 'green' ? 'hover:border-green-300 hover:bg-green-50' : ''}
+                                                        ${action.color === 'yellow' ? 'hover:border-yellow-300 hover:bg-yellow-50' : ''}
+                                                        ${action.color === 'purple' ? 'hover:border-purple-300 hover:bg-purple-50' : ''}
+                                                        ${!user && action.label !== 'Pesan Tiket' && action.label !== 'Bantuan' ? 'opacity-70' : ''}
+                                                    `}
+                                                >
+                                                    <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{action.icon}</span>
+                                                    <span className="font-medium text-gray-700 text-sm text-center">{action.label}</span>
+                                                    {!user && action.label !== 'Pesan Tiket' && action.label !== 'Bantuan' && (
+                                                        <span className="text-xs text-gray-500 mt-1">Login dulu</span>
+                                                    )}
+                                                </SafeLink>
+                                            ) : (
+                                                <button
+                                                    key={index}
+                                                    onClick={action.onClick}
+                                                    className={`flex flex-col items-center p-4 rounded-xl border border-gray-200 hover:shadow-md transition-all group
+                                                        ${action.color === 'blue' ? 'hover:border-blue-300 hover:bg-blue-50' : ''}
+                                                        ${action.color === 'green' ? 'hover:border-green-300 hover:bg-green-50' : ''}
+                                                        ${action.color === 'yellow' ? 'hover:border-yellow-300 hover:bg-yellow-50' : ''}
+                                                        ${action.color === 'purple' ? 'hover:border-purple-300 hover:bg-purple-50' : ''}
+                                                    `}
+                                                >
+                                                    <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{action.icon}</span>
+                                                    <span className="font-medium text-gray-700 text-sm text-center">{action.label}</span>
+                                                </button>
+                                            )
                                         ))}
                                     </div>
                                 </div>
@@ -909,7 +973,7 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                         </h3>
                                         {user && bookings.length > 0 && (
                                             <button 
-                                                onClick={() => setActiveTab('bookings')}
+                                                onClick={() => handleTabSwitch('bookings')}
                                                 className="text-blue-600 hover:text-blue-700 font-medium text-sm"
                                             >
                                                 Lihat Semua
@@ -967,13 +1031,13 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                             </div>
                                             <h4 className="text-lg font-semibold text-gray-800 mb-2">Belum Ada Pesanan</h4>
                                             <p className="text-gray-500 mb-4 text-sm">Mulai petualangan Anda dengan memesan tiket pertama!</p>
-                                            <Link 
+                                            <SafeLink 
                                                 href="/search/flights"
                                                 className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2 text-sm"
                                             >
                                                 <PlaneIcon />
                                                 <span>Cari Penerbangan</span>
-                                            </Link>
+                                            </SafeLink>
                                         </div>
                                     )}
                                 </div>
@@ -1013,11 +1077,11 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                                             <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Pesanan Saya</h1>
                                             <div className="flex space-x-2 w-full sm:w-auto">
-                                                <button className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                                                <button 
+                                                    className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                                                    onClick={() => setActiveTab('bookings')}
+                                                >
                                                     Semua
-                                                </button>
-                                                <button className="flex-1 sm:flex-none px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">
-                                                    Aktif
                                                 </button>
                                             </div>
                                         </div>
@@ -1062,13 +1126,13 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                                 <p className="text-gray-500 max-w-md mx-auto mb-6 text-sm sm:text-base">
                                                     Anda belum memiliki pesanan aktif. Mari mulai petualangan Anda dengan mencari tiket pesawat terbaik!
                                                 </p>
-                                                <Link 
+                                                <SafeLink 
                                                     href="/search/flights"
                                                     className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-3 text-sm sm:text-base"
                                                 >
                                                     <PlaneIcon />
                                                     <span>Cari Penerbangan</span>
-                                                </Link>
+                                                </SafeLink>
                                             </div>
                                         )}
                                     </>
@@ -1144,7 +1208,7 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                                 {[100000, 250000, 500000, 1000000].map((amount) => (
                                                     <button
                                                         key={amount}
-                                                        onClick={() => router.push(`/payment/topup?amount=${amount}`)}
+                                                        onClick={() => handleNavigation(`/payment/topup?amount=${amount}`)}
                                                         className="p-3 sm:p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all group"
                                                     >
                                                         <p className="font-bold text-gray-800 text-base sm:text-lg group-hover:text-blue-600">
@@ -1162,7 +1226,7 @@ const ErrorState = ({ message, onRetry, type = 'warning' }: {
                                                     Top Up Custom
                                                 </button>
                                                 <button 
-                                                    onClick={() => setActiveTab('history')}
+                                                    onClick={() => handleTabSwitch('history')}
                                                     className="px-6 bg-white border border-gray-300 text-gray-700 font-semibold py-3 sm:py-4 rounded-xl hover:bg-gray-50 transition-colors text-sm sm:text-base"
                                                 >
                                                     Riwayat Top Up

@@ -118,7 +118,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         debug('Database availability check:', isAvailable);
         
         if (!isAvailable && process.env.NODE_ENV === 'development') {
-          addToast('Menggunakan wallet demo (database tidak tersedia)', 'info');
+          // addToast('Menggunakan wallet demo (database tidak tersedia)', 'info');
         }
       } catch (error) {
         console.error('Error checking database:', error);
@@ -189,7 +189,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
               setDatabaseAvailable(false);
               
               if (process.env.NODE_ENV === 'development') {
-                addToast('Menggunakan wallet demo', 'info');
+                // addToast('Menggunakan wallet demo', 'info');
               } else {
                 addToast('Sistem wallet sedang dalam maintenance', 'warning');
               }
@@ -212,7 +212,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setDatabaseAvailable(false);
           
           if (process.env.NODE_ENV === 'development') {
-            addToast('Menggunakan wallet demo', 'info');
+            // addToast('Menggunakan wallet demo', 'info');
           } else {
             addToast('Sistem wallet sedang dalam maintenance', 'warning');
           }
@@ -238,7 +238,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setDatabaseAvailable(false);
       
       if (process.env.NODE_ENV === 'development') {
-        addToast('Menggunakan wallet demo karena error', 'info');
+        // addToast('Menggunakan wallet demo karena error', 'info');
       } else {
         addToast('Gagal memuat dompet. Menggunakan mode sementara.', 'warning');
       }

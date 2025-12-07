@@ -219,12 +219,12 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nama Depan *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nama Depan </label>
               <input
                 type="text"
                 value={passenger.firstName}
                 onChange={(e) => handlePassengerChange(index, 'firstName', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-700 focus:border-transparent transition-colors ${
                   errors[`${index}-firstName`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="Masukkan nama depan"
@@ -235,12 +235,12 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nama Belakang *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nama Belakang</label>
               <input
                 type="text"
                 value={passenger.lastName}
                 onChange={(e) => handlePassengerChange(index, 'lastName', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-700 focus:border-transparent transition-colors ${
                   errors[`${index}-lastName`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="Masukkan nama belakang"
@@ -256,7 +256,7 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
                 type="date"
                 value={passenger.dateOfBirth}
                 onChange={(e) => handlePassengerChange(index, 'dateOfBirth', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-700 focus:border-transparent transition-colors ${
                   errors[`${index}-dateOfBirth`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 max={new Date().toISOString().split('T')[0]}
@@ -272,7 +272,7 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
                 type="text"
                 value={passenger.passportNumber}
                 onChange={(e) => handlePassengerChange(index, 'passportNumber', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 text-gray-700 focus:ring-blue-500 focus:border-transparent transition-colors ${
                   errors[`${index}-passportNumber`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="Masukkan nomor paspor"
@@ -309,7 +309,7 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
                 type="tel"
                 value={passenger.phoneNumber}
                 onChange={(e) => handlePassengerChange(index, 'phoneNumber', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 text-gray-700 focus:ring-blue-500 focus:border-transparent transition-colors ${
                   errors[`${index}-phoneNumber`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="08xxxxxxxxxx"
@@ -325,7 +325,7 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
                 type="email"
                 value={passenger.email}
                 onChange={(e) => handlePassengerChange(index, 'email', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 text-gray-700 focus:ring-blue-500 focus:border-transparent transition-colors ${
                   errors[`${index}-email`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="email@example.com"

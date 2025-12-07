@@ -111,15 +111,9 @@ export async function GET(request: NextRequest) {
     const endOfDay = new Date(date);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-<<<<<<< HEAD
-    // Format ke string ISO
-    const startStr = startOfDay.toISOString();
-    const endStr = endOfDay.toISOString();
-=======
     // Format ke string ISO tanpa 'Z'
     const startStr = startOfDay.toISOString().slice(0, 19);
     const endStr = endOfDay.toISOString().slice(0, 19);
->>>>>>> 93a879e (fix fitur)
 
     // Time of day filter
     let timeFilter: { gte?: string; lte?: string } = {};
@@ -145,7 +139,6 @@ export async function GET(request: NextRequest) {
       sortBy, sortOrder, page, limit, minPrice, maxPrice, airline, timeOfDay 
     });
 
-<<<<<<< HEAD
     // First, get origin and destination city IDs by code
     const { data: originCity, error: originError } = await supabase
       .from('cities')
@@ -198,9 +191,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Build query for schedules
-=======
-    // Build dynamic query based on filters
->>>>>>> 93a879e (fix fitur)
     let query = supabase
       .from('schedules')
       .select(`
@@ -217,11 +207,7 @@ export async function GET(request: NextRequest) {
         meal_included,
         wifi_available,
         entertainment,
-<<<<<<< HEAD
         routes!inner (
-=======
-        routes (
->>>>>>> 93a879e (fix fitur)
           origin_city_id,
           destination_city_id,
           origin:cities!origin_city_id (
@@ -233,33 +219,17 @@ export async function GET(request: NextRequest) {
             code
           )
         ),
-<<<<<<< HEAD
         transportations!inner (
-=======
-        transportations (
->>>>>>> 93a879e (fix fitur)
           name,
           type,
           logo_url
         )
       `)
-<<<<<<< HEAD
       .eq('route_id', route.id)
       .eq('transportations.type', 'Pesawat')
       .gte('departure_time', startStr)
       .lte('departure_time', endStr)
       .neq('status', 'cancelled');
-=======
-      .eq('transportations.type', 'Pesawat')
-      .gte('departure_time', startStr)
-      .lte('departure_time', endStr);
-
-    // Apply origin filter
-    query = query.eq('routes.origin.name', origin);
-    
-    // Apply destination filter  
-    query = query.eq('routes.destination.name', destination);
->>>>>>> 93a879e (fix fitur)
 
     // Apply airline filter
     if (airline) {
@@ -276,15 +246,10 @@ export async function GET(request: NextRequest) {
 
     // Apply time of day filter
     if (timeOfDay && timeFilter.gte && timeFilter.lte) {
-<<<<<<< HEAD
       const timeStart = `${startStr.slice(0, 10)}T${timeFilter.gte}:00.000Z`;
       const timeEnd = `${startStr.slice(0, 10)}T${timeFilter.lte}:59.999Z`;
       query = query.gte('departure_time', timeStart);
       query = query.lte('departure_time', timeEnd);
-=======
-      query = query.gte('departure_time', `${startStr.slice(0, 10)}T${timeFilter.gte}`);
-      query = query.lte('departure_time', `${startStr.slice(0, 10)}T${timeFilter.lte}`);
->>>>>>> 93a879e (fix fitur)
     }
 
     // Apply sorting
@@ -323,16 +288,12 @@ export async function GET(request: NextRequest) {
 
     // Transform data with enhanced information
     const transformedData: FlightResponse[] = (data || []).map((item: any) => {
-<<<<<<< HEAD
       const routes = Array.isArray(item.routes) ? item.routes[0] : item.routes;
       const transportations = Array.isArray(item.transportations) ? item.transportations[0] : item.transportations;
       const originCity = routes?.origin || {};
       const destCity = routes?.destination || {};
       
       const availableSeats = (item.total_seats || 0) - (item.booked_seats || 0);
-=======
-      const availableSeats = item.total_seats - item.booked_seats;
->>>>>>> 93a879e (fix fitur)
       const duration = calculateDuration(item.departure_time, item.arrival_time);
       
       return {
@@ -344,7 +305,6 @@ export async function GET(request: NextRequest) {
         duration,
         stops: 0, // Direct flights for now
         transportasi: {
-<<<<<<< HEAD
           nama: transportations?.name || '',
           tipe: transportations?.type || '',
           logo: transportations?.logo_url || ''
@@ -356,19 +316,6 @@ export async function GET(request: NextRequest) {
         destination: {
           name: destCity?.name || destination,
           code: destCity?.code || destination.toUpperCase()
-=======
-          nama: item.transportations?.name || '',
-          tipe: item.transportations?.type || '',
-          logo: item.transportations?.logo_url || ''
-        },
-        origin: {
-          name: item.routes?.origin?.name || '',
-          code: item.routes?.origin?.code || ''
-        },
-        destination: {
-          name: item.routes?.destination?.name || '',
-          code: item.routes?.destination?.code || ''
->>>>>>> 93a879e (fix fitur)
         },
         aircraft_type: item.aircraft_type || 'Boeing 737',
         baggage_allowance: item.baggage_allowance || '20kg',
@@ -404,8 +351,4 @@ export async function GET(request: NextRequest) {
       details: error.message
     } as ApiResponse, { status: 500 });
   }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 93a879e (fix fitur)

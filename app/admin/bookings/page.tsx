@@ -14,6 +14,7 @@ interface Booking {
   status: string;
   booking_date: string;
   created_at: string;
+  user_id?: string;
 }
 
 const AdminBookingsPage = () => {

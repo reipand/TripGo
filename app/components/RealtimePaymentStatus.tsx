@@ -97,32 +97,51 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
   };
 
   // Fetch initial payment status
-  const fetchPaymentStatus = async () => {
+  const fetchPaymentStatus = async (retryCount = 0) => {
     try {
       setLoading(true);
       setError(null);
 
-<<<<<<< HEAD
       if (!orderId) {
         setError('Order ID tidak valid');
         setLoading(false);
         return;
       }
 
-=======
->>>>>>> 93a879e (fix fitur)
-      const { data, error } = await supabase
+      const { data, error: supabaseError } = await supabase
         .from('transactions')
         .select('*')
         .eq('order_id', orderId)
-<<<<<<< HEAD
         .maybeSingle();
 
-      if (error) {
+      // Log the actual response for debugging
+      console.log('Supabase response:', { data, error: supabaseError });
+
+      if (supabaseError) {
         // Only throw error if it's not "not found" error
-        if (error.code !== 'PGRST116') {
-          throw error;
+        if (supabaseError.code !== 'PGRST116') {
+          // Create a proper error object with all details
+          const errorObj = {
+            message: supabaseError.message || 'Unknown Supabase error',
+            code: supabaseError.code,
+            details: supabaseError.details,
+            hint: supabaseError.hint,
+            toString: () => JSON.stringify(supabaseError)
+          };
+          throw errorObj;
         }
+        // For "not found" errors, set as pending
+        setPaymentStatus({
+          order_id: orderId,
+          status: 'pending',
+          fraud_status: 'accept',
+          transaction_id: '',
+          payment_type: '',
+          amount: 0,
+          updated_at: new Date().toISOString()
+        });
+        setLoading(false);
+        return;
       }
 
       if (data) {
@@ -137,40 +156,55 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
         };
         setPaymentStatus(statusData);
         onStatusChange?.(statusData);
-      } else {
-        // Transaction not found yet - set as pending
-        setPaymentStatus({
-          order_id: orderId,
-          status: 'pending',
-          fraud_status: 'accept',
-          transaction_id: '',
-          payment_type: '',
-          amount: 0,
-          updated_at: new Date().toISOString()
-        });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching payment status:', err);
-      setError(err?.message || 'Gagal mengambil status pembayaran');
-      // Don't set error state if transaction just doesn't exist yet
-      if (err?.code === 'PGRST116') {
-        setError(null);
+      
+      // Enhanced error logging
+      if (err && typeof err === 'object') {
+        console.error('Error object keys:', Object.keys(err));
+        console.error('Error object stringified:', JSON.stringify(err));
       }
-=======
-        .single();
-
-      if (error) {
-        throw error;
+      
+      // Retry logic for transient errors
+      if (retryCount < 3) {
+        setTimeout(() => {
+          fetchPaymentStatus(retryCount + 1);
+        }, 1000 * Math.pow(2, retryCount)); // Exponential backoff
+        return;
       }
-
-      if (data) {
-        setPaymentStatus(data);
-        onStatusChange?.(data);
+      
+      // Handle different error types
+      let errorMessage = 'Gagal mengambil status pembayaran';
+      
+      if (typeof err === 'string') {
+        errorMessage = err;
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (err && typeof err === 'object') {
+        // Try to extract message from various possible properties
+        const errorObj = err as Record<string, any>;
+        if (errorObj.message) {
+          errorMessage = errorObj.message;
+        } else if (errorObj.error?.message) {
+          errorMessage = errorObj.error.message;
+        } else if (errorObj.details) {
+          errorMessage = errorObj.details;
+        } else if (errorObj.code) {
+          errorMessage = `Error ${errorObj.code}: ${errorObj.message || 'Unknown error'}`;
+        } else if (Object.keys(errorObj).length === 0) {
+          errorMessage = 'Terjadi kesalahan tidak diketahui (empty error object)';
+        } else {
+          // Try to stringify the entire object
+          try {
+            errorMessage = JSON.stringify(errorObj);
+          } catch {
+            errorMessage = 'Terjadi kesalahan yang tidak dapat diproses';
+          }
+        }
       }
-    } catch (err: any) {
-      console.error('Error fetching payment status:', err);
-      setError(err.message || 'Gagal mengambil status pembayaran');
->>>>>>> 93a879e (fix fitur)
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -184,27 +218,46 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
     fetchPaymentStatus();
 
     // Set up real-time subscription
-    const subscription = supabase
-      .channel('payment-status')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'transactions',
-          filter: `order_id=eq.${orderId}`
-        },
-        (payload) => {
-          console.log('Payment status updated:', payload);
-          const updatedStatus = payload.new as PaymentStatus;
-          setPaymentStatus(updatedStatus);
-          onStatusChange?.(updatedStatus);
-        }
-      )
-      .subscribe();
+    let subscription: any;
+    
+    try {
+      subscription = supabase
+        .channel(`payment-status-${orderId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'transactions',
+            filter: `order_id=eq.${orderId}`
+          },
+          (payload) => {
+            console.log('Payment status updated:', payload);
+            const updatedStatus = payload.new as PaymentStatus;
+            setPaymentStatus(updatedStatus);
+            onStatusChange?.(updatedStatus);
+          }
+        )
+        .subscribe((status: any) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`Subscribed to order ${orderId}`);
+          }
+          if (status === 'CHANNEL_ERROR') {
+            console.error('Channel subscription error');
+            // Retry subscription after delay
+            setTimeout(() => {
+              fetchPaymentStatus();
+            }, 5000);
+          }
+        });
+    } catch (err) {
+      console.error('Failed to set up subscription:', err);
+    }
 
     return () => {
-      subscription.unsubscribe();
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
     };
   }, [orderId]);
 
@@ -238,6 +291,12 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
           <div>
             <h4 className="font-semibold text-red-800">Error</h4>
             <p className="text-sm text-red-700">{error}</p>
+            <button 
+              onClick={() => fetchPaymentStatus()}
+              className="mt-2 px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+            >
+              Coba Lagi
+            </button>
           </div>
         </div>
       </div>
@@ -248,6 +307,12 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <p className="text-gray-600">Status pembayaran tidak ditemukan</p>
+        <button 
+          onClick={() => fetchPaymentStatus()}
+          className="mt-2 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+        >
+          Refresh
+        </button>
       </div>
     );
   }
@@ -321,13 +386,13 @@ const RealtimePaymentStatus: React.FC<RealtimePaymentStatusProps> = ({
         </div>
       )}
 
-      {paymentStatus.status === 'capture' || paymentStatus.status === 'settlement' ? (
+      {(paymentStatus.status === 'capture' || paymentStatus.status === 'settlement') && (
         <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
           <p className="text-sm text-green-700">
             <strong>Pembayaran Berhasil!</strong> Tiket Anda akan segera diproses dan dikirim ke email.
           </p>
         </div>
-      ) : null}
+      )}
 
       {(paymentStatus.status === 'deny' || paymentStatus.status === 'failure') && (
         <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
