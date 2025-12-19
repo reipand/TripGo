@@ -78,10 +78,16 @@ export const LocationMap: React.FC<MapProps> = ({
   className = '',
 }) => {
   const [isClient, setIsClient] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  const handleMapError = (error: any) => {
+    console.error('Map loading error:', error);
+    setMapError('Failed to load map tiles. Please check your internet connection.');
+  };
 
   if (!isClient) {
     return (
@@ -92,6 +98,26 @@ export const LocationMap: React.FC<MapProps> = ({
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-2 text-gray-600">Memuat peta...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (mapError) {
+    return (
+      <div 
+        className={`bg-gray-100 rounded-lg flex items-center justify-center ${className}`}
+        style={{ height }}
+      >
+        <div className="text-center">
+          <div className="text-red-600 mb-2">⚠️</div>
+          <p className="text-gray-600">{mapError}</p>
+          <button 
+            onClick={() => setMapError(null)}
+            className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Coba Lagi
+          </button>
         </div>
       </div>
     );
@@ -108,6 +134,17 @@ export const LocationMap: React.FC<MapProps> = ({
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          subdomains={['a', 'b', 'c']}
+          maxZoom={19}
+          eventHandlers={{
+            tileerror: (e: any) => {
+              console.warn('Tile loading failed:', e);
+              // Optionally show a user-friendly message
+              if (!mapError) {
+                setMapError('Some map tiles failed to load. The map may appear incomplete.');
+              }
+            },
+          }}
         />
         
         <MapUpdater center={center} zoom={zoom} />

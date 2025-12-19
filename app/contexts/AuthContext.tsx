@@ -10,6 +10,7 @@ interface AuthContextType {
   session: Session | null;
   userProfile: any | null;
   loading: boolean;
+  networkError: boolean;
   signUp: (email: string, password: string, userData?: any) => Promise<{ error: AuthError | null; needsVerification?: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
@@ -41,6 +42,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [networkError, setNetworkError] = useState(false);
   const router = useRouter();
 
   // Function to fetch user profile from users table
@@ -68,20 +70,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error('Error getting session:', error);
-      } else {
-        setSession(session);
-        setUser(session?.user ?? null);
-        // Fetch user profile if user exists
-        if (session?.user) {
-          setTimeout(() => {
-            fetchUserProfile();
-          }, 100);
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Error getting session:', error);
+          // Check if it's a network error
+          if (error.message.includes('NetworkError') || error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+            setNetworkError(true);
+            // Retry after a delay for network errors
+            setTimeout(() => {
+              getInitialSession();
+            }, 5000);
+          } else {
+            setLoading(false);
+          }
+        } else {
+          setSession(session);
+          setUser(session?.user ?? null);
+          setNetworkError(false);
+          // Fetch user profile if user exists
+          if (session?.user) {
+            setTimeout(() => {
+              fetchUserProfile();
+            }, 100);
+          }
+          setLoading(false);
         }
+      } catch (error) {
+        console.error('Network error getting session:', error);
+        setNetworkError(true);
+        // Retry after a delay for network errors
+        setTimeout(() => {
+          getInitialSession();
+        }, 5000);
       }
-      setLoading(false);
     };
 
     getInitialSession();
@@ -89,28 +111,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+        try {
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false);
 
-        // Redirect based on auth state
-        if (event === 'SIGNED_IN' && session?.user) {
-          // Fetch user profile after sign in
-          setTimeout(() => {
-            fetchUserProfile();
-          }, 100);
-          
-          // Check if there's a redirect URL in localStorage
-          const redirectUrl = localStorage.getItem('tripgo_redirect_url');
-          if (redirectUrl) {
-            localStorage.removeItem('tripgo_redirect_url');
-            router.push(redirectUrl);
-          } else {
-            router.push('/dashboard');
+          // Redirect based on auth state
+          if (event === 'SIGNED_IN' && session?.user) {
+            // Fetch user profile after sign in
+            setTimeout(() => {
+              fetchUserProfile();
+            }, 100);
+            
+            // Check if there's a redirect URL in localStorage
+            const redirectUrl = localStorage.getItem('tripgo_redirect_url');
+            if (redirectUrl) {
+              localStorage.removeItem('tripgo_redirect_url');
+              router.push(redirectUrl);
+            } else {
+              router.push('/dashboard');
+            }
+          } else if (event === 'SIGNED_OUT') {
+            setUserProfile(null);
+            router.push('/');
           }
-        } else if (event === 'SIGNED_OUT') {
-          setUserProfile(null);
-          router.push('/');
+        } catch (error) {
+          console.error('Error handling auth state change:', error);
+          setLoading(false);
         }
       }
     );
@@ -413,6 +440,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     session,
     userProfile,
     loading,
+    networkError,
     signUp,
     signIn,
     signOut,

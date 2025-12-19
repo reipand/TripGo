@@ -14,10 +14,10 @@
     "geolib": "^3.3.4",
     "haversine-distance": "^1.2.4",
     "leaflet": "^1.9.4",
-    "next": "^15.5.3",
+    "next": "16.1.0",
     "postgres": "^3.4.7",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
     "socket.io-client": "^4.8.1"
   },
@@ -25,9 +25,13 @@
     "@tailwindcss/postcss": "^4",
     "@types/aos": "^3.0.7",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3"
   }
 }

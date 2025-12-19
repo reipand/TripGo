@@ -7,6 +7,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { WalletProvider } from './contexts/WalletContext';
 import { LoadingProvider } from './contexts/LoadingContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { NetworkErrorBanner } from './components/NetworkErrorBanner';
 
 // Optimize fonts
 const inter = Inter({ 
@@ -66,6 +67,7 @@ export default function RootLayout({ children, modal }: Readonly<RootLayoutProps
         <ToastProvider>
           <LoadingProvider>
             <AuthProvider>
+              <NetworkErrorBanner />
               <WalletProvider>
                 <Navbar />
                 <main>
