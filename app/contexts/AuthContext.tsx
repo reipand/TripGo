@@ -57,12 +57,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (error) {
           console.error('Error fetching user profile:', error);
+          // Check if it's a network error
+          if (error.message?.includes('NetworkError') || error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+            setNetworkError(true);
+            console.warn('Network error detected, will retry user profile fetch');
+            // Retry after a delay
+            setTimeout(() => {
+              fetchUserProfile();
+            }, 3000);
+          }
         } else {
           setUserProfile(userData);
+          setNetworkError(false);
           console.log('User profile loaded:', userData);
         }
       } catch (error) {
         console.error('Error fetching user profile:', error);
+        // Handle network errors in catch block
+        if (error instanceof TypeError && error.message?.includes('fetch')) {
+          setNetworkError(true);
+          console.warn('Network error detected in fetchUserProfile, will retry');
+          setTimeout(() => {
+            fetchUserProfile();
+          }, 3000);
+        }
       }
     }
   };
@@ -75,8 +93,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (error) {
           console.error('Error getting session:', error);
           // Check if it's a network error
-          if (error.message.includes('NetworkError') || error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+          if (error.message?.includes('NetworkError') || error.message?.includes('fetch') || error.message?.includes('Failed to fetch') || error.message?.includes('Network request failed')) {
             setNetworkError(true);
+            console.warn('Network error detected, will retry session fetch in 5 seconds');
             // Retry after a delay for network errors
             setTimeout(() => {
               getInitialSession();
@@ -98,11 +117,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       } catch (error) {
         console.error('Network error getting session:', error);
-        setNetworkError(true);
-        // Retry after a delay for network errors
-        setTimeout(() => {
-          getInitialSession();
-        }, 5000);
+        // Handle network errors in catch block
+        if (error instanceof TypeError && (error.message?.includes('fetch') || error.message?.includes('NetworkError'))) {
+          setNetworkError(true);
+          console.warn('Network error detected in getInitialSession, will retry in 5 seconds');
+          setTimeout(() => {
+            getInitialSession();
+          }, 5000);
+        } else {
+          setLoading(false);
+        }
       }
     };
 
@@ -169,6 +193,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (error) {
         console.error('SignUp Error:', error);
+        // Handle network errors
+        if (error.message?.includes('NetworkError') || error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+          return { error: { message: 'Network error. Please check your internet connection and try again.' } as AuthError };
+        }
         // Handle specific errors
         if (error.message.includes('captcha')) {
           return { error: { message: 'Please disable CAPTCHA in Supabase Dashboard > Authentication > Settings > Security' } as AuthError };
@@ -216,6 +244,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (error) {
         console.error('SignIn Error:', error);
+        // Handle network errors
+        if (error.message?.includes('NetworkError') || error.message?.includes('fetch') || error.message?.includes('Failed to fetch')) {
+          return { error: { message: 'Network error. Please check your internet connection and try again.' } as AuthError };
+        }
         // Handle specific login errors
         if (error.message.includes('Invalid login credentials')) {
           return { error: { message: 'Email atau password salah' } as AuthError };
