@@ -8,7 +8,7 @@ import { isAdmin } from '@/app/lib/rbac';
 interface AdminRouteProps {
   children: React.ReactNode;
   redirectTo?: string;
-  requiredPermission?: 'users' | 'bookings' | 'flights' | 'trains' | 'payments' | 'reports';
+  requiredPermission?: 'users' | 'bookings' | 'trains' | 'payments' | 'reports';
 }
 
 const AdminRoute: React.FC<AdminRouteProps> = ({ 

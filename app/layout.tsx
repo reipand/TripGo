@@ -27,9 +27,9 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "TripGo - Pesan Tiket Pesawat & Kereta Api Online",
-  description: "Booking tiket pesawat & kereta api online dengan harga promo. Garansi harga terbaik, pembayaran aman, dan dukungan 24/7.",
-  keywords: ["tiket pesawat", "tiket kereta", "booking tiket online", "travel murah"],
+  title: "TripGo - Pesan Tiket Kereta Api KAI Online",
+  description: "Booking tiket kereta api KAI dengan harga promo. Garansi harga terbaik, pembayaran aman, dan dukungan 24/7.",
+  keywords: ["tiket kereta", "kereta api", "KAI", "booking tiket online", "travel murah"],
   
   openGraph: {
     type: 'website',

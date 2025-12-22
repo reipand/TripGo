@@ -228,14 +228,20 @@ const TrainResults = () => {
             const errorText = await response.text();
             errorMessage = `${errorMessage}: ${errorText}`;
           }
-          throw new Error(errorMessage);
+          // Jangan lempar error; set state agar UI menampilkan pesan kesalahan tanpa error di console stack
+          setError(errorMessage);
+          setAllTrains([]);
+          setFilteredAndSortedTrains([]);
+          setLoading(false);
+          return;
         }
         
         const data: Train[] = await response.json();
         setAllTrains(data);
         setFilteredAndSortedTrains(data);
       } catch (error) {
-        console.error('Error fetching trains:', error);
+        // Kurangi kebisingan di console, gunakan warn agar tidak memicu error overlay
+        console.warn('Gagal mengambil data kereta:', error);
         setError(error instanceof Error ? error.message : 'Terjadi kesalahan yang tidak diketahui');
         setAllTrains([]);
         setFilteredAndSortedTrains([]);

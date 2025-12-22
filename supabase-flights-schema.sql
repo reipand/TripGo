@@ -109,13 +109,16 @@ INSERT INTO public.cities (code, name, country) VALUES
 ('MDC', 'Manado', 'Indonesia')
 ON CONFLICT (code) DO NOTHING;
 
--- Transportations (Airlines)
+-- Transportations (Airlines & Trains)
 INSERT INTO public.transportations (name, type, logo_url, country) VALUES
 ('Garuda Indonesia', 'Pesawat', '/images/airline-logo-garuda.png', 'Indonesia'),
 ('Lion Air', 'Pesawat', '/images/airline-logo-lion.png', 'Indonesia'),
 ('Citilink', 'Pesawat', '/images/airline-logo-citilink.png', 'Indonesia'),
 ('Batik Air', 'Pesawat', NULL, 'Indonesia'),
-('AirAsia', 'Pesawat', NULL, 'Malaysia')
+('AirAsia', 'Pesawat', NULL, 'Malaysia'),
+('KAI (Kereta Api Indonesia)', 'Kereta', '/images/train-logo-kai.png', 'Indonesia'),
+('Argo Parahyangan', 'Kereta', NULL, 'Indonesia'),
+('Taksaka', 'Kereta', NULL, 'Indonesia')
 ON CONFLICT DO NOTHING;
 
 -- Routes (CGK to DPS)
@@ -165,6 +168,59 @@ BEGIN
     VALUES
     (route_id_var, citilink_id, (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '10 hours'), (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '11 hours 30 minutes'), 1100000, 180)
     ON CONFLICT DO NOTHING;
+  END IF;
+END $$;
+
+-- Train Routes and Schedules (Jakarta to Bandung)
+DO $$
+DECLARE
+  jkt_id UUID;
+  bdg_id UUID;
+  train_route_id UUID;
+  kai_id UUID;
+  argo_id UUID;
+  taksaka_id UUID;
+BEGIN
+  -- Get city IDs
+  SELECT id INTO jkt_id FROM public.cities WHERE code = 'CGK' LIMIT 1;
+  SELECT id INTO bdg_id FROM public.cities WHERE code = 'BDO' LIMIT 1;
+  
+  -- Get transportation IDs
+  SELECT id INTO kai_id FROM public.transportations WHERE name = 'KAI (Kereta Api Indonesia)' LIMIT 1;
+  SELECT id INTO argo_id FROM public.transportations WHERE name = 'Argo Parahyangan' LIMIT 1;
+  SELECT id INTO taksaka_id FROM public.transportations WHERE name = 'Taksaka' LIMIT 1;
+  
+  -- Create train route if cities exist
+  IF jkt_id IS NOT NULL AND bdg_id IS NOT NULL THEN
+    -- Create route
+    INSERT INTO public.routes (origin_city_id, destination_city_id, distance_km, estimated_duration_minutes)
+    VALUES (jkt_id, bdg_id, 150, 180)
+    ON CONFLICT (origin_city_id, destination_city_id) DO UPDATE SET is_active = true
+    RETURNING id INTO train_route_id;
+    
+    -- Create sample train schedules for tomorrow
+    IF train_route_id IS NOT NULL THEN
+      -- KAI trains
+      INSERT INTO public.schedules (route_id, transportation_id, departure_time, arrival_time, price, total_seats)
+      VALUES
+      (train_route_id, kai_id, (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '6 hours'), (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '8 hours'), 150000, 500),
+      (train_route_id, kai_id, (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '14 hours'), (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '16 hours'), 160000, 500)
+      ON CONFLICT DO NOTHING;
+      
+      -- Argo Parahyangan
+      INSERT INTO public.schedules (route_id, transportation_id, departure_time, arrival_time, price, total_seats)
+      VALUES
+      (train_route_id, argo_id, (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '7 hours'), (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '8 hours 30 minutes'), 200000, 300),
+      (train_route_id, argo_id, (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '15 hours'), (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '16 hours 30 minutes'), 210000, 300)
+      ON CONFLICT DO NOTHING;
+      
+      -- Taksaka
+      INSERT INTO public.schedules (route_id, transportation_id, departure_time, arrival_time, price, total_seats)
+      VALUES
+      (train_route_id, taksaka_id, (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '8 hours'), (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '9 hours 30 minutes'), 180000, 400),
+      (train_route_id, taksaka_id, (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '16 hours'), (CURRENT_DATE + INTERVAL '1 day' + INTERVAL '17 hours 30 minutes'), 190000, 400)
+      ON CONFLICT DO NOTHING;
+    END IF;
   END IF;
 END $$;
 

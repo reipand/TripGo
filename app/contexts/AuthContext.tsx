@@ -5,6 +5,73 @@ import { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/app/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
+// hCaptcha integration for Supabase/client
+const HCAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY || '8e36c23e-7f9a-4e04-8f1a-5d3cd53eac2c';
+
+type HCaptchaWindow = Window & { hcaptcha?: any };
+
+async function loadHCaptchaScript(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const w = window as HCaptchaWindow;
+  if (w.hcaptcha && w.hcaptcha.render) return;
+  if (!document.querySelector('script[src="https://hcaptcha.com/1/api.js"]')) {
+    const s = document.createElement('script');
+    s.src = 'https://hcaptcha.com/1/api.js?render=explicit';
+    s.async = true;
+    s.defer = true;
+    document.head.appendChild(s);
+  }
+  await new Promise<void>((resolve) => {
+    const check = () => {
+      const win = window as HCaptchaWindow;
+      if (win.hcaptcha && win.hcaptcha.render) {
+        resolve();
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
+  });
+}
+
+async function getHCaptchaToken(_action: string): Promise<string | null> {
+  const siteKey = HCAPTCHA_SITE_KEY;
+  if (!siteKey) return null; // Fail-soft when not configured
+  await loadHCaptchaScript();
+  const w = window as HCaptchaWindow;
+  try {
+    // Create an invisible widget container off-screen
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '-9999px';
+    document.body.appendChild(container);
+
+    const token: string = await new Promise((resolve, reject) => {
+      const widgetId = w.hcaptcha.render(container, {
+        sitekey: siteKey,
+        size: 'invisible',
+        callback: (tok: string) => resolve(tok),
+        'error-callback': () => reject(new Error('hCaptcha error')),
+        'expired-callback': () => reject(new Error('hCaptcha expired')),
+      });
+      try {
+        w.hcaptcha.execute(widgetId);
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    // cleanup
+    try { document.body.removeChild(container); } catch {}
+
+    return token;
+  } catch (e) {
+    console.warn('Failed to execute hCaptcha:', e);
+    return null;
+  }
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -182,12 +249,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { error: { message: 'Password minimal 8 karakter' } as AuthError };
       }
 
+      const captchaToken = await getHCaptchaToken('signup');
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: userData,
-          emailRedirectTo: `${window.location.origin}/auth/verify-email?email=${encodeURIComponent(email)}`
+          emailRedirectTo: `${window.location.origin}/auth/verify-email?email=${encodeURIComponent(email)}`,
+          ...(captchaToken ? { captchaToken } : {})
         }
       });
 
@@ -198,8 +268,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return { error: { message: 'Network error. Please check your internet connection and try again.' } as AuthError };
         }
         // Handle specific errors
-        if (error.message.includes('captcha')) {
-          return { error: { message: 'Please disable CAPTCHA in Supabase Dashboard > Authentication > Settings > Security' } as AuthError };
+        if (error.message.toLowerCase().includes('captcha')) {
+          const msg = HCAPTCHA_SITE_KEY
+            ? 'Verifikasi hCaptcha gagal. Muat ulang halaman dan coba lagi.'
+            : 'Konfigurasi hCaptcha belum diset. Tambahkan NEXT_PUBLIC_HCAPTCHA_SITE_KEY pada environment dan pastikan CAPTCHA diaktifkan di Supabase.';
+          return { error: { message: msg } as AuthError };
         }
         if (error.message.includes('Password should contain')) {
           return { error: { message: 'Password harus mengandung minimal 1 huruf kecil, 1 huruf besar, dan 1 angka' } as AuthError };
@@ -237,9 +310,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { error: { message: 'Password tidak boleh kosong' } as AuthError };
       }
 
+      const captchaToken = await getHCaptchaToken('login');
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options: {
+          ...(captchaToken ? { captchaToken } : {})
+        }
       });
 
       if (error) {
@@ -260,6 +338,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         if (error.message.includes('User not found')) {
           return { error: { message: 'Email tidak terdaftar. Silakan daftar terlebih dahulu' } as AuthError };
+        }
+        if (error.message.toLowerCase().includes('captcha')) {
+          const msg = HCAPTCHA_SITE_KEY
+            ? 'Verifikasi hCaptcha gagal. Muat ulang halaman dan coba lagi.'
+            : 'Konfigurasi hCaptcha belum diset. Tambahkan NEXT_PUBLIC_HCAPTCHA_SITE_KEY pada environment dan pastikan CAPTCHA diaktifkan di Supabase.';
+          return { error: { message: msg } as AuthError };
         }
         return { error };
       }
@@ -306,8 +390,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { error: { message: 'Format email tidak valid' } as AuthError, success: false };
       }
 
+      const captchaToken = await getHCaptchaToken('reset_password');
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
+        ...(captchaToken ? { captchaToken } : {})
       });
 
       if (error) {
@@ -317,6 +404,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         if (error.message.includes('Too many requests')) {
           return { error: { message: 'Terlalu banyak permintaan. Silakan coba lagi nanti' } as AuthError, success: false };
+        }
+        if (error.message.toLowerCase().includes('captcha')) {
+          const msg = HCAPTCHA_SITE_KEY
+            ? 'Verifikasi hCaptcha gagal. Muat ulang halaman dan coba lagi.'
+            : 'Konfigurasi hCaptcha belum diset. Tambahkan NEXT_PUBLIC_HCAPTCHA_SITE_KEY pada environment dan pastikan CAPTCHA diaktifkan di Supabase.';
+          return { error: { message: msg } as AuthError, success: false };
         }
         return { error, success: false };
       }

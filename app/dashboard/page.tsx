@@ -149,7 +149,7 @@ const BookingCard = ({ booking }: { booking: any }) => {
                             <PlaneIcon />
                         </div>
                         <div>
-                            <h4 className="font-bold text-lg text-gray-900">Penerbangan</h4>
+                            <h4 className="font-bold text-lg text-gray-900">Kereta Api</h4>
                             <p className="text-sm text-gray-500">#{booking.order_id || booking.id?.slice(-8) || 'N/A'}</p>
                         </div>
                     </div>
@@ -318,7 +318,7 @@ const GuestBookingCard = () => (
                         <PlaneIcon />
                     </div>
                     <div>
-                        <h4 className="font-bold text-lg text-gray-900">Penerbangan</h4>
+                        <h4 className="font-bold text-lg text-gray-900">Kereta Api</h4>
                         <p className="text-sm text-gray-500">#DEMO123</p>
                     </div>
                 </div>
@@ -858,7 +858,7 @@ export default function DashboardPage() {
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                                     <div>
                                         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
-                                            {user ? `Selamat Datang, ${userData.firstName}! ✈️` : 'Selamat Datang di TripGo! ✈️'}
+                                            {user ? `Selamat Datang, ${userData.firstName}! 🚆` : 'Selamat Datang di TripGo! 🚆'}
                                         </h1>
                                         <p className="text-gray-600 mt-1">
                                             {new Date().toLocaleDateString('id-ID', { 
@@ -883,7 +883,7 @@ export default function DashboardPage() {
                                             <RefreshIcon />
                                         </button>
                                         <SafeLink 
-                                            href="/search/flights"
+                                            href="/search/trains"
                                             className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center space-x-2 w-full sm:w-auto justify-center"
                                         >
                                             <PlaneIcon />
@@ -922,7 +922,7 @@ export default function DashboardPage() {
                                     <h3 className="text-xl font-semibold text-gray-800 mb-4">Aksi Cepat</h3>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                                         {[
-                                            { label: 'Pesan Tiket', icon: '✈️', href: '/search/flights', color: 'blue' },
+                                            { label: 'Pesan Tiket', icon: '🚆', href: '/search/trains', color: 'blue' },
                                             { label: 'Top Up', icon: '💳', href: user ? '/payment/topup' : '/auth/login', color: 'green' },
                                             { label: 'Riwayat', icon: '📜', onClick: () => handleTabSwitch('history'), color: 'yellow' },
                                             { label: 'Bantuan', icon: '❓', href: '/help', color: 'purple' },
@@ -1032,11 +1032,11 @@ export default function DashboardPage() {
                                             <h4 className="text-lg font-semibold text-gray-800 mb-2">Belum Ada Pesanan</h4>
                                             <p className="text-gray-500 mb-4 text-sm">Mulai petualangan Anda dengan memesan tiket pertama!</p>
                                             <SafeLink 
-                                                href="/search/flights"
-                                                className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2 text-sm"
+                                            href="/search/trains"
+                                            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2 text-sm"
                                             >
-                                                <PlaneIcon />
-                                                <span>Cari Penerbangan</span>
+                                            <PlaneIcon />
+                                            <span>Cari Kereta</span>
                                             </SafeLink>
                                         </div>
                                     )}
@@ -1124,14 +1124,14 @@ export default function DashboardPage() {
                                                 </div>
                                                 <h3 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-4">Belum Ada Pesanan</h3>
                                                 <p className="text-gray-500 max-w-md mx-auto mb-6 text-sm sm:text-base">
-                                                    Anda belum memiliki pesanan aktif. Mari mulai petualangan Anda dengan mencari tiket pesawat terbaik!
+                                                    Anda belum memiliki pesanan aktif. Mari mulai petualangan Anda dengan mencari tiket kereta terbaik!
                                                 </p>
                                                 <SafeLink 
-                                                    href="/search/flights"
+                                                    href="/search/trains"
                                                     className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-3 text-sm sm:text-base"
                                                 >
                                                     <PlaneIcon />
-                                                    <span>Cari Penerbangan</span>
+                                                    <span>Cari Kereta</span>
                                                 </SafeLink>
                                             </div>
                                         )}

@@ -1,10 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import { Flight, Train, Seat } from '@/types';
+import { Train, Seat } from '@/types';
 
 interface BookingState {
-  selectedFlight: Flight | null;
   selectedTrain: Train | null;
   selectedSeats: Seat[];
   passengerCount: number;
@@ -13,7 +12,6 @@ interface BookingState {
 }
 
 type BookingAction = 
-  | { type: 'SELECT_FLIGHT'; payload: Flight }
   | { type: 'SELECT_TRAIN'; payload: Train }
   | { type: 'SELECT_SEAT'; payload: Seat }
   | { type: 'REMOVE_SEAT'; payload: string }
@@ -23,7 +21,6 @@ type BookingAction =
   | { type: 'RESET_BOOKING' };
 
 const initialState: BookingState = {
-  selectedFlight: null,
   selectedTrain: null,
   selectedSeats: [],
   passengerCount: 1,
@@ -33,20 +30,10 @@ const initialState: BookingState = {
 
 const bookingReducer = (state: BookingState, action: BookingAction): BookingState => {
   switch (action.type) {
-    case 'SELECT_FLIGHT':
-      return {
-        ...state,
-        selectedFlight: action.payload,
-        selectedTrain: null,
-        selectedSeats: [],
-        bookingStep: 2,
-      };
-
     case 'SELECT_TRAIN':
       return {
         ...state,
         selectedTrain: action.payload,
-        selectedFlight: null,
         selectedSeats: [],
         bookingStep: 2,
       };

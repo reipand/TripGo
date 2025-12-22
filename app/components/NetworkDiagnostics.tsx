@@ -8,10 +8,12 @@ export const NetworkDiagnostics = () => {
     supabaseReachable: boolean | null;
     lastChecked: string;
   }>({
-    online: navigator.onLine,
+    online: false,
     supabaseReachable: null,
-    lastChecked: new Date().toLocaleTimeString(),
+    lastChecked: '-',
   });
+
+  const [mounted, setMounted] = useState(false);
 
   const checkConnectivity = async () => {
     try {
@@ -52,6 +54,7 @@ export const NetworkDiagnostics = () => {
   };
 
   useEffect(() => {
+    setMounted(true);
     checkConnectivity();
     const interval = setInterval(checkConnectivity, 30000); // Check every 30 seconds
 
@@ -60,19 +63,20 @@ export const NetworkDiagnostics = () => {
 
   // Only show in development
   if (process.env.NODE_ENV === 'production') return null;
+  if (!mounted) return null;
 
-  return (
-    <div className="fixed bottom-4 right-4 bg-black text-white p-3 rounded-lg text-xs font-mono z-50 max-w-xs">
-      <div className="font-bold mb-2">Network Diagnostics</div>
-      <div>Online: {diagnostics.online ? '✅' : '❌'}</div>
-      <div>Supabase: {diagnostics.supabaseReachable === null ? '⏳' : diagnostics.supabaseReachable ? '✅' : '❌'}</div>
-      <div>Last checked: {diagnostics.lastChecked}</div>
-      <button
-        onClick={checkConnectivity}
-        className="mt-2 bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs"
-      >
-        Refresh
-      </button>
-    </div>
-  );
+  // return (
+  //   <div className="fixed bottom-4 right-4 bg-black text-white p-3 rounded-lg text-xs font-mono z-50 max-w-xs">
+  //     <div className="font-bold mb-2">Network Diagnostics</div>
+  //     <div>Online: {diagnostics.online ? '✅' : '❌'}</div>
+  //     <div>Supabase: {diagnostics.supabaseReachable === null ? '⏳' : diagnostics.supabaseReachable ? '✅' : '❌'}</div>
+  //     <div>Last checked: {diagnostics.lastChecked}</div>
+  //     <button
+  //       onClick={checkConnectivity}
+  //       className="mt-2 bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs"
+  //     >
+  //       Refresh
+  //     </button>
+  //   </div>
+  // );
 };

@@ -90,7 +90,6 @@ const FeatureIconContainer = ({ children }: { children: React.ReactNode }) => (
 const SearchWidget = () => {
   const router = useRouter();
   
-  const [activeTab, setActiveTab] = useState('pesawat');
   const [tripType, setTripType] = useState('oneWay'); // oneWay atau roundTrip
   
   // Ambil tanggal hari ini untuk batas minimal input
@@ -100,31 +99,14 @@ const SearchWidget = () => {
     return d.toISOString().split('T')[0];
   }, []);
 
-  const [flightData, setFlightData] = useState({
-    origin: '',
-    destination: '',
-    departureDate: today, // Set default ke besok
-    returnDate: '',
-    passengers: '1',
-    class: 'economy', // Default kelas ekonomi
-  });
-
   const [trainData, setTrainData] = useState({
     origin: '',
     destination: '',
     departureDate: today, // Set default ke besok
     returnDate: '',
     passengers: '1',
-    class: 'economy', // Default kelas ekonomi untuk kereta juga
+    class: 'economy', // Default kelas ekonomi untuk kereta
   });
-
-  // Data kelas kabin pesawat
-  const flightClasses = [
-    { value: 'economy', label: 'Ekonomi', description: 'Harga Terjangkau' },
-    { value: 'premium_economy', label: 'Premium Ekonomi', description: 'Lebih Nyaman' },
-    { value: 'business', label: 'Bisnis', description: 'Kenyamanan Maksimal' },
-    { value: 'first', label: 'First Class', description: 'Kelas Terbaik' },
-  ];
 
   // Data kelas kereta api
   const trainClasses = [
@@ -148,11 +130,8 @@ const SearchWidget = () => {
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    const isFlight = activeTab === 'pesawat';
-    const setData = isFlight ? setFlightData : setTrainData;
-    const currentData = isFlight ? flightData : trainData;
     
-    setData(prev => ({ ...prev, [name]: value }));
+    setTrainData(prev => ({ ...prev, [name]: value }));
 
     if (name === 'departureDate' && tripType === 'roundTrip' && value) {
       const departure = new Date(value);
@@ -160,8 +139,8 @@ const SearchWidget = () => {
       const nextDay = formatDate(new Date(departure.getTime() + 86400000));
       
       // Pastikan tanggal pulang tidak mendahului tanggal pergi
-      if (!currentData.returnDate || new Date(currentData.returnDate) < new Date(nextDay)) {
-         setData(prev => ({ ...prev, returnDate: nextDay }));
+      if (!trainData.returnDate || new Date(trainData.returnDate) < new Date(nextDay)) {
+         setTrainData(prev => ({ ...prev, returnDate: nextDay }));
       }
     }
   };
@@ -169,42 +148,25 @@ const SearchWidget = () => {
   useEffect(() => {
     // Reset returnDate saat tipe perjalanan diubah menjadi sekali jalan
     if (tripType === 'oneWay') {
-      setFlightData(prev => ({...prev, returnDate: ''}));
       setTrainData(prev => ({...prev, returnDate: ''}));
     }
   }, [tripType]);
 
-
-  const handleFlightChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFlightData({ ...flightData, [e.target.name]: e.target.value });
-  };
 
   const handleTrainChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setTrainData({ ...trainData, [e.target.name]: e.target.value });
   };
 
   const handleClassChange = (className: string) => {
-    if (activeTab === 'pesawat') {
-      setFlightData(prev => ({ ...prev, class: className }));
-    } else {
-      setTrainData(prev => ({ ...prev, class: className }));
-    }
+    setTrainData(prev => ({ ...prev, class: className }));
   };
 
   const handleSwitchLocations = () => {
-    if (activeTab === 'pesawat') {
-        setFlightData(prev => ({
-            ...prev,
-            origin: prev.destination,
-            destination: prev.origin,
-        }));
-    } else {
-        setTrainData(prev => ({
-            ...prev,
-            origin: prev.destination,
-            destination: prev.origin,
-        }));
-    }
+    setTrainData(prev => ({
+        ...prev,
+        origin: prev.destination,
+        destination: prev.origin,
+    }));
   };
 
   const handleSearchSubmit = () => {
@@ -212,30 +174,19 @@ const SearchWidget = () => {
       alert(msg); 
     };
     
-    if (activeTab === 'pesawat') {
-      const dataToSubmit = tripType === 'oneWay' ? { ...flightData, returnDate: '' } : flightData;
-      if (!dataToSubmit.origin || !dataToSubmit.destination || !dataToSubmit.departureDate) {
-        showMessage('Harap lengkapi kota/bandara asal, tujuan, dan tanggal pergi.');
-        return;
-      }
-      const query = new URLSearchParams(dataToSubmit as any).toString();
-      router.push(`/search/flights?${query}`);
-    } else {
-      const dataToSubmit = tripType === 'oneWay' ? { ...trainData, returnDate: '' } : trainData;
-      if (!dataToSubmit.origin || !dataToSubmit.destination || !dataToSubmit.departureDate) {
-        showMessage('Harap lengkapi stasiun asal, tujuan, dan tanggal berangkat.');
-        return;
-      }
-      const query = new URLSearchParams(dataToSubmit as any).toString();
-      router.push(`/search/trains?${query}`);
+    const dataToSubmit = tripType === 'oneWay' ? { ...trainData, returnDate: '' } : trainData;
+    if (!dataToSubmit.origin || !dataToSubmit.destination || !dataToSubmit.departureDate) {
+      showMessage('Harap lengkapi stasiun asal, tujuan, dan tanggal berangkat.');
+      return;
     }
+    const query = new URLSearchParams(dataToSubmit as any).toString();
+    router.push(`/search/trains?${query}`);
   };
 
   // Komponen untuk pilihan kelas
   const ClassSelector = () => {
-    const isFlight = activeTab === 'pesawat';
-    const classes = isFlight ? flightClasses : trainClasses;
-    const currentClass = isFlight ? flightData.class : trainData.class;
+    const classes = trainClasses;
+    const currentClass = trainData.class;
 
     return (
       <div className="lg:col-span-1">
@@ -244,7 +195,7 @@ const SearchWidget = () => {
           <select 
             name="class"
             value={currentClass}
-            onChange={isFlight ? handleFlightChange : handleTrainChange}
+            onChange={handleTrainChange}
             className="w-full bg-white p-2 rounded-md border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 appearance-none pr-8"
           >
             {classes.map((classOption) => (
@@ -282,9 +233,8 @@ const SearchWidget = () => {
   };
 
   const renderForm = () => {
-    const isFlight = activeTab === 'pesawat';
-    const data = isFlight ? flightData : trainData;
-    const genericHandler = isFlight ? handleFlightChange : handleTrainChange;
+    const data = trainData;
+    const genericHandler = handleTrainChange;
     
     const gridCols = tripType === 'roundTrip' ? 'lg:grid-cols-5' : 'lg:grid-cols-4';
 
@@ -293,63 +243,38 @@ const SearchWidget = () => {
 
     return (
       <div className={`grid grid-cols-1 md:grid-cols-2 ${gridCols} gap-4 items-end`}>
-        {isFlight ? (
-             <div className="md:col-span-2 lg:col-span-2">
-                <label className="text-gray-800 text-sm font-medium">Asal & Tujuan</label>
+        <>
+            <div className="lg:col-span-1">
+                <label className="text-gray-800 text-sm font-medium">Asal</label>
                 <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
                     <input 
                       type="text" 
                       name="origin" 
                       value={data.origin} 
                       onChange={genericHandler} 
-                      placeholder="Kota atau Bandara Asal" 
+                      placeholder="Stasiun Asal" 
                       className="bg-transparent w-full focus:outline-none placeholder-gray-400 text-gray-900" 
                     />
-                    <SwitchIcon onClick={handleSwitchLocations} />
+                </div>
+            </div>
+            <div className="lg:col-span-1 relative">
+                <label className="text-gray-800 text-sm font-medium">Tujuan</label>
+                <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
                     <input 
                       type="text" 
                       name="destination" 
                       value={data.destination} 
                       onChange={genericHandler} 
-                      placeholder="Kota atau Bandara Tujuan" 
-                      className="bg-transparent w-full focus:outline-none text-right placeholder-gray-400 text-gray-900" 
+                      placeholder="Stasiun Tujuan" 
+                      className="bg-transparent w-full focus:outline-none placeholder-gray-400 text-gray-900" 
                     />
                 </div>
+                {/* Switch icon untuk kereta api diletakkan di tengah antara Asal dan Tujuan */}
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 mt-1 z-10" onClick={handleSwitchLocations}>
+                     <SwitchIcon onClick={() => {}} />
+                </div>
             </div>
-        ) : (
-            <>
-                <div className="lg:col-span-1">
-                    <label className="text-gray-800 text-sm font-medium">Asal</label>
-                    <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-                        <input 
-                          type="text" 
-                          name="origin" 
-                          value={data.origin} 
-                          onChange={genericHandler} 
-                          placeholder="Stasiun Asal" 
-                          className="bg-transparent w-full focus:outline-none placeholder-gray-400 text-gray-900" 
-                        />
-                    </div>
-                </div>
-                <div className="lg:col-span-1 relative">
-                    <label className="text-gray-800 text-sm font-medium">Tujuan</label>
-                    <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
-                        <input 
-                          type="text" 
-                          name="destination" 
-                          value={data.destination} 
-                          onChange={genericHandler} 
-                          placeholder="Stasiun Tujuan" 
-                          className="bg-transparent w-full focus:outline-none placeholder-gray-400 text-gray-900" 
-                        />
-                    </div>
-                    {/* Switch icon untuk kereta api diletakkan di tengah antara Asal dan Tujuan */}
-                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 mt-1 z-10" onClick={handleSwitchLocations}>
-                         <SwitchIcon onClick={() => {}} />
-                    </div>
-                </div>
-            </>
-        )}
+        </>
         
         <div>
           <label className="text-gray-800 text-sm font-medium">Tanggal Pergi</label>
@@ -383,7 +308,7 @@ const SearchWidget = () => {
             </div>
         )}
 
-        <div className={tripType === 'roundTrip' && !isFlight ? 'lg:col-start-5' : ''}>
+        <div className={tripType === 'roundTrip' && !false ? 'lg:col-start-5' : ''}>
           <label className="text-gray-800 text-sm font-medium">Penumpang</label>
           <div className="flex items-center bg-white p-2 rounded-md border border-gray-200 mt-1">
               <UserIcon />
@@ -409,22 +334,12 @@ const SearchWidget = () => {
   return (
     <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-5xl">
       <div className="flex border-b border-gray-200 mb-4">
-            {/* TAB PESAWAT */}
-            <button
-              onClick={() => setActiveTab('pesawat')}
-              className={`flex items-center pb-3 pt-1 px-4 text-base font-semibold transition-colors duration-300 ${activeTab === 'pesawat' ? 'border-b-2 border-[#0A58CA] text-[#0A58CA]' : 'text-gray-500 hover:text-gray-800'}`}
-            >
-              <PlaneIcon isActive={activeTab === 'pesawat'} /> 
-              <span>Pesawat</span>
-            </button>
-            
             {/* TAB KERETA API */}
             <button
-              onClick={() => setActiveTab('kereta')}
-              className={`flex items-center pb-3 pt-1 px-4 text-base font-semibold transition-colors duration-300 ${activeTab === 'kereta' ? 'border-b-2 border-[#0A58CA] text-[#0A58CA]' : 'text-gray-500 hover:text-gray-800'}`}
+              className={`flex items-center pb-3 pt-1 px-4 text-base font-semibold transition-colors duration-300 border-b-2 border-[#0A58CA] text-[#0A58CA]`}
             >
-              <TrainIcon isActive={activeTab === 'kereta'} />
-              <span>Kereta Api</span>
+              <TrainIcon isActive={true} />
+              <span>Kereta Api KAI</span>
             </button>
       </div>
 
@@ -774,7 +689,7 @@ export default function Home() {
         {
             number: 1,
             title: "Cari & Pilih",
-            description: "Temukan tiket pesawat atau kereta dengan harga terbaik sesuai kebutuhan perjalananmu",
+            description: "Temukan tiket kereta KAI dengan harga terbaik sesuai kebutuhan perjalananmu",
             icon: "🔍"
         },
         {
@@ -791,9 +706,9 @@ export default function Home() {
         },
         {
             number: 4,
-            title: "Berangkat!",
-            description: "Tunjukkan e-ticket dan nikmati perjalanan yang nyaman tanpa repot",
-            icon: "✈️"
+            title: "Naik Kereta!",
+            description: "Tunjukkan e-ticket dan nikmati perjalanan nyaman dengan kereta api KAI",
+            icon: "🚂"
         }
     ];
 
@@ -803,28 +718,28 @@ export default function Home() {
             name: "Sarah Wijaya",
             location: "Jakarta",
             rating: 5,
-            comment: "Proses pemesanan sangat mudah dan cepat. Harga yang ditawarkan juga kompetitif dibanding platform lain. Recommended banget!",
+            comment: "Proses pemesanan tiket kereta KAI sangat mudah dan cepat. Harga yang ditawarkan juga kompetitif. Sudah beberapa kali naik kereta dari Jakarta ke Bandung, selalu lancar!",
             avatar: "/images/avatars/avatar1.jpg"
         },
         {
             name: "Budi Santoso",
             location: "Surabaya",
             rating: 5,
-            comment: "Customer service TripGO sangat responsif. Waktu ada kendala tiket, dibantu dengan cepat dan ramah. Pengalaman yang memuaskan!",
+            comment: "Customer service TripGO sangat responsif. Waktu ada perubahan jadwal kereta, langsung dibantu dengan cepat dan ramah. Pengalaman yang memuaskan!",
             avatar: "/images/avatars/avatar2.jpg"
         },
         {
             name: "Maya Sari",
             location: "Bandung",
             rating: 4,
-            comment: "Aplikasinya user friendly dan sering ada promo menarik. Sudah beberapa kali pesan tiket kereta dan pesawat, selalu lancar.",
+            comment: "Aplikasinya user friendly dan sering ada promo menarik untuk kereta api. Sudah beberapa kali pesan tiket KAI dan Whoosh, selalu lancar dan tepat waktu.",
             avatar: "/images/avatars/avatar3.jpg"
         },
         {
             name: "Rizki Pratama",
             location: "Yogyakarta",
             rating: 5,
-            comment: "Harga garansi terbaiknya beneran work! Dapat refund selisih harga setelah booking. TripGO memang the best!",
+            comment: "Harga garansi terbaiknya beneran work! Dapat refund selisih harga setelah booking tiket kereta. TripGO memang the best untuk travel Indonesia!",
             avatar: "/images/avatars/avatar4.jpg"
         }
     ];
@@ -832,15 +747,15 @@ export default function Home() {
     // Data untuk Blog & Tips
     const blogPosts = [
         {
-            imageUrl: "/images/blog/travel-tips.jpg",
-            title: "7 Tips Hemat Tiket Pesawat untuk Liburan Akhir Tahun",
-            excerpt: "Pelajari strategi booking tiket pesawat dengan harga terbaik untuk musim liburan akhir tahun. Dapatkan diskon hingga 50%!",
+            imageUrl: "/images/blog/train-schedule.jpg",
+            title: "Panduan Lengkap Jadwal Kereta Api KAI 2025",
+            excerpt: "Jadwal terbaru kereta api KAI untuk seluruh rute di Indonesia. Update informasi terbaru untuk perjalanan Anda.",
             date: "15 Nov 2024",
             readTime: "5 min",
-            category: "Tips Travel"
+            category: "Jadwal Kereta"
         },
         {
-            imageUrl: "/images/blog/train-guide.jpg",
+            imageUrl: "/images/blog/whoosh-guide.jpg",
             title: "Panduan Lengkap Naik Kereta Cepat Whoosh Jakarta-Bandung",
             excerpt: "Semua yang perlu kamu tahu tentang pengalaman naik kereta cepat Whoosh, dari booking sampai fasilitas di dalam kereta.",
             date: "10 Nov 2024",
@@ -848,65 +763,65 @@ export default function Home() {
             category: "Transportasi"
         },
         {
-            imageUrl: "/images/blog/packing-tips.jpg",
-            title: "Cara Packing Efisien untuk Perjalanan Bisnis & Liburan",
-            excerpt: "Optimalkan koper kamu dengan teknik packing yang smart. Bawa semua kebutuhan tanpa kelebihan bagasi.",
+            imageUrl: "/images/blog/train-packing.jpg",
+            title: "Cara Packing Efisien untuk Perjalanan Kereta Api",
+            excerpt: "Optimalkan koper kamu untuk perjalanan kereta api. Tips packing smart untuk perjalanan nyaman tanpa kelebihan bagasi.",
             date: "5 Nov 2024",
             readTime: "4 min",
-            category: "Packing"
+            category: "Tips Travel"
         }
     ];
 
     // Data untuk Partner
     const partners = [
-        { name: "Garuda Indonesia", logoUrl: "/images/partners/garuda.png" },
-        { name: "Lion Air", logoUrl: "/images/partners/lion-air.png" },
-        { name: "Citilink", logoUrl: "/images/partners/citilink.png" },
-        { name: "AirAsia", logoUrl: "/images/partners/airasia.png" },
-        { name: "Batik Air", logoUrl: "/images/partners/batik-air.png" },
-        { name: "Sriwijaya Air", logoUrl: "/images/partners/sriwijaya.png" },
         { name: "Kereta Api Indonesia", logoUrl: "/images/partners/kai.png" },
-        { name: "Whoosh", logoUrl: "/images/partners/whoosh.png" }
+        { name: "Whoosh", logoUrl: "/images/partners/whoosh.png" },
+        { name: "Argo Parahyangan", logoUrl: "/images/partners/argo.png" },
+        { name: "Taksaka", logoUrl: "/images/partners/taksaka.png" },
+        { name: "Mutiara Selatan", logoUrl: "/images/partners/mutiara.png" },
+        { name: "Lodaya", logoUrl: "/images/partners/lodaya.png" },
+        { name: "Jayabaya", logoUrl: "/images/partners/jayabaya.png" },
+        { name: "Gajayana", logoUrl: "/images/partners/gajayana.png" }
     ];
 
     // Data untuk FAQ
     const faqs = [
         {
-            question: "Bagaimana cara memesan tiket di TripGO?",
-            answer: "Pemesanan tiket di TripGO sangat mudah. Pilih jenis transportasi (pesawat/kereta), isi data perjalanan, pilih jadwal yang tersedia, lalu lakukan pembayaran. Anda akan menerima e-ticket via email dan WhatsApp."
+            question: "Bagaimana cara memesan tiket kereta api di TripGO?",
+            answer: "Pemesanan tiket kereta api di TripGO sangat mudah. Pilih stasiun asal dan tujuan, tentukan tanggal keberangkatan, pilih jadwal yang tersedia, lalu lakukan pembayaran. Anda akan menerima e-ticket via email dan WhatsApp."
         },
         {
-            question: "Apakah harga di TripGO sudah termasuk pajak dan biaya lainnya?",
-            answer: "Ya, semua harga yang ditampilkan di TripGO sudah termasuk pajak dan biaya tambahan lainnya. Tidak ada biaya tersembunyi, yang Anda lihat adalah yang Anda bayar."
+            question: "Apakah harga di TripGO sudah termasuk semua biaya?",
+            answer: "Ya, semua harga yang ditampilkan di TripGO untuk tiket kereta api sudah termasuk pajak dan biaya tambahan lainnya. Tidak ada biaya tersembunyi, yang Anda lihat adalah yang Anda bayar."
         },
         {
-            question: "Bagaimana jika ingin mengubah atau membatalkan pemesanan?",
-            answer: "Anda dapat mengubah atau membatalkan pemesanan melalui dashboard akun Anda. Syarat dan ketentuan mengikuti kebijakan maskapai/penyedia kereta api. Biaya pembatalan mungkin berlaku tergantung waktu pembatalan."
+            question: "Bagaimana jika ingin mengubah atau membatalkan tiket kereta?",
+            answer: "Anda dapat mengubah atau membatalkan tiket kereta melalui dashboard akun Anda. Syarat dan ketentuan mengikuti kebijakan KAI. Biaya pembatalan mungkin berlaku tergantung waktu pembatalan."
         },
         {
-            question: "Metode pembayaran apa saja yang diterima?",
-            answer: "TripGO menerima berbagai metode pembayaran: Transfer Bank, Virtual Account, Kartu Kredit/Debit, E-Wallet (Gopay, OVO, Dana, ShopeePay), dan Gerai Retail (Alfamart, Indomaret)."
+            question: "Apakah ada garansi harga terbaik untuk tiket kereta?",
+            answer: "Ya, TripGO memberikan garansi harga terbaik untuk tiket kereta api. Jika Anda menemukan harga yang lebih murah untuk rute dan tanggal yang sama, kami akan refund selisihnya sesuai dengan syarat dan ketentuan yang berlaku."
         },
         {
-            question: "Apakah ada garansi harga terbaik?",
-            answer: "Ya, TripGO memberikan garansi harga terbaik. Jika Anda menemukan harga yang lebih murah untuk rute dan tanggal yang sama, kami akan refund selisihnya sesuai dengan syarat dan ketentuan yang berlaku."
+            question: "Kereta api mana saja yang bisa dipesan di TripGO?",
+            answer: "TripGO menyediakan tiket untuk semua jenis kereta api KAI, termasuk kereta cepat Whoosh, Argo Parahyangan, Taksaka, dan berbagai kereta ekonomi lainnya yang melayani seluruh Indonesia."
         }
     ];
 
   // Data untuk Promo
     const promos = [
         {
-            imageUrl: "/images/promo-bali.png", 
-            title: "Flash Sale Bali - Diskon Hingga 50%",
-            description: "Raih tiket pesawat ke Bali dengan harga spesial. Terbatas hanya untuk 100 pembeli pertama!",
+            imageUrl: "/images/promo-jakarta-bandung.png", 
+            title: "Flash Sale Jakarta-Bandung - Diskon Hingga 50%",
+            description: "Raih tiket kereta Jakarta-Bandung dengan harga spesial. Terbatas hanya untuk 100 pembeli pertama!",
             discount: "50% OFF",
             validUntil: "30 Des 2024",
             tag: "Flash Sale"
         },
         {
-            imageUrl: "/images/promo-jogja.png",
-            title: "Cashback Kereta Api Jogja 100%",
-            description: "Dapatkan cashback hingga Rp 100.000 untuk perjalanan kereta api ke Yogyakarta",
+            imageUrl: "/images/promo-kai-cashback.png",
+            title: "Cashback Kereta Api KAI 100%",
+            description: "Dapatkan cashback hingga Rp 100.000 untuk perjalanan kereta api KAI di seluruh Indonesia",
             discount: "100% CB",
             validUntil: "25 Des 2024",
             tag: "Cashback"
@@ -920,12 +835,12 @@ export default function Home() {
             tag: "Exclusive"
         },
         {
-            imageUrl: "/images/promo-international.png",
-            title: "International Flight Deals",
-            description: "Tiket pesawat internasional dengan diskon besar-besaran. Terbang ke 50+ destinasi worldwide",
-            discount: "45% OFF",
+            imageUrl: "/images/promo-kai-family.png",
+            title: "Paket Keluarga KAI - Hemat hingga 40%",
+            description: "Diskon spesial untuk perjalanan keluarga dengan kereta api KAI. Minimum 3 orang",
+            discount: "40% OFF",
             validUntil: "15 Jan 2025",
-            tag: "International"
+            tag: "Family"
         }
     ];
 
@@ -933,9 +848,9 @@ export default function Home() {
   // Data untuk Destinasi Populer
     const destinations = [
         {
-            imageUrl: "/images/bali-dest.png",
-            name: "Bali",
-            price: "Rp 650rb",
+            imageUrl: "/images/bandung-dest.png",
+            name: "Bandung",
+            price: "Rp 150rb",
             rating: 4.8,
             reviews: "12.5rb",
             delay: 0
@@ -943,41 +858,41 @@ export default function Home() {
         {
             imageUrl: "/images/jogja-dest.png",
             name: "Yogyakarta",
-            price: "Rp 150rb",
+            price: "Rp 250rb",
             rating: 4.7,
             reviews: "8.2rb",
             delay: 100
         },
         {
-            imageUrl: "/images/tokyo-dest.png",
-            name: "Tokyo",
-            price: "Rp 3.5jt",
+            imageUrl: "/images/surabaya-dest.png",
+            name: "Surabaya",
+            price: "Rp 300rb",
             rating: 4.9,
-            reviews: "5.1rb",
+            reviews: "15.1rb",
             delay: 200
         },
         {
-            imageUrl: "/images/surabaya-dest.png",
-            name: "Surabaya",
-            price: "Rp 400rb",
+            imageUrl: "/images/semarang-dest.png",
+            name: "Semarang",
+            price: "Rp 200rb",
             rating: 4.6,
             reviews: "6.8rb",
             delay: 300
         },
         {
-            imageUrl: "/images/singapore-dest.png",
-            name: "Singapore",
-            price: "Rp 1.2jt",
+            imageUrl: "/images/malang-dest.png",
+            name: "Malang",
+            price: "Rp 350rb",
             rating: 4.8,
             reviews: "9.3rb",
             delay: 400
         },
         {
-            imageUrl: "/images/lombok-dest.png",
-            name: "Lombok",
-            price: "Rp 550rb",
+            imageUrl: "/images/solo-dest.png",
+            name: "Solo",
+            price: "Rp 180rb",
             rating: 4.7,
-            reviews: "4.7rb",
+            reviews: "7.2rb",
             delay: 500
         }
     ];
@@ -997,8 +912,8 @@ export default function Home() {
             delay: 0
         },
         {
-            title: "Pilihan Lengkap",
-            description: "500+ maskapai & seluruh jaringan kereta api Indonesia dalam satu platform",
+            title: "Seluruh Jaringan KAI",
+            description: "Akses ke seluruh jaringan kereta api KAI di Indonesia dalam satu platform",
             iconPath: getIconPath('complete'),
             delay: 100
         },
@@ -1029,7 +944,7 @@ export default function Home() {
                 <div className="relative z-10 container mx-auto px-4 flex flex-col items-center text-center">
                     <h1 className="text-4xl md:text-6xl font-extrabold mb-4 drop-shadow-lg" data-aos="zoom-in">Mau ke mana?</h1>
                     <p className="text-lg md:text-xl mb-8 drop-shadow-md max-w-2xl" data-aos="zoom-in" data-aos-delay="300">
-                        Pesan tiket pesawat & kereta api dengan harga terbaik. Perjalananmu, prioritas kami.
+                        Pesan tiket kereta api KAI dengan harga terbaik. Perjalananmu, prioritas kami.
                     </p>
                     <div data-aos="fade-up" data-aos-delay="500" className="w-full max-w-5xl">
                         <SearchWidget />
@@ -1062,12 +977,12 @@ export default function Home() {
                                 <div className="text-blue-100">Pengguna Aktif</div>
                             </div>
                             <div data-aos="fade-up" data-aos-delay="100">
-                                <div className="text-3xl font-bold mb-2">500+</div>
-                                <div className="text-blue-100">Maskapai Partner</div>
+                                <div className="text-3xl font-bold mb-2">50+</div>
+                                <div className="text-blue-100">Stasiun Kereta</div>
                             </div>
                             <div data-aos="fade-up" data-aos-delay="200">
-                                <div className="text-3xl font-bold mb-2">50+</div>
-                                <div className="text-blue-100">Kota Tujuan</div>
+                                <div className="text-3xl font-bold mb-2">100+</div>
+                                <div className="text-blue-100">Rute Harian</div>
                             </div>
                             <div data-aos="fade-up" data-aos-delay="300">
                                 <div className="text-3xl font-bold mb-2">24/7</div>
@@ -1142,9 +1057,9 @@ export default function Home() {
                     {/* Banner Promo Besar */}
                     <div className="mt-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl p-8 text-white relative overflow-hidden" data-aos="zoom-in">
                         <div className="relative z-10 max-w-2xl">
-                            <h3 className="text-2xl font-bold mb-3">Super Sale Akhir Tahun! 🎉</h3>
+                            <h3 className="text-2xl font-bold mb-3">Super Sale Akhir Tahun! 🚂</h3>
                             <p className="text-orange-100 mb-4 text-lg">
-                                Dapatkan diskon hingga 70% untuk semua rute penerbangan domestik dan internasional
+                                Dapatkan diskon hingga 70% untuk semua rute kereta api KAI domestik
                             </p>
                             <div className="flex items-center space-x-4">
                                 <div className="bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">

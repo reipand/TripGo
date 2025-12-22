@@ -66,11 +66,7 @@ const Navbar = () => {
 
   // Navigation items - mirip dengan tiket.com
   const navItems = [
-    { href: '/flights', label: 'Pesawat' },
-    { href: '/trains', label: 'Kereta Api' },
-    { href: '/hotels', label: 'Hotel' },
-    { href: '/to-do', label: 'To Do' },
-    { href: '/promo', label: 'Promo' },
+    { href: '/search/trains', label: 'Kereta Api' },
   ];
 
   // Check if current path is active

@@ -1,11 +1,13 @@
 export interface Seat {
   id: string;
   row: number;
-  column: string;
-  class: 'economy' | 'business' | 'first';
+  column: string; // e.g., 'A', 'B', 'C', 'D', 'E'
+  class: 'economy' | 'business' | 'executive' | 'first';
   price: number;
   available: boolean;
   features: string[];
+  windowSeat?: boolean;
+  forwardFacing?: boolean;
   emergencyExit?: boolean;
   extraLegroom?: boolean;
 }
@@ -24,17 +26,32 @@ export interface Flight {
   aircraft: Aircraft;
 }
 
+export interface Wagon {
+  number: string;
+  name: string;
+  class: 'economy' | 'business' | 'executive' | string;
+  facilities: string[];
+  availableSeats: number;
+  totalSeats: number;
+  seats: Seat[];
+}
+
 export interface Train {
   id: string;
   trainNumber: string;
+  trainName?: string;
+  operator?: string;
+  originStation?: string;
+  destinationStation?: string;
   departure: Station;
   arrival: Station;
   departureTime: string;
   arrivalTime: string;
   duration: number;
   price: number;
+  wagons: Wagon[];
   seats: Seat[];
-  class: 'ekonomi' | 'bisnis' | 'eksekutif';
+  class: 'economy' | 'business' | 'executive' | 'ekonomi' | 'bisnis' | 'eksekutif';
 }
 
 export interface Airport {
