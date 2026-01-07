@@ -3,7 +3,6 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useAuth } from '@/app/contexts/AuthContext';
 
 // --- Komponen Ikon ---
