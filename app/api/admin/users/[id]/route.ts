@@ -4,7 +4,7 @@ import { requireAdmin } from '@/app/lib/api-auth';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error: authError } = await requireAdmin(request);
   
@@ -13,11 +13,12 @@ export async function PUT(
   }
 
   try {
+    const { id } = await params;
     const body = await request.json();
     const { data, error } = await supabase
       .from('users')
       .update({ ...body, updated_at: new Date().toISOString() })
-      .eq('id', params.id)
+      .eq('id', id)
       .select();
 
     if (error) throw error;
@@ -30,7 +31,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error: authError } = await requireAdmin(request);
   
@@ -39,7 +40,8 @@ export async function DELETE(
   }
 
   try {
-    const { error } = await supabase.from('users').delete().eq('id', params.id);
+    const { id } = await params;
+    const { error } = await supabase.from('users').delete().eq('id', id);
 
     if (error) throw error;
     return NextResponse.json({ message: 'User deleted successfully' }, { status: 200 });

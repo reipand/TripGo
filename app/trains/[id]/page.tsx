@@ -1,11 +1,58 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import SeatMap from '../../components/SeatMap';
-import PaymentGateway from '../../components/PaymentGateway';
-import ETicket from '../../components/ETicket';
-import BookingProtection from '../../components/BookingProtection';
+import Link from 'next/link';
+import { z } from 'zod';
+
+// --- Tipe Data Standar ---
+interface Passenger {
+  id: number;
+  title: string;
+  fullName: string;
+  idNumber: string;
+  phoneNumber: string;
+  email: string;
+  seatNumber?: string;
+  passengerType?: 'Dewasa' | 'Anak' | 'Bayi';
+}
+
+interface Train {
+  id: string;
+  trainId: string;
+  trainNumber: string;
+  trainName: string;
+  trainClass: 'Eksekutif' | 'Bisnis' | 'Ekonomi';
+  trainType: string;
+  departureTime: string;
+  arrivalTime: string;
+  departureDate: string;
+  arrivalDate: string;
+  duration: string;
+  originStation: string;
+  origin: string;
+  originCity: string;
+  destinationStation: string;
+  destination: string;
+  destinationCity: string;
+  price: number;
+  insurance: number;
+  availableSeats: number;
+  seatType: string;
+  routeType: string;
+  facilities?: string[];
+}
+
+// --- Schema Validasi dengan Zod ---
+const passengerSchema = z.object({
+  title: z.enum(['Tn', 'Ny', 'Nn', 'An']),
+  fullName: z.string().min(3, 'Nama minimal 3 karakter'),
+  idNumber: z.string().regex(/^\d{16}$/, 'NIK harus 16 digit angka'),
+  phoneNumber: z.string().regex(/^08\d{9,11}$/, 'Format nomor telepon tidak valid'),
+  email: z.string().email('Format email tidak valid'),
+  seatNumber: z.string().optional(),
+  passengerType: z.enum(['Dewasa', 'Anak', 'Bayi']).default('Dewasa')
+});
 
 // --- Komponen Ikon ---
 const TrainIcon = () => (
@@ -32,12 +79,6 @@ const CreditCardIcon = () => (
   </svg>
 );
 
-const CheckIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-  </svg>
-);
-
 const StationIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -45,30 +86,32 @@ const StationIcon = () => (
   </svg>
 );
 
-const WagonIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
-  </svg>
-);
-
-// --- Komponen Informasi Perjalanan Kereta ---
-const TrainInfoCard = ({ train }: { train: any }) => (
+// --- Komponen TrainInfoCard ---
+const TrainInfoCard = ({ train }: { train: Train }) => (
   <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
     <div className="flex items-center justify-between mb-4">
       <div className="flex items-center space-x-3">
-        <img 
-          src={`/images/train-logo-${train.operator.toLowerCase()}.png`} 
-          alt={`${train.operator} logo`} 
-          className="w-12 h-12 object-contain"
-        />
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+          train.trainClass === 'Eksekutif' ? 'bg-blue-100' :
+          train.trainClass === 'Bisnis' ? 'bg-green-100' :
+          'bg-yellow-100'
+        }`}>
+          <svg className={`w-6 h-6 ${
+            train.trainClass === 'Eksekutif' ? 'text-blue-600' :
+            train.trainClass === 'Bisnis' ? 'text-green-600' :
+            'text-yellow-600'
+          }`} fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 100 4v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2a2 2 0 100-4V6z" />
+          </svg>
+        </div>
         <div>
-          <h3 className="font-bold text-lg text-gray-800">{train.operator}</h3>
-          <p className="text-sm text-gray-500">{train.trainNumber} • {train.trainName}</p>
+          <h3 className="font-bold text-lg text-gray-800">{train.trainName}</h3>
+          <p className="text-sm text-gray-500">{train.trainNumber} • Kelas {train.trainClass}</p>
         </div>
       </div>
       <div className="text-right">
-        <p className="text-2xl font-bold text-orange-500">Rp {train.price.toLocaleString('id-ID')}</p>
-        <p className="text-sm text-gray-500">per orang</p>
+        <p className="text-2xl font-bold text-[#FD7E14]">Rp {train.price.toLocaleString('id-ID')}</p>
+        <p className="text-sm text-gray-500">per penumpang</p>
       </div>
     </div>
 
@@ -76,12 +119,12 @@ const TrainInfoCard = ({ train }: { train: any }) => (
     <div className="flex items-center justify-between py-4 border-t border-b border-gray-200">
       <div className="text-center">
         <p className="text-2xl font-bold text-gray-800">{train.departureTime}</p>
-        <p className="text-sm text-gray-500">{train.departureDate}</p>
+        <p className="text-sm text-gray-500">{new Date(train.departureDate).toLocaleDateString('id-ID')}</p>
         <div className="flex items-center justify-center mt-1">
           <StationIcon />
           <div className="ml-2 text-left">
             <p className="text-sm text-gray-800 font-medium">{train.originStation}</p>
-            <p className="text-xs text-gray-500">{train.origin}</p>
+            <p className="text-xs text-gray-500">{train.originCity}</p>
           </div>
         </div>
       </div>
@@ -95,139 +138,101 @@ const TrainInfoCard = ({ train }: { train: any }) => (
           </div>
           <div className="flex-1 h-px bg-gray-300"></div>
         </div>
-        <p className="text-center text-xs text-gray-400 mt-2">{train.routeType}</p>
+        <p className="text-center text-xs text-gray-400 mt-2">Langsung</p>
       </div>
       
       <div className="text-center">
         <p className="text-2xl font-bold text-gray-800">{train.arrivalTime}</p>
-        <p className="text-sm text-gray-500">{train.arrivalDate}</p>
+        <p className="text-sm text-gray-500">{new Date(train.arrivalDate).toLocaleDateString('id-ID')}</p>
         <div className="flex items-center justify-center mt-1">
           <StationIcon />
           <div className="ml-2 text-left">
             <p className="text-sm text-gray-800 font-medium">{train.destinationStation}</p>
-            <p className="text-xs text-gray-500">{train.destination}</p>
+            <p className="text-xs text-gray-500">{train.destinationCity}</p>
           </div>
         </div>
       </div>
     </div>
-
-    {/* Train Details */}
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-      <div className="flex items-center space-x-2">
-        <ClockIcon />
-        <div>
-          <p className="text-sm font-medium text-gray-800">Durasi</p>
-          <p className="text-xs text-gray-500">{train.duration}</p>
-        </div>
-      </div>
-      <div className="flex items-center space-x-2">
-        <WagonIcon />
-        <div>
-          <p className="text-sm font-medium text-gray-800">Tipe Kereta</p>
-          <p className="text-xs text-gray-500">{train.trainType}</p>
-        </div>
-      </div>
-      <div className="flex items-center space-x-2">
-        <CheckIcon />
-        <div>
-          <p className="text-sm font-medium text-gray-800">Kelas</p>
-          <p className="text-xs text-gray-500">{train.class}</p>
-        </div>
-      </div>
-      <div className="flex items-center space-x-2">
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <div>
-          <p className="text-sm font-medium text-gray-800">Wagon</p>
-          <p className="text-xs text-gray-500">{train.wagonClass}</p>
-        </div>
-      </div>
-    </div>
-
-    {/* Additional Info */}
-    {train.facilities && train.facilities.length > 0 && (
-      <div className="mt-6 pt-6 border-t border-gray-200">
-        <h4 className="text-sm font-medium text-gray-800 mb-3">Fasilitas Kereta:</h4>
-        <div className="flex flex-wrap gap-2">
-          {train.facilities.map((facility: string, index: number) => (
-            <span key={index} className="px-3 py-1 bg-blue-50 text-blue-600 text-xs rounded-full">
-              {facility}
-            </span>
-          ))}
-        </div>
-      </div>
-    )}
   </div>
 );
 
-// --- Komponen Form Data Penumpang (modifikasi untuk kereta) ---
-const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCount: number, onPassengerDataChange: (data: any[]) => void }) => {
-  const [passengers, setPassengers] = useState<any[]>([]);
+// --- Komponen PassengerForm ---
+const PassengerForm = ({ 
+  passengerCount, 
+  onPassengerDataChange 
+}: { 
+  passengerCount: number; 
+  onPassengerDataChange: (data: Passenger[]) => void;
+}) => {
+  const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
 
+  // Initialize passengers
   useEffect(() => {
-    const initialPassengers = Array.from({ length: passengerCount }, (_, index) => ({
+    const initialPassengers: Passenger[] = Array.from({ length: passengerCount }, (_, index) => ({
       id: index + 1,
-      title: 'Tuan',
-      firstName: '',
-      lastName: '',
-      dateOfBirth: '',
+      title: 'Tn',
+      fullName: '',
       idNumber: '',
-      nationality: 'Indonesia',
       phoneNumber: '',
       email: '',
+      seatNumber: '',
       passengerType: 'Dewasa'
     }));
     setPassengers(initialPassengers);
-  }, [passengerCount]);
+    onPassengerDataChange(initialPassengers);
+  }, [passengerCount, onPassengerDataChange]);
 
-  const handlePassengerChange = (index: number, field: string, value: string) => {
-    const updatedPassengers = passengers.map((passenger, i) => 
-      i === index ? { ...passenger, [field]: value } : passenger
-    );
+  // Load data penumpang dari sessionStorage saat mount
+  useEffect(() => {
+    const savedPassengers = sessionStorage.getItem('tempPassengers');
+    if (savedPassengers && passengerCount > 0) {
+      try {
+        const parsed = JSON.parse(savedPassengers);
+        if (parsed.length === passengerCount) {
+          setPassengers(parsed);
+          onPassengerDataChange(parsed);
+        }
+      } catch (error) {
+        console.error('Error loading saved passengers:', error);
+      }
+    }
+  }, [passengerCount, onPassengerDataChange]);
+
+  // Simpan data penumpang sementara di sessionStorage
+  useEffect(() => {
+    if (passengers.length > 0 && passengers.some(p => p.fullName)) {
+      sessionStorage.setItem('tempPassengers', JSON.stringify(passengers));
+    }
+  }, [passengers]);
+
+  const handlePassengerChange = (index: number, field: keyof Passenger, value: string) => {
+    const updatedPassengers = [...passengers];
+    updatedPassengers[index] = { ...updatedPassengers[index], [field]: value };
     setPassengers(updatedPassengers);
     onPassengerDataChange(updatedPassengers);
     
-    // Clear error when user starts typing
-    const errorKey = `${index}-${field}`;
-    if (errors[errorKey]) {
+    // Validasi real-time
+    const passenger = updatedPassengers[index];
+    try {
+      passengerSchema.parse(passenger);
+      const errorKey = `${index}-${field}`;
       setErrors(prev => {
         const newErrors = { ...prev };
         delete newErrors[errorKey];
         return newErrors;
       });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const fieldError = error.issues.find((e) => e.path.includes(field));
+        if (fieldError) {
+          setErrors(prev => ({
+            ...prev,
+            [`${index}-${field}`]: fieldError.message
+          }));
+        }
+      }
     }
-  };
-
-  const validateForm = () => {
-    const newErrors: {[key: string]: string} = {};
-    
-    passengers.forEach((passenger, index) => {
-      if (!passenger.firstName.trim()) {
-        newErrors[`${index}-firstName`] = 'Nama depan wajib diisi';
-      }
-      if (!passenger.lastName.trim()) {
-        newErrors[`${index}-lastName`] = 'Nama belakang wajib diisi';
-      }
-      if (!passenger.dateOfBirth) {
-        newErrors[`${index}-dateOfBirth`] = 'Tanggal lahir wajib diisi';
-      }
-      if (!passenger.idNumber.trim()) {
-        newErrors[`${index}-idNumber`] = 'Nomor KTP/Identitas wajib diisi';
-      }
-      if (!passenger.phoneNumber.trim()) {
-        newErrors[`${index}-phoneNumber`] = 'Nomor telepon wajib diisi';
-      }
-      if (!passenger.email.trim()) {
-        newErrors[`${index}-email`] = 'Email wajib diisi';
-      } else if (!/\S+@\S+\.\S+/.test(passenger.email)) {
-        newErrors[`${index}-email`] = 'Format email tidak valid';
-      }
-    });
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   return (
@@ -251,92 +256,63 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
               </div>
               <h4 className="font-semibold text-gray-800">Penumpang {index + 1}</h4>
             </div>
-            <div>
-              <select
-                value={passenger.passengerType}
-                onChange={(e) => handlePassengerChange(index, 'passengerType', e.target.value)}
-                className="p-2 border border-gray-300 rounded-lg text-sm text-gray-700"
-              >
-                <option value="Dewasa">Dewasa</option>
-                <option value="Anak">Anak (3-12 tahun)</option>
-                <option value="Bayi">Bayi (0-2 tahun)</option>
-              </select>
-            </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Gelar *</label>
               <select
                 value={passenger.title}
                 onChange={(e) => handlePassengerChange(index, 'title', e.target.value)}
-                className="w-full p-3 border border-gray-300 text-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="Tuan">Tuan</option>
-                <option value="Nyonya">Nyonya</option>
-                <option value="Nona">Nona</option>
-                <option value="Dr">Dr</option>
+                <option value="Tn">Tn (Bapak)</option>
+                <option value="Ny">Ny (Ibu)</option>
+                <option value="Nn">Nn (Nona)</option>
+                <option value="An">An (Anak)</option>
               </select>
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nama Depan *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Tipe Penumpang</label>
+              <select
+                value={passenger.passengerType}
+                onChange={(e) => handlePassengerChange(index, 'passengerType', e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="Dewasa">Dewasa (≥12 tahun)</option>
+                <option value="Anak">Anak (3-11 tahun)</option>
+                <option value="Bayi">Bayi (0-2 tahun)</option>
+              </select>
+            </div>
+            
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nama Lengkap *</label>
               <input
                 type="text"
-                value={passenger.firstName}
-                onChange={(e) => handlePassengerChange(index, 'firstName', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-700 focus:border-transparent transition-colors ${
-                  errors[`${index}-firstName`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                value={passenger.fullName}
+                onChange={(e) => handlePassengerChange(index, 'fullName', e.target.value)}
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  errors[`${index}-fullName`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
-                placeholder="Masukkan nama depan"
+                placeholder="Masukkan nama lengkap sesuai KTP"
               />
-              {errors[`${index}-firstName`] && (
-                <p className="text-red-500 text-xs mt-1">{errors[`${index}-firstName`]}</p>
+              {errors[`${index}-fullName`] && (
+                <p className="text-red-500 text-xs mt-1">{errors[`${index}-fullName`]}</p>
               )}
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nama Belakang *</label>
-              <input
-                type="text"
-                value={passenger.lastName}
-                onChange={(e) => handlePassengerChange(index, 'lastName', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-700 focus:border-transparent transition-colors ${
-                  errors[`${index}-lastName`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                }`}
-                placeholder="Masukkan nama belakang"
-              />
-              {errors[`${index}-lastName`] && (
-                <p className="text-red-500 text-xs mt-1">{errors[`${index}-lastName`]}</p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Tanggal Lahir *</label>
-              <input
-                type="date"
-                value={passenger.dateOfBirth}
-                onChange={(e) => handlePassengerChange(index, 'dateOfBirth', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-700 focus:border-transparent transition-colors ${
-                  errors[`${index}-dateOfBirth`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                }`}
-                max={new Date().toISOString().split('T')[0]}
-              />
-              {errors[`${index}-dateOfBirth`] && (
-                <p className="text-red-500 text-xs mt-1">{errors[`${index}-dateOfBirth`]}</p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nomor KTP/Identitas *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">NIK *</label>
               <input
                 type="text"
                 value={passenger.idNumber}
                 onChange={(e) => handlePassengerChange(index, 'idNumber', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 text-gray-700 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors[`${index}-idNumber`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
-                placeholder="Masukkan nomor KTP"
+                placeholder="16 digit NIK"
+                maxLength={16}
               />
               {errors[`${index}-idNumber`] && (
                 <p className="text-red-500 text-xs mt-1">{errors[`${index}-idNumber`]}</p>
@@ -344,28 +320,12 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Kewarganegaraan *</label>
-              <select
-                value={passenger.nationality}
-                onChange={(e) => handlePassengerChange(index, 'nationality', e.target.value)}
-                className="w-full p-3 border border-gray-300 text-gray-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-              >
-                <option value="Indonesia">Indonesia</option>
-                <option value="Malaysia">Malaysia</option>
-                <option value="Singapore">Singapore</option>
-                <option value="Thailand">Thailand</option>
-                <option value="Philippines">Philippines</option>
-                <option value="Vietnam">Vietnam</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nomor Telepon *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">No. Telepon *</label>
               <input
                 type="tel"
                 value={passenger.phoneNumber}
                 onChange={(e) => handlePassengerChange(index, 'phoneNumber', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 text-gray-700 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors[`${index}-phoneNumber`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="08xxxxxxxxxx"
@@ -374,21 +334,32 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
                 <p className="text-red-500 text-xs mt-1">{errors[`${index}-phoneNumber`]}</p>
               )}
             </div>
-
+            
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
               <input
                 type="email"
                 value={passenger.email}
                 onChange={(e) => handlePassengerChange(index, 'email', e.target.value)}
-                className={`w-full p-3 border rounded-lg focus:ring-2 text-gray-700 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors[`${index}-email`] ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
-                placeholder="email@example.com"
+                placeholder="email@contoh.com"
               />
               {errors[`${index}-email`] && (
                 <p className="text-red-500 text-xs mt-1">{errors[`${index}-email`]}</p>
               )}
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nomor Kursi (Opsional)</label>
+              <input
+                type="text"
+                value={passenger.seatNumber || ''}
+                onChange={(e) => handlePassengerChange(index, 'seatNumber', e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Contoh: A1, B5"
+              />
             </div>
           </div>
         </div>
@@ -397,16 +368,14 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
       <div className="mt-6 p-4 bg-blue-50 rounded-lg">
         <div className="flex items-start space-x-3">
           <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-            <span className="text-white text-xs">i</span>
+            <span className="text-white text-xs">!</span>
           </div>
           <div>
-            <h4 className="text-sm font-medium text-blue-800 mb-1">Informasi Penting untuk Kereta Api</h4>
+            <h4 className="text-sm font-medium text-blue-800 mb-1">Informasi Penting</h4>
             <ul className="text-sm text-blue-700 space-y-1">
-              <li>• Pastikan data penumpang sesuai dengan KTP/identitas resmi</li>
-              <li>• Nomor identitas harus valid dan sesuai dengan dokumen asli</li>
-              <li>• Email akan digunakan untuk konfirmasi dan e-ticket</li>
-              <li>• Nomor telepon untuk notifikasi penting dan boarding</li>
-              <li>• Penumpang harus tiba di stasiun minimal 60 menit sebelum keberangkatan</li>
+              <li>• Nama penumpang harus sama persis dengan KTP</li>
+              <li>• Penumpang wajib membawa KTP asli saat check-in</li>
+              <li>• Check-in di stasiun minimal 60 menit sebelum keberangkatan</li>
             </ul>
           </div>
         </div>
@@ -415,35 +384,18 @@ const PassengerForm = ({ passengerCount, onPassengerDataChange }: { passengerCou
   );
 };
 
-// --- Komponen Pilihan Pembayaran (sama) ---
-const PaymentSection = ({ onPaymentMethodChange }: { onPaymentMethodChange: (method: string) => void }) => {
+// --- Komponen PaymentSection ---
+const PaymentSection = ({ 
+  onPaymentMethodChange 
+}: { 
+  onPaymentMethodChange: (method: string) => void;
+}) => {
   const [selectedMethod, setSelectedMethod] = useState('');
 
   const paymentMethods = [
-    {
-      id: 'credit-card',
-      name: 'Kartu Kredit/Debit',
-      icon: <CreditCardIcon />,
-      description: 'Visa, Mastercard, JCB'
-    },
-    {
-      id: 'bank-transfer',
-      name: 'Transfer Bank',
-      icon: <CreditCardIcon />,
-      description: 'BCA, Mandiri, BNI, BRI'
-    },
-    {
-      id: 'e-wallet',
-      name: 'E-Wallet',
-      icon: <CreditCardIcon />,
-      description: 'GoPay, OVO, DANA, LinkAja'
-    },
-    {
-      id: 'virtual-account',
-      name: 'Virtual Account',
-      icon: <CreditCardIcon />,
-      description: 'VA BCA, VA Mandiri, VA BNI'
-    }
+    { id: 'bank-transfer', name: 'Transfer Bank', description: 'BCA, Mandiri, BNI, BRI' },
+    { id: 'credit-card', name: 'Kartu Kredit/Debit', description: 'Visa, Mastercard, JCB' },
+    { id: 'e-wallet', name: 'E-Wallet', description: 'OVO, GoPay, DANA' }
   ];
 
   const handleMethodSelect = (methodId: string) => {
@@ -463,255 +415,423 @@ const PaymentSection = ({ onPaymentMethodChange }: { onPaymentMethodChange: (met
           <div
             key={method.id}
             onClick={() => handleMethodSelect(method.id)}
-            className={`p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
-              selectedMethod === method.id
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300'
+            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+              selectedMethod === method.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
             }`}
           >
             <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-lg ${
-                selectedMethod === method.id ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'
+              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                selectedMethod === method.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
               }`}>
-                {method.icon}
+                {selectedMethod === method.id && (
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                )}
               </div>
               <div className="flex-1">
                 <h4 className="font-semibold text-gray-800">{method.name}</h4>
                 <p className="text-sm text-gray-500">{method.description}</p>
               </div>
-              <div className={`w-5 h-5 rounded-full border-2 ${
-                selectedMethod === method.id ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-              }`}>
-                {selectedMethod === method.id && (
-                  <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         ))}
       </div>
-      
-      <div className="mt-6 p-4 bg-yellow-50 rounded-lg">
-        <div className="flex items-start space-x-3">
-          <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-            <span className="text-white text-xs">!</span>
+    </div>
+  );
+};
+
+// --- Komponen BookingProtection ---
+const BookingProtection = ({ 
+  insuranceIncluded, 
+  onInsuranceChange,
+  insuranceFee 
+}: { 
+  insuranceIncluded: boolean; 
+  onInsuranceChange: (selected: boolean) => void;
+  insuranceFee: number;
+}) => {
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-800">Asuransi Perjalanan</h3>
+          <p className="text-sm text-gray-600">Perlindungan pembatalan, kecelakaan, dan bagasi</p>
+        </div>
+        <div className="flex items-center space-x-4">
+          <div className="text-right">
+            <p className="text-lg font-bold text-[#FD7E14]">Rp {insuranceFee.toLocaleString('id-ID')}</p>
+            <p className="text-sm text-gray-500">per penumpang</p>
           </div>
-          <div>
-            <h4 className="text-sm font-medium text-yellow-800 mb-1">Kebijakan Pembayaran Kereta Api</h4>
-            <ul className="text-sm text-yellow-700 space-y-1">
-              <li>• Batas waktu pembayaran: 2 jam setelah pemesanan</li>
-              <li>• Tiket hanya bisa dicetak setelah pembayaran berhasil</li>
-              <li>• Pembatalan dikenakan biaya administrasi</li>
-              <li>• E-ticket akan dikirim ke email setelah pembayaran</li>
-            </ul>
-          </div>
+          <input
+            type="checkbox"
+            checked={insuranceIncluded}
+            onChange={(e) => onInsuranceChange(e.target.checked)}
+            className="w-6 h-6 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
+          />
         </div>
       </div>
     </div>
   );
 };
 
-// --- Komponen Ringkasan Harga ---
-const PriceSummary = ({ train, passengerCount, selectedSeats }: { train: any, passengerCount: number, selectedSeats: any[] }) => {
-  const router = useRouter();
+// --- Komponen PriceSummary ---
+const PriceSummary = ({ 
+  train, 
+  passengerCount, 
+  insuranceSelected,
+  currentStep,
+  paymentMethod,
+  passengerData,
+  onContinue,
+  onPayment,
+  validatePassengers
+}: { 
+  train: Train;
+  passengerCount: number;
+  insuranceSelected: boolean;
+  currentStep: number;
+  paymentMethod: string;
+  passengerData: Passenger[];
+  onContinue: () => void;
+  onPayment: () => Promise<void>;
+  validatePassengers: () => boolean;
+}) => {
   const basePrice = train.price;
   const totalBasePrice = basePrice * passengerCount;
-  const seatFees = selectedSeats.reduce((sum, seat) => sum + (seat.price || 0), 0);
-  const insurance = train.insurance || 0;
-  const tax = (totalBasePrice + seatFees + insurance) * 0.11; // 11% tax
-  const serviceFee = 10000; // Service fee untuk kereta
-  const totalPrice = totalBasePrice + seatFees + insurance + tax + serviceFee;
+  const insurance = insuranceSelected ? train.insurance * passengerCount : 0;
+  const tax = Math.round((totalBasePrice + insurance) * 0.11);
+  const serviceFee = 5000;
+  const totalPrice = totalBasePrice + insurance + tax + serviceFee;
+
+  const handleContinue = async () => {
+    if (currentStep === 2) {
+      if (!validatePassengers()) {
+        alert('Harap isi data penumpang dengan lengkap');
+        return;
+      }
+    }
+    
+    if (currentStep === 3 && !paymentMethod) {
+      alert('Harap pilih metode pembayaran');
+      return;
+    }
+
+    if (currentStep < 3) {
+      onContinue();
+      return;
+    }
+
+    // Lanjutkan ke pembayaran
+    await onPayment();
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 sticky top-4">
-      <h3 className="text-xl font-bold text-gray-800 mb-4">Ringkasan Harga</h3>
+      <h3 className="text-xl font-bold text-gray-800 mb-6 pb-4 border-b border-gray-200">Ringkasan Pemesanan</h3>
       
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex justify-between">
-          <span className="text-gray-600">Harga Tiket ({passengerCount} penumpang)</span>
+          <span className="text-gray-600">Tiket ({passengerCount} orang)</span>
           <span className="font-medium">Rp {totalBasePrice.toLocaleString('id-ID')}</span>
         </div>
-        {seatFees > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-600">Biaya Kursi ({selectedSeats.length} kursi)</span>
-            <span className="font-medium">Rp {seatFees.toLocaleString('id-ID')}</span>
-          </div>
-        )}
-        {insurance > 0 && (
-          <div className="flex justify-between">
-            <span className="text-gray-600">Asuransi Perjalanan</span>
-            <span className="font-medium">Rp {insurance.toLocaleString('id-ID')}</span>
-          </div>
-        )}
+        
         <div className="flex justify-between">
-          <span className="text-gray-600">Pajak & Fee</span>
+          <span className="text-gray-600">Asuransi Perjalanan</span>
+          <span className={`font-medium ${insuranceSelected ? 'text-green-600' : 'text-gray-600'}`}>
+            {insuranceSelected ? `Rp ${insurance.toLocaleString('id-ID')}` : '-'}
+          </span>
+        </div>
+        
+        <div className="flex justify-between">
+          <span className="text-gray-600">PPN 11%</span>
           <span className="font-medium">Rp {tax.toLocaleString('id-ID')}</span>
         </div>
+        
         <div className="flex justify-between">
           <span className="text-gray-600">Biaya Layanan</span>
           <span className="font-medium">Rp {serviceFee.toLocaleString('id-ID')}</span>
         </div>
+        
         <hr className="border-gray-200" />
-        <div className="flex justify-between text-lg font-bold">
-          <span>Total</span>
-          <span className="text-orange-500">Rp {totalPrice.toLocaleString('id-ID')}</span>
+        
+        <div className="flex justify-between text-lg font-bold pt-2">
+          <span>Total Pembayaran</span>
+          <span className="text-[#FD7E14]">Rp {totalPrice.toLocaleString('id-ID')}</span>
         </div>
       </div>
       
       <button 
-        onClick={() => {
-          // Simulasi proses pembayaran dan redirect ke konfirmasi
-          const bookingId = 'TKT' + Math.random().toString(36).substr(2, 9).toUpperCase();
-          router.push(`/booking/train-confirmation?id=${bookingId}`);
-        }}
-        className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-lg transition-colors duration-300"
+        onClick={handleContinue}
+        disabled={currentStep === 3 && !paymentMethod}
+        className={`w-full mt-6 font-bold py-4 px-6 rounded-lg transition-all ${
+          currentStep === 3 && !paymentMethod
+            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            : 'bg-[#FD7E14] hover:bg-[#E06700] text-white'
+        }`}
       >
-        Lanjutkan Pembayaran
+        {currentStep === 3 ? 'LANJUTKAN PEMBAYARAN' : 'LANJUTKAN'}
       </button>
-      
-      <div className="mt-4 text-center">
-        <p className="text-xs text-gray-500">
-          Dengan melanjutkan, Anda menyetujui{' '}
-          <a href="#" className="text-blue-500 hover:underline">Syarat dan Ketentuan</a>{' '}
-          serta{' '}
-          <a href="#" className="text-blue-500 hover:underline">Kebijakan Privasi</a>
-        </p>
-      </div>
     </div>
   );
 };
 
-// --- Halaman Utama Detail Kereta Api ---
+// --- Halaman Utama ---
 export default function TrainDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const [train, setTrain] = useState<any>(null);
-  const [passengerCount, setPassengerCount] = useState(1);
-  const [passengerData, setPassengerData] = useState<any[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState('');
-  const [selectedSeats, setSelectedSeats] = useState<any[]>([]);
+  const [train, setTrain] = useState<Train | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentStep, setCurrentStep] = useState<'details' | 'seats' | 'payment' | 'ticket'>('details');
-  const [bookingId, setBookingId] = useState<string | null>(null);
-  const [paymentData, setPaymentData] = useState<any>(null);
-  const [passengerSelectorOpen, setPassengerSelectorOpen] = useState(false);
+  const [passengerCount, setPassengerCount] = useState(1);
+  const [passengerData, setPassengerData] = useState<Passenger[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [currentStep, setCurrentStep] = useState(1);
+  const [insuranceSelected, setInsuranceSelected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // Fetch data kereta
   useEffect(() => {
-    // Simulasi data kereta berdasarkan ID
-    const trainData = {
-      id: params.id,
-      operator: 'KAI Commuter',
-      trainNumber: 'KA-12345',
-      trainName: 'Argo Bromo Anggrek',
-      trainType: 'Kereta Eksekutif',
-      departureTime: '07:30',
-      arrivalTime: '12:00',
-      departureDate: '15 Des 2023',
-      arrivalDate: '15 Des 2023',
-      duration: '4j 30m',
-      origin: 'Jakarta',
-      destination: 'Surabaya',
-      originStation: 'Stasiun Gambir',
-      destinationStation: 'Stasiun Surabaya Gubeng',
-      routeType: 'Langsung',
-      class: 'Eksekutif',
-      wagonClass: 'Wagon 3',
-      price: 350000,
-      insurance: 25000,
-      facilities: ['AC', 'Toilet', 'Makanan', 'WiFi', 'Stop Kontak', 'TV'],
-      availableSeats: 45
-    };
-    
-    setTrain(trainData);
-    setLoading(false);
-  }, [params.id]);
+    const fetchTrainData = async () => {
+      try {
+        if (!params?.id) {
+          throw new Error('ID kereta tidak ditemukan');
+        }
 
-  const handlePassengerDataChange = (data: any[]) => {
-    setPassengerData(data);
-  };
-
-  const handlePaymentMethodChange = (method: string) => {
-    setPaymentMethod(method);
-  };
-
-  const handleSeatSelect = useCallback((seats: any[]) => {
-    setSelectedSeats(seats);
-  }, []);
-
-  const handlePaymentSuccess = (result: any) => {
-    console.log('Payment successful:', result);
-    const newBookingId = `TKT${Date.now()}`;
-    setBookingId(newBookingId);
-    
-    // Redirect to payment success page with order details
-    const successUrl = `/payment/train-success?order_id=${result.order_id}&transaction_status=${result.status}&transaction_id=${result.transaction_id || ''}`;
-    window.location.href = successUrl;
-    
-    // Prepare payment data for e-ticket
-    setPaymentData({
-      orderId: result.order_id || newBookingId,
-      amount: train.price * passengerCount + selectedSeats.reduce((sum, seat) => sum + seat.price, 0),
-      currency: 'IDR',
-      items: [
-        {
-          id: train.id,
-          price: train.price,
-          quantity: passengerCount,
-          name: `${train.operator} ${train.trainNumber} - ${train.origin} ke ${train.destination}`
-        },
-        ...selectedSeats.map(seat => ({
-          id: seat.id,
-          price: seat.price,
-          quantity: 1,
-          name: `Kursi ${seat.id} - Gerbong ${seat.wagon}`
-        }))
-      ],
-      customerDetails: {
-        first_name: passengerData[0]?.firstName || '',
-        last_name: passengerData[0]?.lastName || '',
-        email: passengerData[0]?.email || '',
-        phone: passengerData[0]?.phoneNumber || ''
-      },
-      billingAddress: {
-        first_name: passengerData[0]?.firstName || '',
-        last_name: passengerData[0]?.lastName || '',
-        address: 'Jakarta, Indonesia',
-        city: 'Jakarta',
-        postal_code: '12345',
-        phone: passengerData[0]?.phoneNumber || ''
+        // Coba fetch dari API atau gunakan data dummy jika API tidak tersedia
+        try {
+          const response = await fetch(`/api/trains/${params.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            setTrain({
+              ...data,
+              trainId: data.id,
+              trainType: data.trainClass || data.trainType,
+              origin: data.originStation || data.origin,
+              destination: data.destinationStation || data.destination
+            });
+          } else {
+            // Fallback ke data dummy jika API error
+            createDummyData();
+          }
+        } catch (fetchError) {
+          console.log('API error, using dummy data:', fetchError);
+          createDummyData();
+        }
+        
+      } catch (error: any) {
+        console.error('Error fetching train data:', error);
+        setError(error.message);
+      } finally {
+        setLoading(false);
       }
-    });
+    };
+
+    // Function untuk membuat data dummy
+    const createDummyData = () => {
+      const dummyTrain: Train = {
+        id: params?.id as string || '1',
+        trainId: params?.id as string || '1',
+        trainNumber: 'KA-123',
+        trainName: 'Argo Bromo Anggrek',
+        trainClass: 'Eksekutif',
+        trainType: 'Eksekutif',
+        departureTime: '08:00',
+        arrivalTime: '12:00',
+        departureDate: new Date().toISOString(),
+        arrivalDate: new Date(new Date().getTime() + 4 * 60 * 60 * 1000).toISOString(),
+        duration: '4 jam',
+        originStation: 'Gambir',
+        origin: 'Gambir',
+        originCity: 'Jakarta',
+        destinationStation: 'Surabaya Gubeng',
+        destination: 'Surabaya Gubeng',
+        destinationCity: 'Surabaya',
+        price: 350000,
+        insurance: 10000,
+        availableSeats: 25,
+        seatType: 'Reclining Seat',
+        routeType: 'Langsung',
+        facilities: ['AC', 'Makanan', 'Minuman']
+      };
+      setTrain(dummyTrain);
+      // Simpan ke sessionStorage untuk backup
+      sessionStorage.setItem('selectedTrain', JSON.stringify(dummyTrain));
+    };
+
+    // Coba ambil data dari sessionStorage terlebih dahulu
+    const savedTrain = sessionStorage.getItem('selectedTrain');
+    if (savedTrain) {
+      try {
+        const parsedTrain = JSON.parse(savedTrain);
+        setTrain(parsedTrain);
+        setLoading(false);
+        return;
+      } catch (e) {
+        console.error('Error parsing saved train:', e);
+      }
+    }
+
+    fetchTrainData();
+  }, [params?.id]);
+
+  const validatePassengers = (): boolean => {
+    if (passengerData.length === 0) return false;
+    
+    for (const passenger of passengerData) {
+      try {
+        passengerSchema.parse(passenger);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          const fieldErrors = error.issues.map(err => err.message).join(', ');
+          alert(`Data penumpang tidak valid: ${fieldErrors}`);
+          return false;
+        }
+        return false;
+      }
+    }
+    return true;
   };
 
-  const handlePaymentError = (error: any) => {
-    console.error('Payment error:', error);
-    alert('Pembayaran gagal. Silakan coba lagi.');
+  const calculateTotalPrice = () => {
+    if (!train) return 0;
+    const basePrice = train.price;
+    const totalBasePrice = basePrice * passengerCount;
+    const insurance = insuranceSelected ? train.insurance * passengerCount : 0;
+    const tax = Math.round((totalBasePrice + insurance) * 0.11);
+    const serviceFee = 5000;
+    return totalBasePrice + insurance + tax + serviceFee;
+  };
+
+  const handlePayment = async () => {
+    try {
+      // Validasi data
+      if (!validatePassengers()) {
+        return;
+      }
+
+      if (!paymentMethod) {
+        alert('Harap pilih metode pembayaran');
+        return;
+      }
+
+      // Generate booking data
+      const bookingCode = `BOOK-${Date.now().toString().slice(-8)}`;
+      const orderId = `ORDER-${Date.now()}`;
+      
+      // Prepare booking data
+      const bookingData = {
+        trainDetail: train ? {
+          trainId: train.trainId,
+          trainName: train.trainName,
+          trainType: train.trainType,
+          departureTime: train.departureTime,
+          arrivalTime: train.arrivalTime,
+          origin: train.origin,
+          destination: train.destination,
+          departureDate: train.departureDate,
+          price: train.price
+        } : null,
+        passengers: passengerData,
+        passengerCount: passengerCount,
+        totalAmount: calculateTotalPrice(),
+        insuranceIncluded: insuranceSelected,
+        insuranceAmount: insuranceSelected ? train!.insurance * passengerCount : 0,
+        paymentMethod: paymentMethod,
+        bookingCode: bookingCode,
+        orderId: orderId,
+        bookingTime: new Date().toISOString()
+      };
+
+      // Save to sessionStorage
+      sessionStorage.setItem('currentBooking', JSON.stringify(bookingData));
+
+      // Call booking API
+      const apiResponse = await fetch('/api/bookings/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bookingData)
+      });
+
+      const result = await apiResponse.json();
+      
+      if (!apiResponse.ok || !result.success) {
+        throw new Error(result.message || 'Gagal membuat booking');
+      }
+
+      // Clear temporary data
+      sessionStorage.removeItem('tempPassengers');
+
+      // Redirect ke halaman pembayaran dengan parameters
+      const queryParams = new URLSearchParams({
+        bookingCode: bookingCode,
+        orderId: orderId,
+        amount: calculateTotalPrice().toString(),
+        name: passengerData[0]?.fullName || '',
+        email: passengerData[0]?.email || '',
+        phone: passengerData[0]?.phoneNumber || '',
+        passengerCount: passengerCount.toString(),
+        savedToDatabase: result.data?.savedToDatabase ? 'true' : 'false',
+        paymentMethod: paymentMethod,
+        trainName: train?.trainName || '',
+        trainType: train?.trainType || '',
+        origin: train?.origin || '',
+        destination: train?.destination || '',
+        departureDate: train?.departureDate || '',
+        departureTime: train?.departureTime || ''
+      });
+
+      if (result.data?.bookingId) {
+        queryParams.append('databaseId', result.data.bookingId);
+      }
+
+      if (result.data?.ticketNumber) {
+        queryParams.append('ticketNumber', result.data.ticketNumber);
+      }
+
+      router.push(`/payment?${queryParams.toString()}`);
+
+    } catch (error: any) {
+      console.error('Payment error:', error);
+      alert(error.message || 'Terjadi kesalahan saat memproses pembayaran');
+    }
   };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FD7E14] mx-auto mb-4"></div>
           <p className="text-gray-600">Memuat detail perjalanan kereta...</p>
         </div>
       </div>
     );
   }
 
-  if (!train) {
+  if (error || !train) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600">Perjalanan kereta tidak ditemukan</p>
-          <button 
-            onClick={() => router.back()}
-            className="mt-4 bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors"
-          >
-            Kembali
-          </button>
+        <div className="text-center max-w-md mx-4">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Terjadi Kesalahan</h2>
+          <p className="text-gray-600 mb-6">{error || 'Perjalanan kereta tidak ditemukan'}</p>
+          <div className="space-y-3">
+            <button 
+              onClick={() => router.push('/search')}
+              className="w-full px-6 py-3 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors"
+            >
+              Cari Kereta Lain
+            </button>
+            <button 
+              onClick={() => router.back()}
+              className="w-full px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Kembali
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -725,7 +845,7 @@ export default function TrainDetailPage() {
           <div className="flex items-center justify-between">
             <button 
               onClick={() => router.back()}
-              className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
+              className="flex items-center text-gray-600 hover:text-gray-800"
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -733,7 +853,7 @@ export default function TrainDetailPage() {
               Kembali
             </button>
             <h1 className="text-xl font-bold text-gray-800">Detail Perjalanan Kereta</h1>
-            <div className="w-20"></div> {/* Spacer untuk centering */}
+            <div className="w-20"></div>
           </div>
         </div>
       </div>
@@ -747,267 +867,86 @@ export default function TrainDetailPage() {
                 <h3 className="font-medium text-gray-800">Jumlah Penumpang</h3>
                 <p className="text-sm text-gray-500">Tentukan jumlah penumpang</p>
               </div>
-              <div className="relative">
-                <button
-                  onClick={() => setPassengerSelectorOpen(!passengerSelectorOpen)}
-                  className="flex items-center space-x-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition-colors"
-                >
-                  <UserIcon />
-                  <span>{passengerCount} Penumpang</span>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                
-                {passengerSelectorOpen && (
-                  <div className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-48">
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-gray-700">Dewasa</span>
-                        <div className="flex items-center space-x-2">
-                          <button 
-                            onClick={() => setPassengerCount(Math.max(1, passengerCount - 1))}
-                            className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100"
-                          >
-                            -
-                          </button>
-                          <span className="w-8 text-center">{passengerCount}</span>
-                          <button 
-                            onClick={() => setPassengerCount(passengerCount + 1)}
-                            className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setPassengerSelectorOpen(false)}
-                        className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
-                      >
-                        Simpan
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <select
+                value={passengerCount}
+                onChange={(e) => setPassengerCount(Number(e.target.value))}
+                className="border rounded-lg px-4 py-2"
+              >
+                {[1, 2, 3, 4, 5, 6].map(num => (
+                  <option key={num} value={num}>{num} orang</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
 
-        {/* Step Navigation */}
+        {/* Progress Steps */}
         <div className="mb-8">
           <div className="flex items-center justify-center space-x-8">
             {[
-              { key: 'details', label: 'Detail Perjalanan', icon: '🚂' },
-              { key: 'seats', label: 'Pilih Kursi', icon: '💺' },
-              { key: 'payment', label: 'Pembayaran', icon: '💳' },
-              { key: 'ticket', label: 'E-Ticket', icon: '🎫' }
-            ].map((step, index) => (
-              <div key={step.key} className="flex items-center">
+              { step: 1, label: 'Detail', icon: '🚂' },
+              { step: 2, label: 'Penumpang', icon: '👥' },
+              { step: 3, label: 'Pembayaran', icon: '💳' }
+            ].map((stepInfo) => (
+              <div key={stepInfo.step} className="flex items-center">
                 <button
-                  onClick={() => setCurrentStep(step.key as any)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                    currentStep === step.key
+                  onClick={() => setCurrentStep(stepInfo.step)}
+                  className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-all ${
+                    currentStep === stepInfo.step
+                      ? 'bg-[#FD7E14] text-white transform scale-110'
+                      : currentStep > stepInfo.step
                       ? 'bg-green-500 text-white'
-                      : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                      : 'bg-gray-200 text-gray-600'
                   }`}
                 >
-                  <span>{step.icon}</span>
-                  <span className="hidden sm:block">{step.label}</span>
+                  <span className="text-lg">{stepInfo.icon}</span>
                 </button>
-                {index < 3 && (
-                  <div className="w-8 h-0.5 bg-gray-300 mx-2"></div>
+                {stepInfo.step < 3 && (
+                  <div className={`w-16 h-1 ${
+                    currentStep > stepInfo.step ? 'bg-green-500' : 'bg-gray-300'
+                  }`}></div>
                 )}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Content based on current step */}
-        {currentStep === 'details' && (
-          <BookingProtection insuranceIncluded={train.insurance > 0}>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-6">
-                <TrainInfoCard train={train} />
-                <PassengerForm 
-                  passengerCount={passengerCount}
-                  onPassengerDataChange={handlePassengerDataChange}
-                />
-                <PaymentSection onPaymentMethodChange={handlePaymentMethodChange} />
-              </div>
-              <div className="lg:col-span-1">
-                <PriceSummary train={train} passengerCount={passengerCount} selectedSeats={selectedSeats} />
-              </div>
-            </div>
-          </BookingProtection>
-        )}
+        {/* Booking Protection */}
+        <BookingProtection 
+          insuranceIncluded={insuranceSelected}
+          onInsuranceChange={setInsuranceSelected}
+          insuranceFee={train.insurance}
+        />
 
-        {currentStep === 'seats' && (
-          <BookingProtection>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-                  <h3 className="text-xl font-bold text-gray-800 mb-4">Pilih Kursi dan Gerbong</h3>
-                  <p className="text-gray-600 mb-6">Pilih {passengerCount} kursi untuk penumpang Anda. Kursi berwarna hijau tersedia, kuning sudah dipilih, dan merah tidak tersedia.</p>
-                  {/* SeatMap untuk kereta akan berbeda dengan pesawat */}
-                  <SeatMap 
-                    trainId={train.id}
-                    onSeatSelection={handleSeatSelect}
-                    selectedSeats={selectedSeats}
-                    maxSeats={passengerCount}
-                    wagonClass={train.wagonClass}
-                  />
-                </div>
-              </div>
-              <div className="lg:col-span-1">
-                <PriceSummary train={train} passengerCount={passengerCount} selectedSeats={selectedSeats} />
-              </div>
-            </div>
-          </BookingProtection>
-        )}
-
-        {currentStep === 'payment' && paymentData && (
-          <BookingProtection>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2">
-                <PaymentGateway
-                  paymentData={paymentData}
-                  onPaymentSuccess={handlePaymentSuccess}
-                  onPaymentError={handlePaymentError}
-                  showStatus={true}
-                  trainBooking={true}
-                />
-              </div>
-              <div className="lg:col-span-1">
-                <PriceSummary train={train} passengerCount={passengerCount} selectedSeats={selectedSeats} />
-              </div>
-            </div>
-          </BookingProtection>
-        )}
-
-        {currentStep === 'ticket' && bookingId && (
-          <ETicket 
-            bookingId={bookingId}
-            onDownload={() => console.log('Download e-ticket kereta')}
-            onShare={() => console.log('Share e-ticket kereta')}
-            trainTicket={true}
-          />
-        )}
-
-        {/* Navigation Buttons */}
-        <div className="flex justify-between mt-8">
-          <button
-            onClick={() => {
-              if (currentStep === 'seats') setCurrentStep('details');
-              if (currentStep === 'payment') setCurrentStep('seats');
-              if (currentStep === 'ticket') setCurrentStep('payment');
-            }}
-            className={`px-6 py-3 rounded-lg transition-colors ${
-              currentStep === 'details' 
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-gray-500 text-white hover:bg-gray-600'
-            }`}
-            disabled={currentStep === 'details'}
-          >
-            Sebelumnya
-          </button>
+        {/* Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <TrainInfoCard train={train} />
+            
+            {currentStep >= 2 && (
+              <PassengerForm 
+                passengerCount={passengerCount}
+                onPassengerDataChange={setPassengerData}
+              />
+            )}
+            
+            {currentStep >= 3 && (
+              <PaymentSection onPaymentMethodChange={setPaymentMethod} />
+            )}
+          </div>
           
-          <button
-            onClick={() => {
-              if (currentStep === 'details') {
-                // Validasi form penumpang sebelum lanjut
-                if (passengerData.length === 0 || passengerData.some(p => !p.firstName || !p.lastName)) {
-                  alert('Harap isi data penumpang dengan lengkap sebelum melanjutkan');
-                  return;
-                }
-                setCurrentStep('seats');
-              }
-              if (currentStep === 'seats') {
-                if (selectedSeats.length < passengerCount) {
-                  alert(`Harap pilih ${passengerCount} kursi sebelum melanjutkan`);
-                  return;
-                }
-                // Prepare payment data
-                setPaymentData({
-                  orderId: `TKT${Date.now()}`,
-                  amount: train.price * passengerCount + selectedSeats.reduce((sum, seat) => sum + seat.price, 0),
-                  currency: 'IDR',
-                  items: [
-                    {
-                      id: train.id,
-                      price: train.price,
-                      quantity: passengerCount,
-                      name: `${train.operator} ${train.trainNumber} - ${train.origin} ke ${train.destination}`
-                    },
-                    ...selectedSeats.map(seat => ({
-                      id: seat.id,
-                      price: seat.price,
-                      quantity: 1,
-                      name: `Kursi ${seat.id} - Gerbong ${seat.wagon}`
-                    }))
-                  ],
-                  customerDetails: {
-                    first_name: passengerData[0]?.firstName || '',
-                    last_name: passengerData[0]?.lastName || '',
-                    email: passengerData[0]?.email || '',
-                    phone: passengerData[0]?.phoneNumber || ''
-                  },
-                  billingAddress: {
-                    first_name: passengerData[0]?.firstName || '',
-                    last_name: passengerData[0]?.lastName || '',
-                    address: 'Jakarta, Indonesia',
-                    city: 'Jakarta',
-                    postal_code: '12345',
-                    phone: passengerData[0]?.phoneNumber || ''
-                  }
-                });
-                setCurrentStep('payment');
-              }
-              if (currentStep === 'payment') {
-                setCurrentStep('ticket');
-              }
-            }}
-            className={`px-6 py-3 rounded-lg transition-colors ${
-              currentStep === 'ticket'
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
-            disabled={currentStep === 'ticket'}
-          >
-            {currentStep === 'details' ? 'Pilih Kursi' : 
-             currentStep === 'seats' ? 'Lanjut Pembayaran' : 
-             currentStep === 'payment' ? 'Lihat E-Ticket' : 'Selesai'}
-          </button>
-        </div>
-
-        {/* Informasi Tambahan */}
-        <div className="mt-12 bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Informasi Penting Perjalanan Kereta</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div>
-              <h4 className="font-medium text-gray-800 mb-2">Check-in & Boarding</h4>
-              <ul className="text-sm text-gray-600 space-y-1">
-                <li>• Hadir 60 menit sebelum keberangkatan</li>
-                <li>• Bawa e-ticket dan identitas</li>
-                <li>• Check-in di konter stasiun</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-800 mb-2">Kebijakan Bagasi</h4>
-              <ul className="text-sm text-gray-600 space-y-1">
-                <li>• Bagasi kabin: 7kg</li>
-                <li>• Bagasi tercatat: 20kg</li>
-                <li>• Ukuran sesuai ketentuan</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-800 mb-2">Pembatalan & Refund</h4>
-              <ul className="text-sm text-gray-600 space-y-1">
-                <li>• Batalkan 24 jam sebelum keberangkatan</li>
-                <li>• Biaya admin 25%</li>
-                <li>• Refund dalam 7-14 hari kerja</li>
-              </ul>
-            </div>
+          <div className="lg:col-span-1">
+            <PriceSummary 
+              train={train}
+              passengerCount={passengerCount}
+              insuranceSelected={insuranceSelected}
+              currentStep={currentStep}
+              paymentMethod={paymentMethod}
+              passengerData={passengerData}
+              onContinue={() => setCurrentStep(prev => Math.min(3, prev + 1))}
+              onPayment={handlePayment}
+              validatePassengers={validatePassengers}
+            />
           </div>
         </div>
       </div>

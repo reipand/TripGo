@@ -1,25 +1,31 @@
+// app/dashboard/page.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { useWallet } from '@/app/contexts/WalletContext';
 import { supabase } from '@/app/lib/supabaseClient';
 
-
-// --- Icon Components ---
+// --- Icon Components (Simplified) ---
 const UserIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>;
-const PlaneIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
+const TrainIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>;
 const WalletIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>;
 const SettingsIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
 const LogoutIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>;
 const StarIcon = () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>;
 const HistoryIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const TicketIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>;
-const BellIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>;
 const RefreshIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>;
+const CalendarIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
+const ClockIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+const CheckCircleIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+const XCircleIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+const DownloadIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>;
+const ReceiptIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>;
+const CreditCardIcon = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>;
+const ArrowRightIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>;
 
 // --- Helper Functions ---
 const generateAvatarUrl = (firstName: string, lastName: string) => {
@@ -27,46 +33,119 @@ const generateAvatarUrl = (firstName: string, lastName: string) => {
   return `https://ui-avatars.com/api/?name=${name}&background=0D8ABC&color=fff&size=150`;
 };
 
-// --- Reusable Components ---
-const colorClassMap = {
-  blue: {
-    bg: 'bg-blue-100',
-    text: 'text-blue-600',
-  },
-  green: {
-    bg: 'bg-green-100',
-    text: 'text-green-600',
-  },
-  yellow: {
-    bg: 'bg-yellow-100',
-    text: 'text-yellow-600',
-  },
-  red: {
-    bg: 'bg-red-100',
-    text: 'text-red-600',
-  },
-  gray: {
-    bg: 'bg-gray-100',
-    text: 'text-gray-600',
-  },
-} as const;
-
-const StatCard = ({ title, value, icon, color, subtitle }: { title: string; value: string; icon: React.ReactNode; color: keyof typeof colorClassMap; subtitle?: string }) => {
-  const c = colorClassMap[color] || colorClassMap.gray;
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex items-center space-x-4 hover:shadow-md transition-shadow duration-300">
-      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${c.bg} ${c.text}`}>
-        {icon}
-      </div>
-      <div>
-        <p className="text-gray-500 text-sm font-medium">{title}</p>
-        <p className="text-2xl font-bold text-gray-800">{value}</p>
-        {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
-      </div>
-    </div>
-  );
+// Format date helper
+const formatDate = (dateString: string | undefined) => {
+  if (!dateString) return 'Tanggal tidak tersedia';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  } catch (error) {
+    return dateString;
+  }
 };
 
+// Format time helper
+const formatTime = (timeString: string | undefined) => {
+  if (!timeString) return '--:--';
+  if (timeString.includes(':')) {
+    const parts = timeString.split(':');
+    return `${parts[0]}:${parts[1]}`;
+  }
+  try {
+    const date = new Date(timeString);
+    if (isNaN(date.getTime())) return timeString;
+    return date.toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    return timeString;
+  }
+};
+
+// Format currency helper
+const formatCurrency = (amount: number | undefined) => {
+  if (!amount && amount !== 0) return 'Rp0';
+  return `Rp${amount.toLocaleString('id-ID')}`;
+};
+
+// Booking status mapping
+const getBookingStatusConfig = (status: string) => {
+  switch (status?.toLowerCase()) {
+    case 'confirmed':
+    case 'paid':
+    case 'completed':
+      return {
+        label: 'Dikonfirmasi',
+        color: 'bg-green-100 text-green-800 border-green-200',
+        icon: <CheckCircleIcon />
+      };
+    case 'pending':
+    case 'waiting_payment':
+      return {
+        label: 'Menunggu Pembayaran',
+        color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        icon: <ClockIcon />
+      };
+    case 'active':
+      return {
+        label: 'Aktif',
+        color: 'bg-blue-100 text-blue-800 border-blue-200',
+        icon: <CheckCircleIcon />
+      };
+    case 'cancelled':
+    case 'failed':
+      return {
+        label: 'Dibatalkan',
+        color: 'bg-red-100 text-red-800 border-red-200',
+        icon: <XCircleIcon />
+      };
+    case 'expired':
+      return {
+        label: 'Kadaluarsa',
+        color: 'bg-gray-100 text-gray-800 border-gray-200',
+        icon: <ClockIcon />
+      };
+    default:
+      return {
+        label: status || 'Unknown',
+        color: 'bg-gray-100 text-gray-800 border-gray-200',
+        icon: null
+      };
+  }
+};
+
+// --- Interface untuk Booking ---
+interface Booking {
+  id: string;
+  booking_code: string;
+  booking_date: string;
+  total_amount: number;
+  status: 'pending' | 'paid' | 'cancelled' | 'expired' | 'confirmed' | 'waiting_payment' | 'active';
+  passenger_count: number;
+  order_id?: string;
+  passenger_name?: string;
+  passenger_email?: string;
+  passenger_phone?: string;
+  train_name?: string;
+  train_type?: string;
+  origin?: string;
+  destination?: string;
+  departure_date?: string;
+  departure_time?: string;
+  arrival_time?: string;
+  payment_status?: string;
+  payment_method?: string;
+  payment_date?: string;
+}
+
+// --- Simple Components ---
 const Avatar = ({ firstName, lastName, avatarUrl, size = 42, className = "" }: { 
   firstName: string; 
   lastName: string; 
@@ -84,365 +163,41 @@ const Avatar = ({ firstName, lastName, avatarUrl, size = 42, className = "" }: {
       width={size}
       height={size}
       className={`rounded-full border-2 border-blue-500 ${className}`}
+      loading="lazy"
     />
   );
 };
 
-const BookingCard = ({ booking }: { booking: any }) => {
-    const statusClassMap: Record<string, string> = {
-        confirmed: 'bg-green-100 text-green-800 border border-green-200',
-        pending: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
-        cancelled: 'bg-red-100 text-red-800 border border-red-200',
-        completed: 'bg-blue-100 text-blue-800 border border-blue-200',
-        paid: 'bg-green-100 text-green-800 border border-green-200',
-        waiting_payment: 'bg-orange-100 text-orange-800 border border-orange-200',
-    };
-    
-    const statusClass = statusClassMap[booking.status] || 'bg-gray-100 text-gray-800 border border-gray-200';
-    const statusLabel = (booking.status || '').toString();
-    
-    const getStatusText = (status: string) => {
-        const statusMap: Record<string, string> = {
-            confirmed: 'Terkonfirmasi',
-            pending: 'Menunggu',
-            cancelled: 'Dibatalkan',
-            completed: 'Selesai',
-            paid: 'Sudah Bayar',
-            waiting_payment: 'Menunggu Pembayaran',
-        };
-        return statusMap[status] || status.charAt(0).toUpperCase() + status.slice(1);
-    };
-
-    const formatDate = (dateString: string) => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('id-ID', { 
-                weekday: 'short',
-                day: 'numeric', 
-                month: 'short', 
-                year: 'numeric' 
-            });
-        } catch {
-            return 'Tanggal tidak valid';
-        }
-    };
-
-    const formatTime = (dateString: string) => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleTimeString('id-ID', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            });
-        } catch {
-            return '--:--';
-        }
-    };
-
-    return (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300">
-            <div className="p-6">
-                {/* Header dengan status dan tanggal */}
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                            <PlaneIcon />
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-lg text-gray-900">Kereta Api</h4>
-                            <p className="text-sm text-gray-500">#{booking.order_id || booking.id?.slice(-8) || 'N/A'}</p>
-                        </div>
-                    </div>
-                    <div className="text-right">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusClass}`}>
-                            {getStatusText(statusLabel)}
-                        </span>
-                        <p className="text-xs text-gray-500 mt-1">{formatDate(booking.created_at)}</p>
-                    </div>
-                </div>
-                
-                {/* Rute penerbangan */}
-                <div className="flex items-center justify-between my-6">
-                    <div className="text-center">
-                        <p className="text-2xl font-bold text-gray-900">{booking.origin_code || 'CGK'}</p>
-                        <p className="text-sm text-gray-500">{booking.origin_city || 'Jakarta'}</p>
-                        <p className="text-xs text-gray-400 mt-1">{formatTime(booking.departure_time || booking.created_at)}</p>
-                    </div>
-                    <div className="flex-1 px-4">
-                        <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-                            <span>Langsung</span>
-                            <span>{booking.duration || '1j 30m'}</span>
-                        </div>
-                        <div className="relative">
-                            <div className="w-full h-0.5 bg-gray-200"></div>
-                            <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-blue-500 rounded-full"></div>
-                            <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-blue-500 rounded-full"></div>
-                            <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                                <PlaneIcon />
-                            </div>
-                        </div>
-                    </div>
-                    <div className="text-center">
-                        <p className="text-2xl font-bold text-gray-900">{booking.destination_code || 'DPS'}</p>
-                        <p className="text-sm text-gray-500">{booking.destination_city || 'Denpasar'}</p>
-                        <p className="text-xs text-gray-400 mt-1">{formatTime(booking.arrival_time || booking.created_at)}</p>
-                    </div>
-                </div>
-
-                {/* Info tambahan */}
-                <div className="bg-gray-50 rounded-lg p-4 flex items-center justify-between text-sm">
-                    <div>
-                        <p className="text-gray-500">Penumpang</p>
-                        <p className="font-medium text-gray-800">{booking.passenger_count || 1} orang</p>
-                    </div>
-                    <div>
-                        <p className="text-gray-500">Maskapai</p>
-                        <p className="font-medium text-gray-800">{booking.airline || 'Garuda Indonesia'}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-gray-500">Total Harga</p>
-                        <p className="font-bold text-orange-500 text-lg">
-                            Rp {(booking.total_amount || 0).toLocaleString('id-ID')}
-                        </p>
-                    </div>
-                </div>
-            </div>
-            
-            {/* Actions */}
-            <div className="px-6 py-4 bg-gray-50 border-t flex space-x-3">
-                {(booking.status === 'confirmed' || booking.status === 'paid') && (
-                    <Link 
-                        href={`/ticket/${booking.id}`} 
-                        className="flex-1 text-center bg-blue-600 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <TicketIcon />
-                        <span>Lihat E-Ticket</span>
-                    </Link>
-                )}
-                {booking.status === 'waiting_payment' && (
-                    <Link 
-                        href={`/payment/${booking.id}`} 
-                        className="flex-1 text-center bg-orange-500 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <WalletIcon />
-                        <span>Bayar Sekarang</span>
-                    </Link>
-                )}
-                <button className="flex-1 bg-white text-gray-700 py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-gray-100 transition-colors border border-gray-300">
-                    Detail Pesanan
-                </button>
-                {booking.status === 'pending' && (
-                    <button className="flex-1 bg-white text-red-600 py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-red-50 transition-colors border border-gray-300">
-                        Batalkan
-                    </button>
-                )}
-            </div>
-        </div>
-    );
-};
-
-const SkeletonBookingCard = () => (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
-        <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
-                <div>
-                    <div className="h-5 w-24 bg-gray-200 rounded mb-1"></div>
-                    <div className="h-4 w-16 bg-gray-200 rounded"></div>
-                </div>
-            </div>
-            <div className="text-right">
-                <div className="h-6 w-20 bg-gray-200 rounded-full mb-1"></div>
-                <div className="h-3 w-24 bg-gray-200 rounded"></div>
-            </div>
-        </div>
-        <div className="flex items-center justify-between my-6">
-            <div className="text-center">
-                <div className="h-7 w-12 bg-gray-200 rounded mx-auto mb-1"></div>
-                <div className="h-4 w-16 bg-gray-200 rounded"></div>
-            </div>
-            <div className="flex-1 px-4">
-                <div className="flex items-center justify-between text-xs mb-1">
-                    <div className="h-3 w-12 bg-gray-200 rounded"></div>
-                    <div className="h-3 w-8 bg-gray-200 rounded"></div>
-                </div>
-                <div className="relative">
-                    <div className="w-full h-0.5 bg-gray-200"></div>
-                </div>
-            </div>
-            <div className="text-center">
-                <div className="h-7 w-12 bg-gray-200 rounded mx-auto mb-1"></div>
-                <div className="h-4 w-16 bg-gray-200 rounded"></div>
-            </div>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
-            <div>
-                <div className="h-4 w-16 bg-gray-200 rounded mb-1"></div>
-                <div className="h-5 w-20 bg-gray-200 rounded"></div>
-            </div>
-            <div>
-                <div className="h-4 w-16 bg-gray-200 rounded mb-1"></div>
-                <div className="h-5 w-24 bg-gray-200 rounded"></div>
-            </div>
-            <div className="text-right">
-                <div className="h-4 w-12 bg-gray-200 rounded mb-1"></div>
-                <div className="h-6 w-24 bg-gray-200 rounded"></div>
-            </div>
-        </div>
-    </div>
-);
-
-// Guest/Demo Components
-const GuestStatCard = ({ title, value, icon, color, subtitle }: { title: string; value: string; icon: React.ReactNode; color: keyof typeof colorClassMap; subtitle?: string }) => {
-  const c = colorClassMap[color] || colorClassMap.gray;
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex items-center space-x-4 hover:shadow-md transition-shadow duration-300 opacity-80">
-      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${c.bg} ${c.text}`}>
-        {icon}
-      </div>
-      <div>
-        <p className="text-gray-500 text-sm font-medium">{title}</p>
-        <p className="text-2xl font-bold text-gray-800">{value}</p>
-        {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
-      </div>
-    </div>
-  );
-};
-
-const GuestBookingCard = () => (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300 opacity-70">
-        <div className="p-6">
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                        <PlaneIcon />
-                    </div>
-                    <div>
-                        <h4 className="font-bold text-lg text-gray-900">Kereta Api</h4>
-                        <p className="text-sm text-gray-500">#DEMO123</p>
-                    </div>
-                </div>
-                <div className="text-right">
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-                        Demo
-                    </span>
-                    <p className="text-xs text-gray-500 mt-1">Contoh pesanan</p>
-                </div>
-            </div>
-            
-            <div className="flex items-center justify-between my-6">
-                <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">CGK</p>
-                    <p className="text-sm text-gray-500">Jakarta</p>
-                    <p className="text-xs text-gray-400 mt-1">08:00</p>
-                </div>
-                <div className="flex-1 px-4">
-                    <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-                        <span>Langsung</span>
-                        <span>1j 30m</span>
-                    </div>
-                    <div className="relative">
-                        <div className="w-full h-0.5 bg-gray-200"></div>
-                        <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-blue-500 rounded-full"></div>
-                        <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-blue-500 rounded-full"></div>
-                        <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                            <PlaneIcon />
-                        </div>
-                    </div>
-                </div>
-                <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">DPS</p>
-                    <p className="text-sm text-gray-500">Denpasar</p>
-                    <p className="text-xs text-gray-400 mt-1">09:30</p>
-                </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-lg p-4 flex items-center justify-between text-sm">
-                <div>
-                    <p className="text-gray-500">Penumpang</p>
-                    <p className="font-medium text-gray-800">1 orang</p>
-                </div>
-                <div>
-                    <p className="text-gray-500">Maskapai</p>
-                    <p className="font-medium text-gray-800">Garuda Indonesia</p>
-                </div>
-                <div className="text-right">
-                    <p className="text-gray-500">Total Harga</p>
-                    <p className="font-bold text-orange-500 text-lg">
-                        Rp 1.500.000
-                    </p>
-                </div>
-            </div>
-        </div>
-        
-        <div className="px-6 py-4 bg-gray-50 border-t flex space-x-3">
-            <button className="flex-1 text-center bg-blue-600 text-white py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2">
-                <TicketIcon />
-                <span>Lihat E-Ticket</span>
-            </button>
-            <button className="flex-1 bg-white text-gray-700 py-2.5 px-4 rounded-lg text-sm font-semibold hover:bg-gray-100 transition-colors border border-gray-300">
-                Detail Pesanan
-            </button>
-        </div>
-    </div>
-);
-
-// --- Dashboard Page ---
+// --- Dashboard Page (Optimized) ---
 export default function DashboardPage() {
     const router = useRouter();
     const { user, userProfile, signOut, loading: authLoading } = useAuth();
     const { 
-        wallet,
-        balance: walletBalance, 
-        isLoading: walletLoading,
         formatBalance,
-        refreshWallet,
-        getTransactions
+        refreshWallet
     } = useWallet();
     
     const [activeTab, setActiveTab] = useState('overview');
     const [loading, setLoading] = useState(false);
-    const [bookings, setBookings] = useState<any[]>([]);
-    const [points] = useState(user ? 1250 : 0); // Changed to const since not updated
+    const [bookings, setBookings] = useState<Booking[]>([]);
     const [bookingsError, setBookingsError] = useState<string | null>(null);
-    const [notifications] = useState(user ? 3 : 0); // Changed to const
     const [refreshing, setRefreshing] = useState(false);
-    const [navigationBlocked, setNavigationBlocked] = useState(false);
+    
+    // Use refs for values that don't need re-renders
+    const points = useRef(1250);
+    const notifications = useRef(3);
+    const isMounted = useRef(true);
 
-    // Prevent unwanted navigation
+    // Cleanup on unmount
     useEffect(() => {
-        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-            if (navigationBlocked) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        };
-
-        const handleClick = (e: MouseEvent) => {
-            // Check if click is on a Link component
-            const target = e.target as HTMLElement;
-            const link = target.closest('a');
-            
-            if (link && link.getAttribute('href') === '/') {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Navigation to home blocked');
-                return false;
-            }
-        };
-
-        window.addEventListener('beforeunload', handleBeforeUnload);
-        document.addEventListener('click', handleClick, true);
-
         return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-            document.removeEventListener('click', handleClick, true);
+            isMounted.current = false;
         };
-    }, [navigationBlocked]);
+    }, []);
 
-    // Fetch bookings hanya untuk user yang login
+    // Optimized fetch dari berbagai sumber (mirip dengan my-bookings)
     const fetchBookings = useCallback(async () => {
-        if (!user) {
+        if (!user || !isMounted.current) {
             setBookings([]);
             setLoading(false);
             return;
@@ -452,179 +207,335 @@ export default function DashboardPage() {
             setLoading(true);
             setBookingsError(null);
             
-            const { data, error } = await supabase
-                .from('bookings')
-                .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
+            console.log('🔄 Fetching bookings for dashboard:', user.email || user.id);
             
-            setBookings(data || []);
+            let allBookings: Booking[] = [];
             
-        } catch (error: any) {
-            console.error('❌ Error fetching bookings:', error);
-            
-            let errorMessage = 'Gagal memuat data pesanan';
-            if (error?.code === '42P01') {
-                errorMessage = 'Sistem pesanan sedang dalam maintenance';
-            } else if (error?.message?.includes('network') || error?.message?.includes('fetch')) {
-                errorMessage = 'Koneksi internet bermasalah';
-            } else {
-                errorMessage = error?.message || 'Terjadi kesalahan tidak terduga';
+            // 1. Cek sessionStorage untuk booking baru dari payment
+            try {
+                const paymentSuccess = sessionStorage.getItem('paymentSuccess');
+                const newBookingData = sessionStorage.getItem('newBookingData');
+                
+                if (paymentSuccess === 'true' && newBookingData) {
+                    console.log('🎯 Found new booking from payment success');
+                    const parsedData = JSON.parse(newBookingData);
+                    
+                    const newBooking: Booking = {
+                        id: `temp-${Date.now()}`,
+                        booking_code: parsedData.bookingCode || `BOOK-${Date.now()}`,
+                        booking_date: parsedData.paymentDate || new Date().toISOString(),
+                        total_amount: parsedData.totalAmount || 0,
+                        status: 'paid',
+                        passenger_count: 1,
+                        order_id: parsedData.orderId,
+                        passenger_name: parsedData.passengerName,
+                        passenger_email: parsedData.passengerEmail,
+                        passenger_phone: parsedData.passengerPhone,
+                        train_name: parsedData.trainName || 'Kereta Api',
+                        train_type: parsedData.trainType,
+                        origin: parsedData.origin,
+                        destination: parsedData.destination,
+                        departure_date: parsedData.departureDate,
+                        departure_time: parsedData.departureTime,
+                        payment_status: 'paid',
+                        payment_method: parsedData.paymentMethod,
+                        payment_date: parsedData.paymentDate
+                    };
+                    
+                    allBookings.push(newBooking);
+                    
+                    // Clear sessionStorage
+                    sessionStorage.removeItem('paymentSuccess');
+                    sessionStorage.removeItem('newBookingData');
+                    sessionStorage.removeItem('newBookingCode');
+                }
+            } catch (sessionError) {
+                console.warn('⚠️ Session storage error:', sessionError);
             }
             
-            setBookingsError(errorMessage);
-            setBookings([]);
+            // 2. Coba dari localStorage
+            try {
+                const savedBookings = localStorage.getItem('myBookings');
+                if (savedBookings) {
+                    const parsedBookings = JSON.parse(savedBookings);
+                    if (Array.isArray(parsedBookings) && parsedBookings.length > 0) {
+                        console.log('📂 Loaded from localStorage:', parsedBookings.length);
+                        
+                        const existingCodes = allBookings.map(b => b.booking_code);
+                        const uniqueBookingsFromLocal = parsedBookings.filter((b: any) => 
+                            !existingCodes.includes(b.booking_code)
+                        );
+                        
+                        allBookings = [...allBookings, ...uniqueBookingsFromLocal];
+                    }
+                }
+            } catch (localStorageError) {
+                console.warn('⚠️ localStorage error:', localStorageError);
+            }
+            
+            // 3. Coba dari database (Supabase) - bookings_kereta
+            try {
+                console.log('📡 Querying Supabase for bookings...');
+                
+                const email = user.email;
+                let dbBookings: any[] = [];
+                
+                if (email) {
+                    const { data: bookingsByEmail, error: emailError } = await supabase
+                        .from('bookings_kereta')
+                        .select('*')
+                        .eq('passenger_email', email)
+                        .order('created_at', { ascending: false })
+                        .limit(20);
+                        
+                    if (!emailError && bookingsByEmail && bookingsByEmail.length > 0) {
+                        console.log(`✅ Found ${bookingsByEmail.length} bookings by email`);
+                        dbBookings = [...dbBookings, ...bookingsByEmail];
+                    }
+                }
+                
+                const { data: bookingsByUserId, error: userIdError } = await supabase
+                    .from('bookings_kereta')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+                    
+                if (!userIdError && bookingsByUserId && bookingsByUserId.length > 0) {
+                    console.log(`✅ Found ${bookingsByUserId.length} bookings by user_id`);
+                    dbBookings = [...dbBookings, ...bookingsByUserId];
+                }
+                
+                // Remove duplicates
+                const uniqueDbBookings = Array.from(
+                    new Map(dbBookings.map(item => [item.booking_code, item])).values()
+                );
+                
+                console.log(`📊 Total unique DB bookings: ${uniqueDbBookings.length}`);
+                
+                const processedDbBookings = uniqueDbBookings.map((booking): Booking => ({
+                    id: booking.id || `db-${booking.booking_code}`,
+                    booking_code: booking.booking_code,
+                    booking_date: booking.created_at || booking.booking_date || new Date().toISOString(),
+                    total_amount: booking.total_amount || 0,
+                    status: (booking.status || 'pending').toLowerCase() as Booking['status'],
+                    passenger_count: booking.passenger_count || 1,
+                    order_id: booking.order_id,
+                    passenger_name: booking.passenger_name,
+                    passenger_email: booking.passenger_email,
+                    passenger_phone: booking.passenger_phone,
+                    train_name: booking.train_name,
+                    train_type: booking.train_type,
+                    origin: booking.origin,
+                    destination: booking.destination,
+                    departure_date: booking.departure_date,
+                    departure_time: booking.departure_time,
+                    arrival_time: booking.arrival_time,
+                    payment_status: booking.payment_status,
+                    payment_method: booking.payment_method,
+                    payment_date: booking.payment_date
+                }));
+                
+                const existingCodes = allBookings.map(b => b.booking_code);
+                const uniqueDbBookingsFiltered = processedDbBookings.filter(b => 
+                    !existingCodes.includes(b.booking_code)
+                );
+                
+                allBookings = [...allBookings, ...uniqueDbBookingsFiltered];
+                
+            } catch (dbError: any) {
+                console.warn('⚠️ Database query failed:', dbError.message);
+            }
+            
+            // Remove empty manual bookings (placeholder)
+            const validBookings = allBookings.filter(booking => {
+                if (booking.id?.startsWith('manual-') && booking.status === 'pending' && booking.total_amount === 0) {
+                    return false;
+                }
+                return true;
+            });
+            
+            const uniqueBookings = Array.from(
+                new Map(validBookings.map(item => [item.booking_code, item])).values()
+            );
+            
+            // Sort by date (newest first)
+            uniqueBookings.sort((a, b) => 
+                new Date(b.booking_date).getTime() - new Date(a.booking_date).getTime()
+            );
+            
+            console.log(`🎉 Total valid bookings: ${uniqueBookings.length}`);
+            
+            if (isMounted.current) {
+                setBookings(uniqueBookings);
+            }
+            
+            // Simpan ke localStorage untuk cache
+            try {
+                localStorage.setItem('myBookings', JSON.stringify(uniqueBookings));
+                console.log('💾 Saved to localStorage');
+            } catch (storageError) {
+                console.warn('⚠️ Failed to save to localStorage:', storageError);
+            }
+            
+        } catch (mainError: any) {
+            console.error('❌ Error loading bookings:', mainError);
+            
+            if (isMounted.current) {
+                let errorMessage = 'Gagal memuat data pesanan';
+                if (mainError?.code === '42P01') {
+                    errorMessage = 'Sistem pesanan sedang dalam maintenance';
+                } else if (mainError?.message?.includes('network') || mainError?.message?.includes('fetch')) {
+                    errorMessage = 'Koneksi internet bermasalah';
+                } else {
+                    errorMessage = mainError?.message || 'Terjadi kesalahan tidak terduga';
+                }
+                
+                setBookingsError(errorMessage);
+                setBookings([]);
+                
+                // Fallback ke localStorage
+                try {
+                    const savedBookings = localStorage.getItem('myBookings');
+                    if (savedBookings) {
+                        const parsedBookings = JSON.parse(savedBookings);
+                        if (Array.isArray(parsedBookings) && parsedBookings.length > 0) {
+                            setBookings(parsedBookings);
+                        }
+                    }
+                } catch (fallbackError) {
+                    console.error('❌ Fallback also failed:', fallbackError);
+                }
+            }
         } finally {
-            setLoading(false);
+            if (isMounted.current) {
+                setLoading(false);
+            }
         }
     }, [user]);
 
-    // Enhanced navigation handler
-    const handleNavigation = useCallback((path: string) => {
-        if (navigationBlocked) return;
-        
-        // Prevent navigation to dashboard if already on dashboard
-        if (path === '/dashboard' || path === '/') {
-            console.log('Navigation to dashboard blocked');
-            return;
-        }
-        
-        router.push(path);
-    }, [router, navigationBlocked]);
+    // Filter bookings untuk My Booking (active bookings)
+    const activeBookings = useMemo(() => {
+        return bookings.filter(booking => 
+            ['pending', 'waiting_payment', 'confirmed', 'paid', 'active'].includes(booking.status)
+        );
+    }, [bookings]);
 
-    // Enhanced tab switching
-    const handleTabSwitch = useCallback((tabId: string) => {
-        if (!user && (tabId === 'bookings' || tabId === 'wallet' || tabId === 'profile')) {
-            handleNavigation('/auth/login');
-            return;
-        }
-        
-        // Prevent setting same tab
-        if (activeTab === tabId) return;
-        
-        setActiveTab(tabId);
-    }, [user, activeTab, handleNavigation]);
+    // Filter bookings untuk History (completed/cancelled)
+    const historyBookings = useMemo(() => {
+        return bookings.filter(booking => 
+            ['cancelled', 'failed', 'expired'].includes(booking.status)
+        );
+    }, [bookings]);
 
-    const handleRefresh = async () => {
-        if (refreshing) return;
+    // Filter bookings untuk Paid/Confirmed
+    const paidBookings = useMemo(() => {
+        return bookings.filter(booking => 
+            booking.payment_status === 'paid' || booking.status === 'paid' || booking.status === 'confirmed'
+        );
+    }, [bookings]);
+
+    // Filter bookings untuk Pending
+    const pendingBookings = useMemo(() => {
+        return bookings.filter(booking => 
+            booking.status === 'pending' || booking.status === 'waiting_payment' || booking.payment_status === 'pending'
+        );
+    }, [bookings]);
+
+    // Debounced refresh
+    const handleRefresh = useCallback(async () => {
+        if (refreshing || !user) return;
         
         setRefreshing(true);
-        if (user) {
-            await fetchBookings();
-            await refreshWallet();
+        try {
+            await Promise.all([
+                fetchBookings(),
+                refreshWallet()
+            ]);
+        } catch (error) {
+            console.error('Refresh error:', error);
+        } finally {
+            setTimeout(() => {
+                if (isMounted.current) {
+                    setRefreshing(false);
+                }
+            }, 1000);
         }
-        setTimeout(() => setRefreshing(false), 1000);
-    };
+    }, [refreshing, user, fetchBookings, refreshWallet]);
 
-    // Setup realtime subscription hanya untuk user yang login
+    // Setup realtime subscription
     useEffect(() => {
-        let subscription: any;
+        if (!user?.id) return;
 
-        const setupRealtime = async () => {
-            if (!user?.id) return;
-
-            try {
-                await fetchBookings();
-
-                subscription = supabase
-                    .channel('dashboard-bookings')
-                    .on(
-                        'postgres_changes',
-                        { 
-                            event: '*', 
-                            schema: 'public', 
-                            table: 'bookings', 
-                            filter: `user_id=eq.${user.id}` 
-                        },
-                        (payload) => {
-                            fetchBookings();
-                        }
-                    )
-                    .subscribe();
-
-            } catch (error) {
-                console.error('❌ Error setting up realtime:', error);
+        // Set interval untuk auto-refresh jika ada booking pending
+        const interval = setInterval(() => {
+            const hasPendingBookings = bookings.some(b => 
+                b.status === 'pending' || b.status === 'waiting_payment' || b.payment_status === 'pending'
+            );
+            
+            if (hasPendingBookings) {
+                console.log('🔄 Auto-refreshing for pending bookings');
+                fetchBookings();
             }
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, [user?.id, bookings, fetchBookings]);
+
+    // Event listener untuk update dari payment success
+    useEffect(() => {
+        const handleBookingUpdated = (event: CustomEvent) => {
+            console.log('📢 Booking update event received in dashboard:', event.detail);
+            fetchBookings();
         };
 
-        setupRealtime();
-
+        window.addEventListener('bookingUpdated', handleBookingUpdated as EventListener);
+        
         return () => {
-            if (subscription) {
-                supabase.removeChannel(subscription);
-            }
+            window.removeEventListener('bookingUpdated', handleBookingUpdated as EventListener);
         };
-    }, [user?.id, fetchBookings]);
+    }, [fetchBookings]);
 
     const handleLogout = async () => {
         try {
-            setNavigationBlocked(true);
             await signOut();
-            // Use replace instead of push to prevent back navigation
             router.replace('/');
         } catch (error) {
             console.error('❌ Error during logout:', error);
-            setNavigationBlocked(false);
         }
     };
 
     const handleLogin = () => {
-        handleNavigation('/auth/login');
+        router.push('/auth/login');
     };
 
     const handleSignUp = () => {
-        handleNavigation('/auth/register');
+        router.push('/auth/register');
     };
 
     const handleTopUp = () => {
         if (!user) {
-            handleNavigation('/auth/login');
+            router.push('/auth/login');
             return;
         }
-        handleNavigation('/payment/topup');
+        router.push('/payment/topup');
     };
 
-    // Enhanced Link component to prevent unwanted navigation
-    const SafeLink = ({ 
-        href, 
-        children, 
-        onClick, 
-        className = "",
-        ...props 
-    }: {
-        href: string;
-        children: React.ReactNode;
-        onClick?: () => void;
-        className?: string;
-    } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
-        const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-            // Prevent navigation to home/dashboard if it's causing issues
-            if (href === '/' || href === '/dashboard') {
-                e.preventDefault();
-                console.log('Navigation prevented for:', href);
-                return;
-            }
-            
-            if (onClick) {
-                onClick();
-            }
-        };
-
-        return (
-            <Link 
-                href={href} 
-                onClick={handleClick}
-                className={className}
-                {...props}
-            >
-                {children}
-            </Link>
-        );
+    const handleViewBookingDetails = (bookingId: string) => {
+        router.push(`/booking/detail/${bookingId}`);
     };
 
-    // User data untuk guest dan logged in user
+    const handleViewMyBookings = () => {
+        router.push('/my-bookings');
+    };
+
+    const handleDownloadTicket = (booking: Booking) => {
+        // Implement ticket download logic
+        console.log('Download ticket for booking:', booking.booking_code);
+        alert(`Tiket untuk booking ${booking.booking_code} sedang diproses...`);
+    };
+
+    // User data memoized
     const userData = useMemo(() => {
         if (user) {
             return {
@@ -633,7 +544,6 @@ export default function DashboardPage() {
                 avatarUrl: userProfile?.avatar_url || user?.user_metadata?.avatar_url,
                 email: user?.email || '',
                 phone: userProfile?.phone || user?.user_metadata?.phone || '-',
-                joinDate: userProfile?.created_at || user?.created_at,
             };
         } else {
             return {
@@ -642,50 +552,213 @@ export default function DashboardPage() {
                 avatarUrl: '',
                 email: 'guest@example.com',
                 phone: '-',
-                joinDate: new Date().toISOString(),
             };
         }
     }, [user, userProfile]);
 
-    // Statistik untuk guest dan logged in user
-    const stats = useMemo(() => [
-        {
-            title: 'Total Pesanan',
-            value: user ? bookings.length.toString() : '0',
-            subtitle: user ? 'Semua waktu' : 'Login untuk melihat',
-            icon: <TicketIcon />,
-            color: 'blue' as const
-        },
-        {
-            title: 'Saldo Dompet',
-            value: user ? (walletLoading ? 'Loading...' : formatBalance()) : 'Rp 0',
-            subtitle: user ? (walletLoading ? 'Memuat...' : 'Tersedia') : 'Login untuk top up',
-            icon: <WalletIcon />,
-            color: 'green' as const
-        },
-        {
-            title: 'Trip Points',
-            value: points.toLocaleString('id-ID'),
-            subtitle: user ? 'Poin terkumpul' : 'Login untuk mendapatkan',
-            icon: <StarIcon />,
-            color: 'yellow' as const
-        },
-        {
-            title: 'Pesanan Aktif',
-            value: user ? bookings.filter(b => b.status === 'confirmed' || b.status === 'paid').length.toString() : '0',
-            subtitle: user ? `${bookings.filter(b => b.status === 'pending' || b.status === 'waiting_payment').length} menunggu` : 'Belum ada pesanan',
-            icon: <PlaneIcon />,
-            color: 'red' as const
-        }
-    ], [user, bookings, walletLoading, formatBalance, points]);
+    // Stats memoized
+    const stats = useMemo(() => {
+        return [
+            {
+                title: 'Total Pesanan',
+                value: user ? bookings.length.toString() : '0',
+                subtitle: user ? 'Semua waktu' : 'Login untuk melihat',
+                icon: <TicketIcon />,
+                color: 'blue' as const
+            },
+            {
+                title: 'Pesanan Aktif',
+                value: user ? activeBookings.length.toString() : '0',
+                subtitle: user ? `${pendingBookings.length} menunggu` : 'Belum ada pesanan',
+                icon: <TrainIcon />,
+                color: 'green' as const
+            },
+            {
+                title: 'Trip Points',
+                value: points.current.toLocaleString('id-ID'),
+                subtitle: user ? 'Poin terkumpul' : 'Login untuk mendapatkan',
+                icon: <StarIcon />,
+                color: 'yellow' as const
+            },
+            {
+                title: 'Pembayaran Lunas',
+                value: user ? paidBookings.length.toString() : '0',
+                subtitle: user ? 'Pembayaran berhasil' : 'Login untuk melihat',
+                icon: <CheckCircleIcon />,
+                color: 'purple' as const
+            }
+        ];
+    }, [user, bookings, activeBookings, pendingBookings, paidBookings]);
 
-    // Tampilkan loading state hanya untuk auth loading (bukan untuk guest)
+    // Simplified StatCard
+    const StatCard = ({ title, value, icon, color, subtitle }: { 
+        title: string; 
+        value: string; 
+        icon: React.ReactNode; 
+        color: string; 
+        subtitle?: string 
+    }) => (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 hover:shadow-md transition-shadow">
+            <div className="flex items-center space-x-3 sm:space-x-4">
+                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${
+                    color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                    color === 'green' ? 'bg-green-100 text-green-600' :
+                    color === 'yellow' ? 'bg-yellow-100 text-yellow-600' :
+                    'bg-purple-100 text-purple-600'
+                }`}>
+                    {icon}
+                </div>
+                <div className="flex-1">
+                    <p className="text-gray-500 text-sm">{title}</p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-800 truncate">{value}</p>
+                    {subtitle && <p className="text-xs text-gray-400 mt-1 truncate">{subtitle}</p>}
+                </div>
+            </div>
+        </div>
+    );
+
+    // Booking Card Component yang disederhanakan
+    const BookingCard = ({ booking, showActions = true }: { 
+        booking: Booking; 
+        showActions?: boolean 
+    }) => {
+        const statusConfig = getBookingStatusConfig(booking.status || booking.payment_status || 'pending');
+        
+        return (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-4">
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <h4 className="font-bold text-gray-900 text-sm sm:text-base">
+                                {booking.train_name || 'Kereta Api'} {booking.train_type ? `(${booking.train_type})` : ''}
+                            </h4>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium border ${statusConfig.color} flex items-center gap-1`}>
+                                {statusConfig.icon}
+                                <span className="truncate">{statusConfig.label}</span>
+                            </span>
+                        </div>
+                        <p className="text-gray-500 text-xs sm:text-sm">#{booking.booking_code}</p>
+                    </div>
+                    <div className="text-right ml-2">
+                        <p className="font-bold text-orange-600 text-base sm:text-lg">
+                            {formatCurrency(booking.total_amount)}
+                        </p>
+                        <p className="text-gray-400 text-xs">{formatDate(booking.booking_date)}</p>
+                    </div>
+                </div>
+                
+
+                {/* Route Information */}
+                {(booking.origin || booking.destination) && (
+                    <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                        <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                                <p className="font-semibold text-gray-800 text-sm truncate">
+                                    {booking.origin || 'Kota Asal'} → {booking.destination || 'Kota Tujuan'}
+                                </p>
+                                <p className="text-gray-600 text-xs">
+                                    {booking.departure_date && formatDate(booking.departure_date)}
+                                </p>
+                            </div>
+                            {(booking.departure_time || booking.arrival_time) && (
+                                <div className="text-right ml-2">
+                                    <p className="text-sm font-medium text-gray-800">
+                                        {formatTime(booking.departure_time)} - {formatTime(booking.arrival_time)}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Passenger Info */}
+                {booking.passenger_name && (
+                    <div className="mb-3">
+                        <p className="text-gray-600 text-sm mb-1">Penumpang:</p>
+                        <div className="px-3 py-1.5 bg-gray-100 rounded-lg inline-block">
+                            <p className="text-sm font-medium text-gray-800">{booking.passenger_name}</p>
+                            <p className="text-xs text-gray-500">{booking.passenger_count} orang</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Actions */}
+                {showActions && (
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                        <div className="text-xs text-gray-500">
+                            <p className="truncate">{formatDate(booking.booking_date)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handleViewBookingDetails(booking.id)}
+                                className="px-3 py-1.5 text-xs sm:text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                            >
+                                Detail
+                            </button>
+                            {(booking.status === 'paid' || booking.status === 'confirmed' || booking.payment_status === 'paid') && (
+                                <button
+                                    onClick={() => handleDownloadTicket(booking)}
+                                    className="px-3 py-1.5 text-xs sm:text-sm font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                    <DownloadIcon />
+                                    <span className="hidden sm:inline">Tiket</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Quick Action Card
+    const QuickActionCard = ({ 
+        title, 
+        description, 
+        icon, 
+        color, 
+        onClick,
+        buttonText = 'Akses'
+    }: { 
+        title: string; 
+        description: string; 
+        icon: React.ReactNode; 
+        color: string;
+        onClick: () => void;
+        buttonText?: string;
+    }) => (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-start mb-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center mr-3 ${
+                    color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                    color === 'green' ? 'bg-green-100 text-green-600' :
+                    color === 'orange' ? 'bg-orange-100 text-orange-600' :
+                    'bg-purple-100 text-purple-600'
+                }`}>
+                    {icon}
+                </div>
+                <div>
+                    <h4 className="font-semibold text-gray-800">{title}</h4>
+                    <p className="text-gray-600 text-sm mt-1">{description}</p>
+                </div>
+            </div>
+            <button
+                onClick={onClick}
+                className="w-full mt-3 py-2.5 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+            >
+                <span>{buttonText}</span>
+                <ArrowRightIcon />
+            </button>
+        </div>
+    );
+
+    // Tampilkan loading state minimal
     if (authLoading && !user) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
-                    <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
-                    <p className="mt-4 text-gray-600">Memuat dashboard...</p>
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
+                    <p className="mt-3 text-gray-600">Memuat dashboard...</p>
                 </div>
             </div>
         );
@@ -693,157 +766,131 @@ export default function DashboardPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 font-sans">
-            {/* Header */}
+            {/* Simplified Header */}
             <header className="bg-white shadow-sm sticky top-0 z-10 border-b border-gray-200">
-                <div className="container mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
-                    {/* Logo - menggunakan button bukan Link untuk mencegah navigasi */}
-                    <button 
-                        onClick={() => {
-                            // Hanya reset ke tab overview tanpa navigasi
-                            if (activeTab !== 'overview') {
-                                setActiveTab('overview');
-                                window.scrollTo(0, 0);
-                            }
-                        }}
-                        className="flex items-center space-x-3 focus:outline-none"
-                    >
-                        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                            <span className="text-white font-bold text-lg">T</span>
-                        </div>
-                        <span className="font-bold text-2xl text-gray-800 hidden sm:block">TripGo</span>
-                    </button>
-                    
-                    <div className="flex items-center space-x-4">
-                        {user ? (
-                            <>
-                                <button 
-                                    onClick={handleRefresh}
-                                    disabled={refreshing}
-                                    className={`p-2 text-gray-600 hover:text-blue-600 transition-colors ${refreshing ? 'animate-spin' : ''}`}
-                                    title="Refresh data"
-                                >
-                                    <RefreshIcon />
-                                </button>
-                                <button 
-                                    className="relative p-2 text-gray-600 hover:text-blue-600 transition-colors"
-                                    title="Notifikasi"
-                                >
-                                    <BellIcon />
-                                    {notifications > 0 && (
-                                        <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
-                                    )}
-                                </button>
-                                <div className="flex items-center space-x-3">
-                                    <Avatar 
-                                        firstName={userData.firstName}
-                                        lastName={userData.lastName}
-                                        avatarUrl={userData.avatarUrl}
-                                        size={42}
-                                    />
-                                    <div className="hidden md:block text-left">
-                                        <p className="font-semibold text-gray-800 text-sm">{userData.firstName} {userData.lastName}</p>
-                                        <p className="text-xs text-gray-500">{userData.email}</p>
-                                    </div>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex items-center space-x-3">
-                                <button 
-                                    onClick={handleLogin}
-                                    className="px-4 py-2 text-gray-700 font-medium hover:text-blue-600 transition-colors"
-                                >
-                                    Masuk
-                                </button>
-                                <button 
-                                    onClick={handleSignUp}
-                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-                                >
-                                    Daftar
-                                </button>
+                <div className="container mx-auto px-4 py-3 sm:py-4">
+                    <div className="flex justify-between items-center">
+                        <button 
+                            onClick={() => activeTab !== 'overview' && setActiveTab('overview')}
+                            className="flex items-center space-x-2 focus:outline-none"
+                        >
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                                <span className="text-white font-bold text-sm sm:text-lg">T</span>
                             </div>
-                        )}
+                            <span className="font-bold text-xl sm:text-2xl text-gray-800 hidden sm:block">TripGo</span>
+                        </button>
+                        
+                        <div className="flex items-center space-x-3">
+                            {user ? (
+                                <>
+                                    <button 
+                                        onClick={handleRefresh}
+                                        disabled={refreshing}
+                                        className={`p-1.5 sm:p-2 text-gray-600 hover:text-blue-600 ${refreshing ? 'animate-spin' : ''}`}
+                                    >
+                                        <RefreshIcon />
+                                    </button>
+                                    <div className="flex items-center space-x-2">
+                                        <Avatar 
+                                            firstName={userData.firstName}
+                                            lastName={userData.lastName}
+                                            avatarUrl={userData.avatarUrl}
+                                            size={36}
+                                        />
+                                        <div className="hidden sm:block text-left">
+                                            <p className="font-semibold text-gray-800 text-sm truncate max-w-[120px]">
+                                                {userData.firstName}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex items-center space-x-2">
+                                    <button 
+                                        onClick={handleLogin}
+                                        className="px-3 py-1.5 sm:px-4 sm:py-2 text-gray-700 hover:text-blue-600 text-sm"
+                                    >
+                                        Masuk
+                                    </button>
+                                    <button 
+                                        onClick={handleSignUp}
+                                        className="bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg font-semibold hover:bg-blue-700 text-sm"
+                                    >
+                                        Daftar
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <div className="container mx-auto px-4 sm:px-6 py-8">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    {/* Sidebar */}
-                    <aside className="lg:col-span-3">
-                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sticky top-24">
-                            {/* User Profile Summary */}
-                            <div className="text-center mb-6 pb-6 border-b border-gray-200">
+            <div className="container mx-auto px-4 py-4 sm:py-8">
+                <div className="flex flex-col lg:flex-row gap-4 sm:gap-6">
+                    {/* Updated Sidebar */}
+                    <aside className="lg:w-64">
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 sticky top-20">
+                            <div className="text-center mb-4 sm:mb-6 pb-4 border-b border-gray-200">
                                 <Avatar 
                                     firstName={userData.firstName}
                                     lastName={userData.lastName}
                                     avatarUrl={userData.avatarUrl}
-                                    size={80}
-                                    className="border-4 border-blue-100 mx-auto mb-4"
+                                    size={60}
+                                    className="border-2 border-blue-100 mx-auto mb-3"
                                 />
-                                <h3 className="font-bold text-lg text-gray-800">{userData.firstName} {userData.lastName}</h3>
-                                <p className="text-gray-500 text-sm">{userData.email}</p>
-                                <div className="flex items-center justify-center space-x-4 mt-3">
-                                    <div className="text-center">
-                                        <p className="font-bold text-gray-800">{points}</p>
-                                        <p className="text-xs text-gray-500">Points</p>
-                                    </div>
-                                    <div className="w-px h-6 bg-gray-300"></div>
-                                    <div className="text-center">
-                                        <p className="font-bold text-gray-800">{user ? bookings.length : 0}</p>
-                                        <p className="text-xs text-gray-500">Trips</p>
-                                    </div>
-                                </div>
+                                <h3 className="font-bold text-gray-800 truncate">{userData.firstName} {userData.lastName}</h3>
+                                <p className="text-gray-500 text-sm truncate">{userData.email}</p>
+                                
                                 {!user && (
-                                    <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                                        <p className="text-yellow-700 text-sm">
+                                    <div className="mt-3 p-2 bg-yellow-50 rounded border border-yellow-200">
+                                        <p className="text-yellow-700 text-xs">
                                             <strong>Mode Guest:</strong> Login untuk akses penuh
                                         </p>
                                     </div>
                                 )}
                             </div>
 
-                            {/* Navigation */}
                             <nav className="space-y-1">
                                 {[
                                     { id: 'overview', label: 'Overview', icon: <UserIcon /> },
-                                    { id: 'bookings', label: 'Pesanan Saya', icon: <PlaneIcon /> },
-                                    { id: 'history', label: 'Riwayat', icon: <HistoryIcon /> },
-                                    { id: 'wallet', label: 'Dompet & Top Up', icon: <WalletIcon /> },
-                                    { id: 'profile', label: 'Pengaturan Akun', icon: <SettingsIcon /> },
+                                    { id: 'mybooking', label: 'My Booking', icon: <CalendarIcon /> },
+                                    { id: 'history', label: 'History', icon: <HistoryIcon /> },
+                                    { id: 'bookings', label: 'Semua Pesanan', icon: <TrainIcon /> },
+                                    // { id: 'wallet', label: 'Dompet', icon: <WalletIcon /> },
+                                    { id: 'profile', label: 'Pengaturan', icon: <SettingsIcon /> },
                                 ].map((item) => (
                                     <button
                                         key={item.id}
-                                        onClick={() => handleTabSwitch(item.id)}
-                                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                                        onClick={() => setActiveTab(item.id)}
+                                        disabled={!user && (item.id !== 'overview')}
+                                        className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 rounded-lg transition-colors ${
                                             activeTab === item.id 
-                                                ? 'bg-blue-50 text-blue-600 border border-blue-200' 
+                                                ? 'bg-blue-50 text-blue-600' 
                                                 : 'text-gray-600 hover:bg-gray-50'
-                                        } ${!user && (item.id === 'bookings' || item.id === 'wallet' || item.id === 'profile') ? 'opacity-60' : ''}`}
-                                        disabled={activeTab === item.id}
+                                        } ${!user && (item.id !== 'overview') ? 'opacity-60 cursor-not-allowed' : ''}`}
                                     >
                                         {item.icon}
-                                        <span className="font-medium">{item.label}</span>
-                                        {!user && (item.id === 'bookings' || item.id === 'wallet' || item.id === 'profile') && (
-                                            <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Login</span>
-                                        )}
+                                        <span className="font-medium text-sm sm:text-base">{item.label}</span>
                                     </button>
                                 ))}
-                                <hr className="my-3 border-gray-200"/>
+                                
+                                <hr className="my-2 border-gray-200"/>
+                                
                                 {user ? (
                                     <button 
                                         onClick={handleLogout}
-                                        className="w-full flex items-center space-x-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                                        className="w-full flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                     >
                                         <LogoutIcon />
-                                        <span className="font-medium">Keluar</span>
+                                        <span className="font-medium text-sm sm:text-base">Keluar</span>
                                     </button>
                                 ) : (
                                     <button 
                                         onClick={handleLogin}
-                                        className="w-full flex items-center space-x-3 px-4 py-3 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                                        className="w-full flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                     >
                                         <UserIcon />
-                                        <span className="font-medium">Login untuk Akses Penuh</span>
+                                        <span className="font-medium text-sm sm:text-base">Login</span>
                                     </button>
                                 )}
                             </nav>
@@ -851,565 +898,503 @@ export default function DashboardPage() {
                     </aside>
 
                     {/* Main Content */}
-                    <main className="lg:col-span-9">
-                        {/* Overview Tab */}
+                    <main className="flex-1">
                         {activeTab === 'overview' && (
-                            <div className="space-y-8">
-                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                    <div>
-                                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
-                                            {user ? `Selamat Datang, ${userData.firstName}! 🚆` : 'Selamat Datang di TripGo! 🚆'}
-                                        </h1>
-                                        <p className="text-gray-600 mt-1">
-                                            {new Date().toLocaleDateString('id-ID', { 
-                                                weekday: 'long', 
-                                                year: 'numeric', 
-                                                month: 'long', 
-                                                day: 'numeric' 
-                                            })}
-                                        </p>
-                                        {!user && (
-                                            <p className="text-blue-600 mt-2 text-sm">
-                                                Anda sedang dalam mode guest. Login untuk akses penuh semua fitur.
-                                            </p>
-                                        )}
-                                    </div>
-                                    <div className="flex space-x-3 w-full sm:w-auto">
-                                        <button 
-                                            onClick={handleRefresh}
-                                            disabled={refreshing}
-                                            className={`p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors ${refreshing ? 'animate-spin' : ''}`}
-                                        >
-                                            <RefreshIcon />
-                                        </button>
-                                        <SafeLink 
-                                            href="/search/trains"
-                                            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center space-x-2 w-full sm:w-auto justify-center"
-                                        >
-                                            <PlaneIcon />
-                                            <span>Pesan Tiket Baru</span>
-                                        </SafeLink>
-                                    </div>
+                            <div className="space-y-4 sm:space-y-6">
+                                <div>
+                                    <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+                                        {user ? `Halo, ${userData.firstName}!` : 'Selamat Datang di TripGo!'}
+                                    </h1>
+                                    <p className="text-gray-600 text-sm sm:text-base">
+                                        {new Date().toLocaleDateString('id-ID', { 
+                                            weekday: 'long', 
+                                            day: 'numeric', 
+                                            month: 'long', 
+                                            year: 'numeric' 
+                                        })}
+                                    </p>
                                 </div>
                                 
                                 {/* Stats Grid */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                                     {stats.map((stat, index) => (
-                                        user ? (
-                                            <StatCard
-                                                key={index}
-                                                title={stat.title}
-                                                value={stat.value}
-                                                subtitle={stat.subtitle}
-                                                icon={stat.icon}
-                                                color={stat.color}
-                                            />
-                                        ) : (
-                                            <GuestStatCard
-                                                key={index}
-                                                title={stat.title}
-                                                value={stat.value}
-                                                subtitle={stat.subtitle}
-                                                icon={stat.icon}
-                                                color={stat.color}
-                                            />
-                                        )
+                                        <StatCard
+                                            key={index}
+                                            title={stat.title}
+                                            value={stat.value}
+                                            subtitle={stat.subtitle}
+                                            icon={stat.icon}
+                                            color={stat.color}
+                                        />
                                     ))}
                                 </div>
 
-                                {/* Quick Actions */}
-                                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Aksi Cepat</h3>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                                        {[
-                                            { label: 'Pesan Tiket', icon: '🚆', href: '/search/trains', color: 'blue' },
-                                            { label: 'Top Up', icon: '💳', href: user ? '/payment/topup' : '/auth/login', color: 'green' },
-                                            { label: 'Riwayat', icon: '📜', onClick: () => handleTabSwitch('history'), color: 'yellow' },
-                                            { label: 'Bantuan', icon: '❓', href: '/help', color: 'purple' },
-                                        ].map((action, index) => (
-                                            action.href ? (
-                                                <SafeLink
-                                                    key={index}
-                                                    href={action.href}
-                                                    onClick={action.onClick}
-                                                    className={`flex flex-col items-center p-4 rounded-xl border border-gray-200 hover:shadow-md transition-all group
-                                                        ${action.color === 'blue' ? 'hover:border-blue-300 hover:bg-blue-50' : ''}
-                                                        ${action.color === 'green' ? 'hover:border-green-300 hover:bg-green-50' : ''}
-                                                        ${action.color === 'yellow' ? 'hover:border-yellow-300 hover:bg-yellow-50' : ''}
-                                                        ${action.color === 'purple' ? 'hover:border-purple-300 hover:bg-purple-50' : ''}
-                                                        ${!user && action.label !== 'Pesan Tiket' && action.label !== 'Bantuan' ? 'opacity-70' : ''}
-                                                    `}
-                                                >
-                                                    <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{action.icon}</span>
-                                                    <span className="font-medium text-gray-700 text-sm text-center">{action.label}</span>
-                                                    {!user && action.label !== 'Pesan Tiket' && action.label !== 'Bantuan' && (
-                                                        <span className="text-xs text-gray-500 mt-1">Login dulu</span>
-                                                    )}
-                                                </SafeLink>
-                                            ) : (
-                                                <button
-                                                    key={index}
-                                                    onClick={action.onClick}
-                                                    className={`flex flex-col items-center p-4 rounded-xl border border-gray-200 hover:shadow-md transition-all group
-                                                        ${action.color === 'blue' ? 'hover:border-blue-300 hover:bg-blue-50' : ''}
-                                                        ${action.color === 'green' ? 'hover:border-green-300 hover:bg-green-50' : ''}
-                                                        ${action.color === 'yellow' ? 'hover:border-yellow-300 hover:bg-yellow-50' : ''}
-                                                        ${action.color === 'purple' ? 'hover:border-purple-300 hover:bg-purple-50' : ''}
-                                                    `}
-                                                >
-                                                    <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">{action.icon}</span>
-                                                    <span className="font-medium text-gray-700 text-sm text-center">{action.label}</span>
-                                                </button>
-                                            )
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Recent Bookings Preview */}
-                                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                                    <div className="flex justify-between items-center mb-6">
-                                        <h3 className="text-xl font-semibold text-gray-800">
-                                            {user ? 'Pesanan Terbaru' : 'Contoh Pesanan'}
-                                        </h3>
-                                        {user && bookings.length > 0 && (
-                                            <button 
-                                                onClick={() => handleTabSwitch('bookings')}
-                                                className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                                {/* Recent Bookings Section */}
+                                {user && bookings.length > 0 && (
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-semibold text-gray-800 text-lg">Pesanan Terbaru</h3>
+                                            <button
+                                                onClick={handleViewMyBookings}
+                                                className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
                                             >
-                                                Lihat Semua
-                                            </button>
-                                        )}
-                                    </div>
-                                    
-                                    {!user ? (
-                                        <div className="space-y-4">
-                                            <GuestBookingCard />
-                                            <div className="text-center py-4">
-                                                <p className="text-gray-500 mb-4">Login untuk melihat pesanan Anda yang sebenarnya</p>
-                                                <button 
-                                                    onClick={handleLogin}
-                                                    className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2 text-sm"
-                                                >
-                                                    <UserIcon />
-                                                    <span>Login Sekarang</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : loading ? (
-                                        <div className="space-y-4">
-                                            <SkeletonBookingCard />
-                                            <SkeletonBookingCard />
-                                        </div>
-                                    ) : bookingsError ? (
-                                        <div className="text-center py-8 bg-yellow-50 rounded-xl">
-                                            <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                                </svg>
-                                            </div>
-                                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Gagal Memuat Pesanan</h4>
-                                            <p className="text-gray-500 mb-4 text-sm">
-                                                {bookingsError}
-                                            </p>
-                                            <button 
-                                                onClick={fetchBookings}
-                                                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
-                                            >
-                                                Coba Lagi
+                                                Lihat semua
+                                                <ArrowRightIcon />
                                             </button>
                                         </div>
-                                    ) : bookings.length > 0 ? (
-                                        <div className="space-y-4">
-                                            {bookings.slice(0, 2).map(booking => (
-                                                <BookingCard key={booking.id} booking={booking} />
+                                        <div className="space-y-3">
+                                            {bookings.slice(0, 3).map(booking => (
+                                                <BookingCard key={booking.id} booking={booking} showActions={true} />
                                             ))}
                                         </div>
-                                    ) : (
-                                        <div className="text-center py-8">
-                                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                                <PlaneIcon />
-                                            </div>
-                                            <h4 className="text-lg font-semibold text-gray-800 mb-2">Belum Ada Pesanan</h4>
-                                            <p className="text-gray-500 mb-4 text-sm">Mulai petualangan Anda dengan memesan tiket pertama!</p>
-                                            <SafeLink 
-                                            href="/search/trains"
-                                            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2 text-sm"
-                                            >
-                                            <PlaneIcon />
-                                            <span>Cari Kereta</span>
-                                            </SafeLink>
-                                        </div>
-                                    )}
+                                    </div>
+                                )}
+
+                                {/* Quick Actions */}
+                                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+                                    <h3 className="font-semibold text-gray-800 mb-4">Aksi Cepat</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <QuickActionCard
+                                            title="Cari & Pesan Kereta"
+                                            description="Temukan dan pesan tiket kereta dengan mudah"
+                                            icon={<TrainIcon />}
+                                            color="blue"
+                                            onClick={() => router.push('/search/trains')}
+                                            buttonText="Pesan Sekarang"
+                                        />
+                                        {user ? (
+                                            <>
+                                                <QuickActionCard
+                                                    title="Lihat Semua Booking"
+                                                    description="Kelola semua pesanan dan tiket Anda"
+                                                    icon={<CalendarIcon />}
+                                                    color="green"
+                                                    onClick={handleViewMyBookings}
+                                                    buttonText="Lihat Booking"
+                                                />
+                                                {/* <QuickActionCard
+                                                    title="Top Up Saldo"
+                                                    description="Isi saldo untuk pembayaran yang lebih mudah"
+                                                    icon={<CreditCardIcon />}
+                                                    color="orange"
+                                                    onClick={handleTopUp}
+                                                    buttonText="Top Up"
+                                                /> */}
+                                                <QuickActionCard
+                                                    title="Pengaturan Akun"
+                                                    description="Kelola profil dan preferensi Anda"
+                                                    icon={<SettingsIcon />}
+                                                    color="purple"
+                                                    onClick={() => setActiveTab('profile')}
+                                                    buttonText="Pengaturan"
+                                                />
+                                            </>
+                                        ) : (
+                                            <QuickActionCard
+                                                title="Login atau Daftar"
+                                                description="Akses penuh fitur TripGo dengan akun Anda"
+                                                icon={<UserIcon />}
+                                                color="green"
+                                                onClick={handleLogin}
+                                                buttonText="Login/Daftar"
+                                            />
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Bookings Tab - Hanya untuk user yang login */}
-                        {activeTab === 'bookings' && (
+                        {/* My Booking Tab - Active Bookings */}
+                        {activeTab === 'mybooking' && (
                             <div>
+                                <div className="flex justify-between items-center mb-4 sm:mb-6">
+                                    <h1 className="text-xl sm:text-2xl font-bold text-gray-800">My Booking</h1>
+                                    <div className="text-sm text-gray-600">
+                                        <span className="font-medium">{activeBookings.length} pesanan aktif</span>
+                                        {pendingBookings.length > 0 && (
+                                            <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                                                {pendingBookings.length} menunggu
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                
                                 {!user ? (
-                                    <div className="text-center bg-white rounded-2xl shadow-sm border border-gray-200 p-12">
-                                        <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                             <UserIcon />
                                         </div>
-                                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Login Diperlukan</h2>
-                                        <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                                            Anda perlu login untuk melihat riwayat pesanan Anda. 
-                                            Login atau daftar sekarang untuk mengakses semua fitur TripGo.
+                                        <h2 className="text-lg sm:text-xl font-bold text-gray-800 mb-3">Login Diperlukan</h2>
+                                        <p className="text-gray-600 mb-6 text-sm sm:text-base">
+                                            Login untuk melihat booking aktif Anda.
                                         </p>
-                                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
                                             <button 
                                                 onClick={handleLogin}
-                                                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+                                                className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
                                             >
                                                 Login Sekarang
                                             </button>
                                             <button 
                                                 onClick={handleSignUp}
-                                                className="bg-green-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors"
+                                                className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-green-700 transition-colors"
                                             >
-                                                Daftar Akun Baru
+                                                Daftar
                                             </button>
                                         </div>
                                     </div>
+                                ) : loading ? (
+                                    <div className="space-y-4">
+                                        {[1, 2, 3].map(i => (
+                                            <div key={i} className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
+                                                <div className="h-6 w-3/4 bg-gray-200 rounded mb-4"></div>
+                                                <div className="h-4 w-1/2 bg-gray-200 rounded mb-3"></div>
+                                                <div className="h-4 w-1/3 bg-gray-200 rounded"></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : bookingsError ? (
+                                    <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4 sm:p-6 text-center">
+                                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="font-semibold text-gray-800 mb-2">Gagal Memuat</h3>
+                                        <p className="text-gray-500 mb-4 text-sm">{bookingsError}</p>
+                                        <button 
+                                            onClick={fetchBookings}
+                                            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                                        >
+                                            Coba Lagi
+                                        </button>
+                                    </div>
+                                ) : activeBookings.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {activeBookings.map(booking => (
+                                            <BookingCard key={booking.id} booking={booking} showActions={true} />
+                                        ))}
+                                    </div>
                                 ) : (
-                                    <>
-                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Pesanan Saya</h1>
-                                            <div className="flex space-x-2 w-full sm:w-auto">
-                                                <button 
-                                                    className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                                                    onClick={() => setActiveTab('bookings')}
-                                                >
-                                                    Semua
-                                                </button>
-                                            </div>
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <CalendarIcon />
                                         </div>
-                                        
-                                        {loading ? (
-                                            <div className="grid grid-cols-1 gap-6">
-                                                <SkeletonBookingCard />
-                                                <SkeletonBookingCard />
-                                                <SkeletonBookingCard />
-                                            </div>
-                                        ) : bookingsError ? (
-                                            <div className="text-center bg-yellow-50 rounded-2xl shadow-sm border border-yellow-200 p-8 sm:p-16">
-                                                <div className="w-20 h-20 sm:w-32 sm:h-32 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
-                                                    <svg className="w-10 h-10 sm:w-16 sm:h-16 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                                    </svg>
-                                                </div>
-                                                <h3 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-4">Gagal Memuat Pesanan</h3>
-                                                <p className="text-gray-500 max-w-md mx-auto mb-6 text-sm sm:text-base">
-                                                    {bookingsError}
-                                                </p>
-                                                <button 
-                                                    onClick={fetchBookings}
-                                                    className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-3 text-sm sm:text-base"
-                                                >
-                                                    <RefreshIcon />
-                                                    <span>Refresh Halaman</span>
-                                                </button>
-                                            </div>
-                                        ) : bookings.length > 0 ? (
-                                            <div className="grid grid-cols-1 gap-6">
-                                                {bookings.map(booking => (
-                                                    <BookingCard key={booking.id} booking={booking} />
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center bg-white rounded-2xl shadow-sm border border-gray-200 p-8 sm:p-16">
-                                                <div className="w-20 h-20 sm:w-32 sm:h-32 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
-                                                    <PlaneIcon />
-                                                </div>
-                                                <h3 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-4">Belum Ada Pesanan</h3>
-                                                <p className="text-gray-500 max-w-md mx-auto mb-6 text-sm sm:text-base">
-                                                    Anda belum memiliki pesanan aktif. Mari mulai petualangan Anda dengan mencari tiket kereta terbaik!
-                                                </p>
-                                                <SafeLink 
-                                                    href="/search/trains"
-                                                    className="bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-3 text-sm sm:text-base"
-                                                >
-                                                    <PlaneIcon />
-                                                    <span>Cari Kereta</span>
-                                                </SafeLink>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Wallet Tab - Hanya untuk user yang login */}
-                        {activeTab === 'wallet' && (
-                            <div className="space-y-8">
-                                {!user ? (
-                                    <div className="text-center bg-white rounded-2xl shadow-sm border border-gray-200 p-12">
-                                        <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                            <WalletIcon />
-                                        </div>
-                                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Akses Dompet TripGo</h2>
-                                        <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                                            Login untuk mengakses fitur dompet digital TripGo. 
-                                            Top up saldo, kelola pembayaran, dan nikmati kemudahan bertransaksi.
+                                        <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-3">Belum Ada Booking Aktif</h3>
+                                        <p className="text-gray-500 mb-6 text-sm sm:text-base">
+                                            Mulai petualangan Anda dengan memesan tiket kereta!
                                         </p>
-                                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                                            <button 
-                                                onClick={handleLogin}
-                                                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-                                            >
-                                                Login Sekarang
-                                            </button>
-                                            <button 
-                                                onClick={handleSignUp}
-                                                className="bg-green-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors"
-                                            >
-                                                Daftar Akun Baru
-                                            </button>
-                                        </div>
+                                        <Link 
+                                            href="/search/trains"
+                                            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2"
+                                        >
+                                            <TrainIcon />
+                                            <span>Cari & Pesan Kereta</span>
+                                        </Link>
                                     </div>
-                                ) : (
-                                    <>
-                                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Dompet & Top Up</h1>
-                                        
-                                        {/* Balance Card */}
-                                        <div className="bg-gradient-to-r from-blue-600 to-purple-700 rounded-2xl shadow-xl p-6 sm:p-8 text-white relative overflow-hidden">
-                                            <div className="relative z-10">
-                                                <p className="text-blue-100 text-sm opacity-90">Saldo TripGo Wallet</p>
-                                                <p className="text-3xl sm:text-5xl font-bold mt-2 mb-4">
-                                                    {walletLoading ? (
-                                                        <div className="flex items-center space-x-2">
-                                                            <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-t-2 border-b-2 border-white"></div>
-                                                            <span className="text-lg sm:text-xl">Memuat...</span>
-                                                        </div>
-                                                    ) : (
-                                                        formatBalance()
-                                                    )}
-                                                </p>
-                                                <div className="flex items-center space-x-4 text-blue-200 text-sm sm:text-base">
-                                                    <div className="flex items-center space-x-1">
-                                                        <StarIcon />
-                                                        <span>{points.toLocaleString('id-ID')} Points</span>
-                                                    </div>
-                                                    <div className="w-px h-4 bg-blue-400"></div>
-                                                    <span>Member Gold</span>
-                                                </div>
-                                            </div>
-                                            <div className="absolute -bottom-8 -right-8 w-32 h-32 sm:w-40 sm:h-40 bg-white bg-opacity-10 rounded-full"></div>
-                                            <div className="absolute -top-8 -left-8 w-24 h-24 sm:w-32 sm:h-32 bg-white bg-opacity-5 rounded-full"></div>
-                                        </div>
-
-                                        {/* Quick Top Up */}
-                                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
-                                            <h3 className="text-xl font-semibold text-gray-800 mb-2">Top Up Cepat</h3>
-                                            <p className="text-gray-500 mb-6 text-sm sm:text-base">Pilih nominal atau masukkan jumlah custom</p>
-                                            
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
-                                                {[100000, 250000, 500000, 1000000].map((amount) => (
-                                                    <button
-                                                        key={amount}
-                                                        onClick={() => handleNavigation(`/payment/topup?amount=${amount}`)}
-                                                        className="p-3 sm:p-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all group"
-                                                    >
-                                                        <p className="font-bold text-gray-800 text-base sm:text-lg group-hover:text-blue-600">
-                                                            Rp {amount.toLocaleString('id-ID')}
-                                                        </p>
-                                                    </button>
-                                                ))}
-                                            </div>
-
-                                            <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
-                                                <button 
-                                                    onClick={handleTopUp}
-                                                    className="flex-1 bg-orange-500 text-white font-bold py-3 sm:py-4 px-6 rounded-xl hover:bg-orange-600 transition-colors text-base sm:text-lg text-center"
-                                                >
-                                                    Top Up Custom
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleTabSwitch('history')}
-                                                    className="px-6 bg-white border border-gray-300 text-gray-700 font-semibold py-3 sm:py-4 rounded-xl hover:bg-gray-50 transition-colors text-sm sm:text-base"
-                                                >
-                                                    Riwayat Top Up
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Promo Section */}
-                                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
-                                            <h3 className="text-xl font-semibold text-gray-800 mb-6">Promo & Benefit</h3>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                                                {[
-                                                    { title: 'Cashback 10%', desc: 'Untuk top up pertama', code: 'WELCOME10' },
-                                                    { title: 'Bonus 5%', desc: 'Min. top up Rp 500rb', code: 'TOPUP5' },
-                                                    { title: 'Gratis Biaya Admin', desc: 'Top up via Transfer Bank', code: 'NOADMIN' },
-                                                    { title: 'Double Points', desc: 'Khusus member premium', code: '2XPOINTS' },
-                                                ].map((promo, index) => (
-                                                    <div key={index} className="border border-orange-200 bg-orange-50 rounded-xl p-4">
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <div>
-                                                                <h4 className="font-bold text-orange-800 text-sm sm:text-base">{promo.title}</h4>
-                                                                <p className="text-orange-600 text-xs sm:text-sm">{promo.desc}</p>
-                                                            </div>
-                                                            <span className="bg-orange-500 text-white px-2 py-1 rounded text-xs font-bold">
-                                                                {promo.code}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </>
                                 )}
                             </div>
                         )}
 
-                        {/* Profile Tab - Hanya untuk user yang login */}
-                        {activeTab === 'profile' && (
-                            <div className="space-y-8">
-                                {!user ? (
-                                    <div className="text-center bg-white rounded-2xl shadow-sm border border-gray-200 p-12">
-                                        <div className="w-24 h-24 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                            <SettingsIcon />
-                                        </div>
-                                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Kelola Akun Anda</h2>
-                                        <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                                            Login untuk mengatur profil, preferensi, dan pengaturan akun TripGo Anda.
-                                        </p>
-                                        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                                            <button 
-                                                onClick={handleLogin}
-                                                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-                                            >
-                                                Login Sekarang
-                                            </button>
-                                            <button 
-                                                onClick={handleSignUp}
-                                                className="bg-green-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors"
-                                            >
-                                                Daftar Akun Baru
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Pengaturan Akun</h1>
-                                        
-                                        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
-                                            <form className="space-y-8">
-                                                {/* Photo Section */}
-                                                <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-8">
-                                                    <Avatar 
-                                                        firstName={userData.firstName}
-                                                        lastName={userData.lastName}
-                                                        avatarUrl={userData.avatarUrl}
-                                                        size={100}
-                                                        className="border-4 border-blue-100 rounded-2xl"
-                                                    />
-                                                    <div className="text-center sm:text-left">
-                                                        <h3 className="font-semibold text-gray-800 text-lg mb-2">Foto Profil</h3>
-                                                        <div className="flex space-x-3 justify-center sm:justify-start">
-                                                            <button 
-                                                                type="button"
-                                                                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors"
-                                                            >
-                                                                Unggah Foto Baru
-                                                            </button>
-                                                            <button 
-                                                                type="button"
-                                                                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300 transition-colors"
-                                                            >
-                                                                Hapus
-                                                            </button>
-                                                        </div>
-                                                        <p className="text-gray-500 text-sm mt-2">Format: JPG, PNG (max. 2MB)</p>
-                                                    </div>
-                                                </div>
-
-                                                <hr className="border-gray-200"/>
-
-                                                {/* Personal Info */}
-                                                <div>
-                                                    <h3 className="font-semibold text-gray-800 text-lg mb-6">Informasi Pribadi</h3>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-2">Nama Depan</label>
-                                                            <input 
-                                                                type="text" 
-                                                                defaultValue={userData.firstName} 
-                                                                className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-2">Nama Belakang</label>
-                                                            <input 
-                                                                type="text" 
-                                                                defaultValue={userData.lastName} 
-                                                                className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Contact Info */}
-                                                <div>
-                                                    <h3 className="font-semibold text-gray-800 text-lg mb-6">Kontak</h3>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-2">Alamat Email</label>
-                                                            <input 
-                                                                type="email" 
-                                                                defaultValue={userData.email} 
-                                                                disabled 
-                                                                className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 text-gray-500" 
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-2">Nomor Telepon</label>
-                                                            <input 
-                                                                type="tel" 
-                                                                defaultValue={userData.phone} 
-                                                                className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Actions */}
-                                                <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6">
-                                                    <button 
-                                                        type="button"
-                                                        className="px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors order-2 sm:order-1"
-                                                    >
-                                                        Batalkan
-                                                    </button>
-                                                    <button 
-                                                        type="submit"
-                                                        className="bg-blue-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-blue-700 transition-colors order-1 sm:order-2"
-                                                    >
-                                                        Simpan Perubahan
-                                                    </button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        )}
-
-                        {/* History Tab */}
+                        {/* History Tab - Completed/Cancelled Bookings */}
                         {activeTab === 'history' && (
                             <div>
-                                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">Riwayat Perjalanan</h1>
-                                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
-                                    <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <HistoryIcon />
+                                <div className="flex justify-between items-center mb-4 sm:mb-6">
+                                    <h1 className="text-xl sm:text-2xl font-bold text-gray-800">History</h1>
+                                    <div className="text-sm text-gray-600">
+                                        <span className="font-medium">{historyBookings.length} riwayat pesanan</span>
                                     </div>
-                                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Fitur Segera Hadir!</h3>
-                                    <p className="text-gray-500 max-w-md mx-auto text-sm sm:text-base">
-                                        Kami sedang menyiapkan halaman riwayat perjalanan untuk Anda. 
-                                        Di sini nantinya Anda dapat melihat semua perjalanan yang telah selesai.
-                                    </p>
                                 </div>
+                                
+                                {!user ? (
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <UserIcon />
+                                        </div>
+                                        <h2 className="text-lg sm:text-xl font-bold text-gray-800 mb-3">Login Diperlukan</h2>
+                                        <p className="text-gray-600 mb-6 text-sm sm:text-base">
+                                            Login untuk melihat riwayat pesanan Anda.
+                                        </p>
+                                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                            <button 
+                                                onClick={handleLogin}
+                                                className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                                            >
+                                                Login Sekarang
+                                            </button>
+                                            <button 
+                                                onClick={handleSignUp}
+                                                className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                                            >
+                                                Daftar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : loading ? (
+                                    <div className="space-y-4">
+                                        {[1, 2, 3].map(i => (
+                                            <div key={i} className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
+                                                <div className="h-6 w-3/4 bg-gray-200 rounded mb-4"></div>
+                                                <div className="h-4 w-1/2 bg-gray-200 rounded mb-3"></div>
+                                                <div className="h-4 w-1/3 bg-gray-200 rounded"></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : bookingsError ? (
+                                    <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4 sm:p-6 text-center">
+                                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="font-semibold text-gray-800 mb-2">Gagal Memuat</h3>
+                                        <p className="text-gray-500 mb-4 text-sm">{bookingsError}</p>
+                                        <button 
+                                            onClick={fetchBookings}
+                                            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                                        >
+                                            Coba Lagi
+                                        </button>
+                                    </div>
+                                ) : historyBookings.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {historyBookings.map(booking => (
+                                            <BookingCard key={booking.id} booking={booking} showActions={true} />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <HistoryIcon />
+                                        </div>
+                                        <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-3">Belum Ada Riwayat</h3>
+                                        <p className="text-gray-500 mb-6 text-sm sm:text-base">
+                                            Anda belum memiliki riwayat pesanan.
+                                        </p>
+                                        <Link 
+                                            href="/search/trains"
+                                            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2"
+                                        >
+                                            <TrainIcon />
+                                            <span>Cari Kereta</span>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* All Bookings Tab */}
+                        {activeTab === 'bookings' && (
+                            <div>
+                                <div className="flex justify-between items-center mb-4 sm:mb-6">
+                                    <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Semua Pesanan</h1>
+                                    <div className="text-sm text-gray-600">
+                                        <span className="font-medium">{bookings.length} total pesanan</span>
+                                    </div>
+                                </div>
+                                
+                                {!user ? (
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <UserIcon />
+                                        </div>
+                                        <h2 className="text-lg sm:text-xl font-bold text-gray-800 mb-3">Login Diperlukan</h2>
+                                        <p className="text-gray-600 mb-6 text-sm sm:text-base">
+                                            Login untuk melihat semua pesanan kereta Anda.
+                                        </p>
+                                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                            <button 
+                                                onClick={handleLogin}
+                                                className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                                            >
+                                                Login Sekarang
+                                            </button>
+                                            <button 
+                                                onClick={handleSignUp}
+                                                className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                                            >
+                                                Daftar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : loading ? (
+                                    <div className="space-y-4">
+                                        {[1, 2].map(i => (
+                                            <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 animate-pulse">
+                                                <div className="h-4 w-3/4 bg-gray-200 rounded mb-3"></div>
+                                                <div className="h-3 w-1/2 bg-gray-200 rounded"></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : bookingsError ? (
+                                    <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-4 sm:p-6 text-center">
+                                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="font-semibold text-gray-800 mb-2">Gagal Memuat</h3>
+                                        <p className="text-gray-500 mb-4 text-sm">{bookingsError}</p>
+                                        <button 
+                                            onClick={fetchBookings}
+                                            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                                        >
+                                            Coba Lagi
+                                        </button>
+                                    </div>
+                                ) : bookings.length > 0 ? (
+                                    <div className="space-y-4">
+                                        <div className="flex flex-wrap gap-2 mb-4">
+                                            <button 
+                                                onClick={() => setActiveTab('mybooking')}
+                                                className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-200 transition-colors"
+                                            >
+                                                Aktif: {activeBookings.length}
+                                            </button>
+                                            <button 
+                                                onClick={() => setActiveTab('history')}
+                                                className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                                            >
+                                                Riwayat: {historyBookings.length}
+                                            </button>
+                                            <button 
+                                                onClick={() => router.push('/my-bookings')}
+                                                className="px-3 py-1.5 bg-green-100 text-green-700 text-sm font-medium rounded-lg hover:bg-green-200 transition-colors flex items-center gap-1"
+                                            >
+                                                Lihat Detail
+                                                <ArrowRightIcon />
+                                            </button>
+                                        </div>
+                                        {bookings.map(booking => (
+                                            <BookingCard key={booking.id} booking={booking} showActions={true} />
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <TrainIcon />
+                                        </div>
+                                        <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-3">Belum Ada Pesanan</h3>
+                                        <p className="text-gray-500 mb-6 text-sm sm:text-base">
+                                            Mulai petualangan Anda dengan memesan tiket kereta pertama!
+                                        </p>
+                                        <Link 
+                                            href="/search/trains"
+                                            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center space-x-2"
+                                        >
+                                            <TrainIcon />
+                                            <span>Cari Kereta</span>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Profile Settings Tab */}
+                        {activeTab === 'profile' && (
+                            <div className="space-y-4 sm:space-y-6">
+                                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pengaturan Akun</h1>
+                                
+                                {!user ? (
+                                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <SettingsIcon />
+                                        </div>
+                                        <h2 className="text-lg sm:text-xl font-bold text-gray-800 mb-3">Kelola Akun</h2>
+                                        <p className="text-gray-600 mb-6 text-sm sm:text-base">
+                                            Login untuk mengatur profil dan pengaturan akun TripGo.
+                                        </p>
+                                        <button 
+                                            onClick={handleLogin}
+                                            className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                                        >
+                                            Login Sekarang
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {/* Profile Info Card */}
+                                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+                                            <div className="flex items-center space-x-4 mb-6">
+                                                <Avatar 
+                                                    firstName={userData.firstName}
+                                                    lastName={userData.lastName}
+                                                    avatarUrl={userData.avatarUrl}
+                                                    size={60}
+                                                />
+                                                <div>
+                                                    <h3 className="font-semibold text-gray-800">{userData.firstName} {userData.lastName}</h3>
+                                                    <p className="text-gray-500 text-sm">{userData.email}</p>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                                                    <input 
+                                                        type="email" 
+                                                        defaultValue={userData.email} 
+                                                        disabled 
+                                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-500" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">Telepon</label>
+                                                    <input 
+                                                        type="tel" 
+                                                        defaultValue={userData.phone} 
+                                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
+                                                    />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="mt-6 pt-6 border-t border-gray-200">
+                                                <button
+                                                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                                                >
+                                                    Simpan Perubahan
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Account Actions Card */}
+                                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+                                            <h3 className="font-semibold text-gray-800 mb-4">Aksi Akun</h3>
+                                            <div className="space-y-3">
+                                                <button
+                                                    onClick={handleRefresh}
+                                                    className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                                                >
+                                                    <div className="flex items-center space-x-3">
+                                                        <RefreshIcon />
+                                                        <span>Refresh Data</span>
+                                                    </div>
+                                                    <span className="text-gray-400">↻</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => router.push('/privacy-policy')}
+                                                    className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 rounded-lg transition-colors"
+                                                >
+                                                    <div className="flex items-center space-x-3">
+                                                        <ReceiptIcon />
+                                                        <span>Kebijakan Privasi</span>
+                                                    </div>
+                                                    <span className="text-gray-400">→</span>
+                                                </button>
+                                                <button
+                                                    onClick={handleLogout}
+                                                    className="w-full flex items-center justify-between p-3 text-left text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <div className="flex items-center space-x-3">
+                                                        <LogoutIcon />
+                                                        <span>Keluar Akun</span>
+                                                    </div>
+                                                    <span className="text-red-400">→</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </main>

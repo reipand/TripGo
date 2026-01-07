@@ -1,351 +1,480 @@
+// app/booking/confirmation/page.tsx
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
-import { useAuth } from '@/app/contexts/AuthContext';
+import { format } from 'date-fns';
+import { id } from 'date-fns/locale';
 
-// --- Komponen Ikon ---
-const CheckCircleIcon = () => (
-  <svg className="w-16 h-16 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+// Tipe data untuk booking
+interface BookingData {
+  // Data dari query parameters
+  bookingCode: string;
+  orderId: string;
+  amount: number;
+  name: string;
+  email: string;
+  phone: string;
+  passengerCount: string;
+  savedToDatabase: string;
+  paymentMethod?: string;
+  paymentFee?: string;
+  databaseId?: string;
+  ticketNumber?: string;
+  trainName?: string;
+  trainType?: string;
+  origin?: string;
+  destination?: string;
+  departureDate?: string;
+  departureTime?: string;
+  scheduleId?: string;
+  insertionMethod?: string;
+  isFallback?: string;
+  
+  // Data dari session storage (jika ada)
+  sessionData?: any;
+}
 
-const PlaneIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-  </svg>
-);
+// Tipe data penumpang
+interface Passenger {
+  id?: number;
+  title: string;
+  fullName: string;
+  idNumber: string;
+  phoneNumber: string;
+  email: string;
+  seatNumber?: string;
+}
 
-const DownloadIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-  </svg>
-);
+// Status pembayaran
+type PaymentStatus = 'pending' | 'processing' | 'success' | 'failed' | 'expired';
 
-const ShareIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-  </svg>
-);
-
-// --- Komponen Detail Penerbangan ---
-const FlightDetails = ({ booking }: { booking: any }) => (
-  <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-    <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-      <PlaneIcon />
-      <span className="ml-2">Detail Penerbangan</span>
-    </h3>
-    
-    <div className="flex items-center justify-between mb-4">
-      <div className="flex items-center space-x-3">
-        <img 
-          src={`/images/airline-logo-${booking.flight.airline.toLowerCase()}.png`} 
-          alt={`${booking.flight.airline} logo`} 
-          className="w-12 h-12 object-contain"
-        />
-        <div>
-          <h4 className="font-bold text-lg text-gray-800">{booking.flight.airline}</h4>
-          <p className="text-sm text-gray-500">{booking.flight.flightNumber}</p>
-        </div>
-      </div>
-    </div>
-
-    {/* Route Information */}
-    <div className="flex items-center justify-between py-4 border-t border-b border-gray-200">
-      <div className="text-center">
-        <p className="text-2xl font-bold text-gray-800">{booking.flight.departureTime}</p>
-        <p className="text-sm text-gray-500">{booking.flight.originCode}</p>
-        <p className="text-xs text-gray-400">{booking.flight.origin}</p>
-      </div>
-      
-      <div className="flex-1 mx-6">
-        <div className="flex items-center justify-center">
-          <div className="flex-1 h-px bg-gray-300"></div>
-          <div className="mx-3 flex flex-col items-center">
-            <PlaneIcon />
-            <p className="text-xs text-gray-500 mt-1">{booking.flight.duration}</p>
-          </div>
-          <div className="flex-1 h-px bg-gray-300"></div>
-        </div>
-        <p className="text-center text-xs text-gray-400 mt-2">Langsung</p>
-      </div>
-      
-      <div className="text-center">
-        <p className="text-2xl font-bold text-gray-800">{booking.flight.arrivalTime}</p>
-        <p className="text-sm text-gray-500">{booking.flight.destinationCode}</p>
-        <p className="text-xs text-gray-400">{booking.flight.destination}</p>
-      </div>
-    </div>
-
-    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <p className="text-sm font-medium text-gray-700">Tanggal Keberangkatan</p>
-        <p className="text-lg font-semibold text-gray-800">{booking.flight.departureDate}</p>
-      </div>
-      <div>
-        <p className="text-sm font-medium text-gray-700">Kelas</p>
-        <p className="text-lg font-semibold text-gray-800">{booking.flight.class}</p>
-      </div>
-    </div>
-  </div>
-);
-
-// --- Komponen Detail Penumpang ---
-const PassengerDetails = ({ passengers }: { passengers: any[] }) => (
-  <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-    <h3 className="text-xl font-bold text-gray-800 mb-4">Detail Penumpang</h3>
-    
-    <div className="space-y-4">
-      {passengers.map((passenger, index) => (
-        <div key={index} className="border border-gray-200 rounded-lg p-4">
-          <h4 className="font-semibold text-gray-800 mb-2">Penumpang {index + 1}</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-500">Nama Lengkap</p>
-              <p className="font-medium text-gray-800">{passenger.title} {passenger.firstName} {passenger.lastName}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Tanggal Lahir</p>
-              <p className="font-medium text-gray-800">{passenger.dateOfBirth}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Nomor Paspor</p>
-              <p className="font-medium text-gray-800">{passenger.passportNumber}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Kewarganegaraan</p>
-              <p className="font-medium text-gray-800">{passenger.nationality}</p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-// --- Komponen Ringkasan Pembayaran ---
-const PaymentSummary = ({ booking }: { booking: any }) => {
-  const getPaymentStatusInfo = (status: string) => {
-    switch (status) {
-      case 'capture':
-      case 'settlement':
-        return {
-          text: 'Lunas',
-          color: 'text-green-600',
-          bgColor: 'bg-green-50',
-          borderColor: 'border-green-200'
-        };
-      case 'pending':
-        return {
-          text: 'Menunggu Pembayaran',
-          color: 'text-yellow-600',
-          bgColor: 'bg-yellow-50',
-          borderColor: 'border-yellow-200'
-        };
-      case 'deny':
-      case 'failure':
-        return {
-          text: 'Gagal',
-          color: 'text-red-600',
-          bgColor: 'bg-red-50',
-          borderColor: 'border-red-200'
-        };
-      default:
-        return {
-          text: 'Unknown',
-          color: 'text-gray-600',
-          bgColor: 'bg-gray-50',
-          borderColor: 'border-gray-200'
-        };
-    }
-  };
-
-  const statusInfo = getPaymentStatusInfo(booking.paymentStatus);
-
-  return (
-    <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-      <h3 className="text-xl font-bold text-gray-800 mb-4">Ringkasan Pembayaran</h3>
-      
-      <div className="space-y-3">
-        <div className="flex justify-between">
-          <span className="text-gray-600">Harga Tiket ({booking.passengerCount} orang)</span>
-          <span className="font-medium">Rp {booking.totalBasePrice.toLocaleString('id-ID')}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Pajak & Fee</span>
-          <span className="font-medium">Rp {booking.tax.toLocaleString('id-ID')}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-gray-600">Biaya Layanan</span>
-          <span className="font-medium">Rp {booking.serviceFee.toLocaleString('id-ID')}</span>
-        </div>
-        <hr className="border-gray-200" />
-        <div className="flex justify-between text-lg font-bold">
-          <span>Total Dibayar</span>
-          <span className="text-green-600">Rp {booking.totalPrice.toLocaleString('id-ID')}</span>
-        </div>
-      </div>
-      
-      <div className={`mt-4 p-3 ${statusInfo.bgColor} ${statusInfo.borderColor} border rounded-lg`}>
-        <p className="text-sm text-gray-700">
-          <strong>Metode Pembayaran:</strong> {booking.paymentMethod}
-        </p>
-        <p className={`text-sm ${statusInfo.color}`}>
-          <strong>Status:</strong> {statusInfo.text}
-        </p>
-        {booking.orderId && (
-          <p className="text-sm text-gray-700">
-            <strong>Order ID:</strong> {booking.orderId}
-          </p>
-        )}
-      </div>
-
-      {/* Payment Status Actions */}
-      {booking.paymentStatus === 'pending' && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-700 mb-2">
-            <strong>Pembayaran sedang diproses.</strong> Silakan selesaikan pembayaran sesuai dengan metode yang dipilih.
-          </p>
-          <Link
-            href={`/payment/status/${booking.orderId}`}
-            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            Pantau Status Pembayaran →
-          </Link>
-        </div>
-      )}
-
-      {(booking.paymentStatus === 'deny' || booking.paymentStatus === 'failure') && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-sm text-red-700 mb-2">
-            <strong>Pembayaran gagal.</strong> Silakan coba metode pembayaran lain.
-          </p>
-          <Link
-            href={`/payment/status/${booking.orderId}`}
-            className="text-red-600 hover:text-red-700 text-sm font-medium"
-          >
-            Lihat Detail Pembayaran →
-          </Link>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// --- Komponen Aksi ---
-const ActionButtons = ({ bookingId, paymentStatus }: { bookingId: string; paymentStatus: string }) => {
-  const handleDownloadTicket = () => {
-    // Redirect to e-ticket page
-    window.open(`/ticket/${bookingId}`, '_blank');
-  };
-
-  const handleShareBooking = () => {
-    // Share booking
-    if (navigator.share) {
-      navigator.share({
-        title: 'Konfirmasi Booking TripGO',
-        text: `Booking ID: ${bookingId}`,
-        url: window.location.href
-      });
-    } else {
-      // Fallback untuk browser yang tidak support Web Share API
-      navigator.clipboard.writeText(window.location.href);
-      alert('Link booking telah disalin ke clipboard!');
-    }
-  };
-
-  const isPaymentComplete = paymentStatus === 'capture' || paymentStatus === 'settlement';
-
-  return (
-    <div className="bg-white rounded-xl shadow-lg p-6">
-      <h3 className="text-xl font-bold text-gray-800 mb-4">Aksi</h3>
-      
-      <div className="space-y-4">
-        {/* E-Ticket Button */}
-        <Link
-          href={`/ticket/${bookingId}`}
-          className="flex items-center justify-center space-x-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300 w-full"
-        >
-          <DownloadIcon />
-          <span>Lihat E-Ticket</span>
-        </Link>
-        
-        {/* Download Button (only if payment is complete) */}
-        {isPaymentComplete && (
-          <button
-            onClick={handleDownloadTicket}
-            className="flex items-center justify-center space-x-2 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300 w-full"
-          >
-            <DownloadIcon />
-            <span>Download Tiket</span>
-          </button>
-        )}
-        
-        {/* Share Button */}
-        <button
-          onClick={handleShareBooking}
-          className="flex items-center justify-center space-x-2 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-300 w-full"
-        >
-          <ShareIcon />
-          <span>Bagikan Booking</span>
-        </button>
-
-        {/* Payment Status Info */}
-        {!isPaymentComplete && (
-          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm text-yellow-700">
-              <strong>E-ticket akan tersedia setelah pembayaran selesai.</strong>
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// --- Komponen Utama Konfirmasi Booking ---
 const BookingConfirmationContent = () => {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const { user } = useAuth();
-  const [booking, setBooking] = useState<any>(null);
+  const searchParams = useSearchParams();
+  const [bookingData, setBookingData] = useState<BookingData | null>(null);
+  const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('pending');
+  const [countdown, setCountdown] = useState<number>(15 * 60); // 15 menit dalam detik
+  const [showPaymentInstructions, setShowPaymentInstructions] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<string>('');
 
+  // Efek untuk mengambil data dari URL parameters
   useEffect(() => {
-    const fetchBookingData = async () => {
+    const loadBookingData = async () => {
       try {
         setLoading(true);
         setError(null);
-        
-        const bookingId = searchParams.get('id');
-        if (!bookingId) {
-          throw new Error('Booking ID tidak ditemukan');
+
+        // Ambil data dari query parameters
+        const params: BookingData = {
+          bookingCode: searchParams.get('bookingCode') || '',
+          orderId: searchParams.get('orderId') || '',
+          amount: parseFloat(searchParams.get('amount') || '0'),
+          name: searchParams.get('name') || '',
+          email: searchParams.get('email') || '',
+          phone: searchParams.get('phone') || '',
+          passengerCount: searchParams.get('passengerCount') || '1',
+          savedToDatabase: searchParams.get('savedToDatabase') || 'false',
+          paymentMethod: searchParams.get('paymentMethod') || 'bank-transfer',
+          paymentFee: searchParams.get('paymentFee') || '0',
+          databaseId: searchParams.get('databaseId') || '',
+          ticketNumber: searchParams.get('ticketNumber') || '',
+          trainName: searchParams.get('trainName') || '',
+          trainType: searchParams.get('trainType') || '',
+          origin: searchParams.get('origin') || '',
+          destination: searchParams.get('destination') || '',
+          departureDate: searchParams.get('departureDate') || '',
+          departureTime: searchParams.get('departureTime') || '',
+          scheduleId: searchParams.get('scheduleId') || '',
+          insertionMethod: searchParams.get('insertionMethod') || '',
+          isFallback: searchParams.get('isFallback') || 'false'
+        };
+
+        console.log('📋 URL Parameters:', params);
+
+        // Validasi data minimal
+        if (!params.bookingCode) {
+          throw new Error('Data booking tidak ditemukan');
         }
 
-        const response = await fetch(`/api/bookings/${bookingId}`);
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error('Booking tidak ditemukan');
+        // Coba ambil data dari session storage
+        const storedBooking = sessionStorage.getItem('currentBooking');
+        const storedLatestBooking = localStorage.getItem('latestBooking');
+
+        let sessionData = null;
+        if (storedBooking) {
+          try {
+            sessionData = JSON.parse(storedBooking);
+            console.log('📦 Data from sessionStorage:', sessionData);
+          } catch (e) {
+            console.error('Error parsing session data:', e);
           }
-          throw new Error('Gagal mengambil data booking');
         }
-        
-        const bookingData = await response.json();
-        setBooking(bookingData);
-      } catch (err) {
-        console.error('Error fetching booking:', err);
-        setError(err instanceof Error ? err.message : 'Terjadi kesalahan');
+
+        // Jika ada data session, gunakan untuk melengkapi
+        if (sessionData) {
+          // Ambil data penumpang dari session
+          if (sessionData.passengers && Array.isArray(sessionData.passengers)) {
+            setPassengers(sessionData.passengers);
+          }
+          
+          // Gunakan booking code dari session jika tidak ada di URL
+          if (!params.bookingCode && sessionData.bookingCode) {
+            params.bookingCode = sessionData.bookingCode;
+          }
+          
+          params.sessionData = sessionData;
+        }
+
+        setBookingData(params);
+
+        // Mulai countdown pembayaran
+        setPaymentStatus('pending');
+        startPaymentCountdown();
+
+        // Jika booking disimpan ke database, cek status pembayaran
+        if (params.savedToDatabase === 'true' && params.databaseId) {
+          checkPaymentStatus(params.databaseId);
+        }
+
+      } catch (error: any) {
+        console.error('❌ Error loading booking data:', error);
+        setError(error.message || 'Gagal memuat data booking');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchBookingData();
+    loadBookingData();
   }, [searchParams]);
+
+  // Countdown untuk batas waktu pembayaran
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setPaymentStatus('expired');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const startPaymentCountdown = () => {
+    // Reset countdown ke 15 menit
+    setCountdown(15 * 60);
+  };
+
+  const checkPaymentStatus = async (bookingId: string) => {
+    try {
+      // Simulasi cek status pembayaran
+      // Di implementasi nyata, ini akan memanggil API
+      setTimeout(() => {
+        // Contoh: 70% kemungkinan success
+        const isSuccess = Math.random() > 0.3;
+        setPaymentStatus(isSuccess ? 'success' : 'processing');
+      }, 3000);
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+    }
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(price);
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return format(date, 'EEEE, d MMMM yyyy', { locale: id });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  const formatTime = (timeString: string) => {
+    try {
+      const [hours, minutes] = timeString.split(':');
+      return `${hours}:${minutes}`;
+    } catch (error) {
+      return timeString;
+    }
+  };
+
+  const formatCountdown = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleCopyBookingCode = async () => {
+    if (!bookingData?.bookingCode) return;
+    
+    try {
+      await navigator.clipboard.writeText(bookingData.bookingCode);
+      setCopyStatus('Copied!');
+      setTimeout(() => setCopyStatus(''), 2000);
+    } catch (error) {
+      setCopyStatus('Failed to copy');
+    }
+  };
+
+  const handleDownloadTicket = () => {
+    if (!bookingData) return;
+    
+    // Generate PDF ticket
+    const ticketData = {
+      bookingCode: bookingData.bookingCode,
+      ticketNumber: bookingData.ticketNumber || `TICKET-${Date.now()}`,
+      passengerName: bookingData.name,
+      trainName: bookingData.trainName,
+      origin: bookingData.origin,
+      destination: bookingData.destination,
+      departureDate: bookingData.departureDate,
+      departureTime: bookingData.departureTime,
+      amount: bookingData.amount
+    };
+    
+    console.log('Generating ticket PDF:', ticketData);
+    alert('Fitur download ticket akan segera tersedia!');
+  };
+
+  const handleShareBooking = () => {
+    if (!bookingData) return;
+    
+    const shareText = `Saya sudah booking tiket kereta ${bookingData.trainName} dari ${bookingData.origin} ke ${bookingData.destination} dengan kode booking: ${bookingData.bookingCode}`;
+    
+    if (navigator.share) {
+      navigator.share({
+        title: 'Booking Confirmation',
+        text: shareText,
+        url: window.location.href
+      });
+    } else {
+      navigator.clipboard.writeText(shareText);
+      alert('Link booking telah disalin ke clipboard!');
+    }
+  };
+
+  const handleRetryPayment = () => {
+    if (!bookingData) return;
+    
+    // Redirect ke halaman pembayaran ulang
+    const paymentParams = new URLSearchParams({
+      bookingCode: bookingData.bookingCode,
+      orderId: bookingData.orderId,
+      amount: bookingData.amount.toString(),
+      name: bookingData.name,
+      email: bookingData.email
+    });
+    
+    router.push(`/payment/retry?${paymentParams.toString()}`);
+  };
+
+  // Tampilkan status pembayaran
+  const renderPaymentStatus = () => {
+    switch (paymentStatus) {
+      case 'success':
+        return (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Pembayaran Berhasil!</h1>
+                <p className="text-gray-600 mt-1">Tiket Anda telah aktif dan siap digunakan</p>
+              </div>
+            </div>
+          </div>
+        );
+      
+      case 'processing':
+        return (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Menunggu Konfirmasi Pembayaran</h1>
+                <p className="text-gray-600 mt-1">Pembayaran Anda sedang diproses oleh sistem</p>
+              </div>
+            </div>
+          </div>
+        );
+      
+      case 'expired':
+        return (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Waktu Pembayaran Habis</h1>
+                <p className="text-gray-600 mt-1">Silakan lakukan booking ulang</p>
+              </div>
+            </div>
+          </div>
+        );
+      
+      case 'failed':
+        return (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Pembayaran Gagal</h1>
+                <p className="text-gray-600 mt-1">Silakan coba lagi dengan metode pembayaran lain</p>
+              </div>
+            </div>
+          </div>
+        );
+      
+      default: // pending
+        return (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Menunggu Pembayaran</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-gray-600">Selesaikan pembayaran dalam:</p>
+                  <div className="px-3 py-1 bg-orange-500 text-white rounded-lg font-mono font-bold">
+                    {formatCountdown(countdown)}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Countdown warning */}
+            {countdown < 300 && ( // Kurang dari 5 menit
+              <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-red-700 font-semibold">Waktu hampir habis! Segera selesaikan pembayaran.</span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+    }
+  };
+
+  // Tampilkan instruksi pembayaran berdasarkan metode
+  const renderPaymentInstructions = () => {
+    if (!bookingData?.paymentMethod) return null;
+
+    const instructions: Record<string, { title: string; steps: string[] }> = {
+      'bank-transfer': {
+        title: 'Transfer Bank',
+        steps: [
+          'Pilih bank tujuan: BCA, BNI, Mandiri, atau BRI',
+          'Transfer ke rekening: 1234567890 (PT TripGo Indonesia)',
+          'Jumlah transfer: Rp ' + bookingData.amount.toLocaleString('id-ID'),
+          'Tambahkan kode unik: ' + bookingData.bookingCode?.slice(-3),
+          'Konfirmasi pembayaran melalui WhatsApp: 0812-3456-7890'
+        ]
+      },
+      'virtual-account': {
+        title: 'Virtual Account',
+        steps: [
+          'Virtual Account: 8880' + bookingData.bookingCode?.replace(/\D/g, '').slice(-10),
+          'Jumlah pembayaran: Rp ' + bookingData.amount.toLocaleString('id-ID'),
+          'Bayar melalui ATM/Internet Banking/Mobile Banking',
+          'Pilih menu "Transfer" → "Virtual Account"',
+          'Masukkan nomor Virtual Account dan jumlah yang tertera'
+        ]
+      },
+      'credit-card': {
+        title: 'Kartu Kredit',
+        steps: [
+          'Anda akan dialihkan ke halaman pembayaran yang aman',
+          'Masukkan detail kartu kredit Anda',
+          'Lakukan verifikasi 3D Secure',
+          'Tunggu konfirmasi pembayaran',
+          'E-ticket akan dikirim ke email setelah pembayaran berhasil'
+        ]
+      },
+      'e-wallet': {
+        title: 'E-Wallet',
+        steps: [
+          'Pilih metode e-wallet: OVO, GoPay, DANA, atau ShopeePay',
+          'Scan QR code yang ditampilkan',
+          'Konfirmasi pembayaran di aplikasi e-wallet Anda',
+          'Tunggu verifikasi dari sistem',
+          'Status booking akan otomatis terupdate'
+        ]
+      }
+    };
+
+    const method = instructions[bookingData.paymentMethod] || instructions['bank-transfer'];
+
+    return (
+      <div className="mt-6 p-6 bg-white border border-gray-200 rounded-xl">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Instruksi Pembayaran - {method.title}</h3>
+        <div className="space-y-3">
+          {method.steps.map((step, index) => (
+            <div key={index} className="flex items-start gap-3">
+              <div className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                {index + 1}
+              </div>
+              <p className="text-gray-700">{step}</p>
+            </div>
+          ))}
+        </div>
+        
+        {bookingData.paymentMethod === 'bank-transfer' && (
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <h4 className="font-semibold text-gray-700 mb-2">Rekening Tujuan:</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3 bg-white border rounded-lg">
+                <div className="font-bold text-gray-800">BCA</div>
+                <div className="text-lg font-mono font-bold text-blue-600">123 456 7890</div>
+                <div className="text-sm text-gray-500">a.n. PT TripGo Indonesia</div>
+              </div>
+              <div className="p-3 bg-white border rounded-lg">
+                <div className="font-bold text-gray-800">Mandiri</div>
+                <div className="text-lg font-mono font-bold text-blue-600">987 654 3210</div>
+                <div className="text-sm text-gray-500">a.n. PT TripGo Indonesia</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -358,131 +487,568 @@ const BookingConfirmationContent = () => {
     );
   }
 
-  if (error || !booking) {
+  if (error || !bookingData) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-500 text-6xl mb-4">❌</div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Booking Tidak Ditemukan</h1>
-          <p className="text-gray-600 mb-6">{error || 'Booking tidak ditemukan'}</p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button 
-              onClick={() => router.push('/')}
-              className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-700 mb-2">Terjadi Kesalahan</h2>
+          <p className="text-gray-500 mb-6">{error || 'Data booking tidak ditemukan'}</p>
+          <div className="space-y-3">
+            <Link
+              href="/search"
+              className="block px-6 py-3 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors"
             >
-              Kembali ke Beranda
+              Cari Kereta Lain
+            </Link>
+            <button 
+              onClick={() => router.back()}
+              className="w-full px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Kembali
             </button>
-            {user && (
-              <button 
-                onClick={() => router.push('/dashboard')}
-                className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Lihat Dashboard
-              </button>
-            )}
           </div>
         </div>
       </div>
     );
   }
 
+  const totalAmount = bookingData.amount;
+  const baseFare = Math.round(totalAmount * 0.85);
+  const serviceFee = Math.round(totalAmount * 0.10);
+  const insuranceFee = Math.round(totalAmount * 0.05);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-4">
+      <header className="bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
-            <button 
-              onClick={() => router.push('/')}
-              className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Kembali ke Beranda
-            </button>
-            <h1 className="text-xl font-bold text-gray-800">Konfirmasi Booking</h1>
-            <div className="w-32"></div> {/* Spacer untuk centering */}
+            <Link href="/" className="flex items-center group">
+              <div className="w-10 h-10 bg-[#FD7E14] rounded-lg flex items-center justify-center group-hover:bg-[#E06700] transition-colors">
+                <span className="text-white font-bold text-lg">TG</span>
+              </div>
+              <span className="ml-3 text-xl font-bold text-gray-800">TripGo</span>
+            </Link>
+            <div className="hidden md:flex items-center space-x-6">
+              <Link href="/" className="text-gray-600 hover:text-gray-900 transition-colors">Home</Link>
+              <Link href="/my-bookings" className="text-gray-600 hover:text-gray-900 transition-colors">My Bookings</Link>
+              <Link href="/help" className="px-4 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors">
+                Help
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Success Message */}
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <CheckCircleIcon />
-          </div>
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">
-            {booking.paymentStatus === 'capture' || booking.paymentStatus === 'settlement' 
-              ? 'Booking Berhasil!' 
-              : 'Booking Dibuat!'}
-          </h2>
-          <p className="text-gray-600 mb-4">
-            {booking.paymentStatus === 'capture' || booking.paymentStatus === 'settlement'
-              ? 'Terima kasih telah memesan tiket melalui TripGO. Detail booking Anda telah dikirim ke email.'
-              : 'Booking Anda telah dibuat. Silakan selesaikan pembayaran untuk mengkonfirmasi tiket.'}
-          </p>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 inline-block">
-            <p className="text-blue-800 font-semibold">
-              Booking ID: <span className="font-mono">{booking.id}</span>
-            </p>
-            {booking.orderId && (
-              <p className="text-blue-800 font-semibold mt-1">
-                Order ID: <span className="font-mono">{booking.orderId}</span>
-              </p>
-            )}
-          </div>
-        </div>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Status Pembayaran */}
+        {renderPaymentStatus()}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content */}
+          {/* Left Column - Booking Details */}
           <div className="lg:col-span-2 space-y-6">
-            <FlightDetails booking={booking} />
-            <PassengerDetails passengers={booking.passengers} />
-            <PaymentSummary booking={booking} />
+            {/* Booking Code Section */}
+            <div className="bg-white rounded-xl shadow p-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800 mb-1">Kode Booking</h2>
+                  <div className="flex items-center gap-3">
+                    <div className="text-3xl font-bold text-blue-700 font-mono tracking-wider">
+                      {bookingData.bookingCode}
+                    </div>
+                    <button
+                      onClick={handleCopyBookingCode}
+                      className="px-4 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-2"
+                    >
+                      {copyStatus === 'Copied!' ? (
+                        <>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                            <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                          </svg>
+                          <span>Copy Code</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm text-gray-500">
+                      Order ID: <span className="font-mono">{bookingData.orderId}</span>
+                    </p>
+                    {bookingData.ticketNumber && (
+                      <p className="text-sm text-gray-500">
+                        Ticket No: <span className="font-mono">{bookingData.ticketNumber}</span>
+                      </p>
+                    )}
+                    {bookingData.isFallback === 'true' && (
+                      <p className="text-sm text-yellow-600 font-semibold">
+                        ⚠️ Data disimpan di penyimpanan lokal
+                      </p>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Database Status */}
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${bookingData.savedToDatabase === 'true' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                    <span className="text-sm font-medium">
+                      {bookingData.savedToDatabase === 'true' 
+                        ? 'Tersimpan di database' 
+                        : 'Disimpan lokal'}
+                    </span>
+                  </div>
+                  {bookingData.insertionMethod && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Method: {bookingData.insertionMethod}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Train Details */}
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-6">Detail Perjalanan</h2>
+              
+              <div className="bg-gray-50 rounded-lg p-6">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{bookingData.trainName || 'Kereta Express'}</h3>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                        bookingData.trainType?.includes('Eksekutif') ? 'bg-blue-100 text-blue-800' :
+                        bookingData.trainType?.includes('Bisnis') ? 'bg-green-100 text-green-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {bookingData.trainType || 'Eksekutif'}
+                      </span>
+                      <span className="text-gray-500">•</span>
+                      <span className="text-gray-600">{bookingData.passengerCount} Penumpang</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-[#FD7E14]">{formatPrice(totalAmount)}</div>
+                    <div className="text-sm text-gray-500">Total Pembayaran</div>
+                  </div>
+                </div>
+                
+                {/* Route Timeline */}
+                <div className="flex items-center justify-between py-6 border-y border-gray-200">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-gray-900 mb-1">
+                      {formatTime(bookingData.departureTime || '08:00')}
+                    </div>
+                    <div className="text-sm font-medium text-gray-700">Keberangkatan</div>
+                    <div className="text-sm text-gray-600">{bookingData.origin || 'Stasiun A'}</div>
+                  </div>
+                  
+                  <div className="flex flex-col items-center flex-1 px-8">
+                    <div className="text-sm text-gray-600 mb-3">{bookingData.departureDate ? formatDate(bookingData.departureDate) : 'Hari ini'}</div>
+                    <div className="relative w-full">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full h-0.5 bg-gray-300"></div>
+                      </div>
+                      <div className="relative flex justify-between">
+                        <div className="w-4 h-4 bg-gray-400 rounded-full"></div>
+                        <div className="w-4 h-4 bg-gray-400 rounded-full"></div>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500 mt-3">Perjalanan Langsung</div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-gray-900 mb-1">
+                      {formatTime(bookingData.departureTime || '12:00')}
+                    </div>
+                    <div className="text-sm font-medium text-gray-700">Kedatangan</div>
+                    <div className="text-sm text-gray-600">{bookingData.destination || 'Stasiun B'}</div>
+                  </div>
+                </div>
+                
+                {/* Additional Info */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                  <div className="p-3 bg-white border rounded-lg">
+                    <div className="text-sm text-gray-500">Tanggal</div>
+                    <div className="font-medium">{bookingData.departureDate ? formatDate(bookingData.departureDate) : '-'}</div>
+                  </div>
+                  <div className="p-3 bg-white border rounded-lg">
+                    <div className="text-sm text-gray-500">Waktu</div>
+                    <div className="font-medium">{formatTime(bookingData.departureTime || '')} - {formatTime(bookingData.departureTime || '')}</div>
+                  </div>
+                  <div className="p-3 bg-white border rounded-lg">
+                    <div className="text-sm text-gray-500">Durasi</div>
+                    <div className="font-medium">4 jam 30 menit</div>
+                  </div>
+                  <div className="p-3 bg-white border rounded-lg">
+                    <div className="text-sm text-gray-500">Schedule ID</div>
+                    <div className="font-medium font-mono text-sm">{bookingData.scheduleId || '-'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Passenger Details */}
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-6">Detail Penumpang</h2>
+              
+              <div className="space-y-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm text-gray-600">Nama Pemesan</div>
+                      <div className="font-medium">{bookingData.name}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">Email</div>
+                      <div className="font-medium">{bookingData.email}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">Telepon</div>
+                      <div className="font-medium">{bookingData.phone}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-gray-600">Jumlah Penumpang</div>
+                      <div className="font-medium">{bookingData.passengerCount} orang</div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* List of Passengers */}
+                {passengers.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="font-semibold text-gray-700 mb-3">Daftar Penumpang</h4>
+                    <div className="space-y-3">
+                      {passengers.map((passenger, index) => (
+                        <div key={index} className="bg-white border rounded-lg p-4">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{passenger.fullName}</span>
+                                <span className="text-sm bg-gray-100 text-gray-800 px-2 py-1 rounded">
+                                  {passenger.title}
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-600 mt-1">
+                                NIK: {passenger.idNumber} • Telp: {passenger.phoneNumber}
+                              </div>
+                            </div>
+                            {passenger.seatNumber && (
+                              <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                Kursi: {passenger.seatNumber}
+              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Payment Instructions */}
+            {paymentStatus === 'pending' && (
+              <div className="bg-white rounded-xl shadow p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold text-gray-800">Instruksi Pembayaran</h2>
+                  <button
+                    onClick={() => setShowPaymentInstructions(!showPaymentInstructions)}
+                    className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    {showPaymentInstructions ? 'Sembunyikan' : 'Lihat Instruksi'}
+                  </button>
+                </div>
+                
+                {showPaymentInstructions && renderPaymentInstructions()}
+                
+                {!showPaymentInstructions && (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" />
+                        <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <p className="text-gray-600">
+                      Klik "Lihat Instruksi" untuk melihat petunjuk pembayaran lengkap
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Payment Breakdown */}
+            <div className="bg-white rounded-xl shadow p-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-6">Rincian Pembayaran</h2>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Harga Tiket</span>
+                  <span className="font-medium">{formatPrice(baseFare)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Biaya Layanan</span>
+                  <span className="font-medium">{formatPrice(serviceFee)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Asuransi Perjalanan</span>
+                  <span className="font-medium">{formatPrice(insuranceFee)}</span>
+                </div>
+                {bookingData.paymentFee && parseFloat(bookingData.paymentFee) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Biaya Transaksi ({bookingData.paymentMethod})</span>
+                    <span className="font-medium">{formatPrice(parseFloat(bookingData.paymentFee))}</span>
+                  </div>
+                )}
+                <div className="border-t border-gray-300 pt-4">
+                  <div className="flex justify-between text-lg font-bold">
+                    <span>Total Pembayaran</span>
+                    <span className="text-[#FD7E14]">{formatPrice(totalAmount)}</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Payment Method */}
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="text-sm text-gray-600">Metode Pembayaran</div>
+                    <div className="font-medium capitalize">{bookingData.paymentMethod?.replace('-', ' ') || 'Transfer Bank'}</div>
+                  </div>
+                  {paymentStatus === 'pending' && (
+                    <button
+                      onClick={handleRetryPayment}
+                      className="px-4 py-2 text-sm bg-[#FD7E14] text-white rounded-lg hover:bg-[#E06700] transition-colors"
+                    >
+                      Ganti Metode
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Sidebar */}
+          {/* Right Column - Actions & Info */}
           <div className="lg:col-span-1">
-            <ActionButtons bookingId={booking.id} paymentStatus={booking.paymentStatus} />
+            <div className="bg-white rounded-xl shadow p-6 sticky top-6">
+              <h3 className="text-lg font-bold text-gray-800 mb-6">Tindakan Selanjutnya</h3>
+              
+              {/* Action Buttons based on status */}
+              <div className="space-y-3">
+                {paymentStatus === 'success' && (
+                  <>
+                    <button
+                      onClick={handleDownloadTicket}
+                      className="w-full py-3 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                      Download E-Ticket
+                    </button>
+                    
+                    <button
+                      onClick={handleShareBooking}
+                      className="w-full py-3 bg-white border border-[#FD7E14] text-[#FD7E14] font-semibold rounded-lg hover:bg-orange-50 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />
+                      </svg>
+                      Share Booking
+                    </button>
+                  </>
+                )}
+                
+                {paymentStatus === 'pending' && (
+                  <>
+                    <button
+                      onClick={() => setShowPaymentInstructions(true)}
+                      className="w-full py-3 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors"
+                    >
+                      Lihat Instruksi Pembayaran
+                    </button>
+                    
+                    <button
+                      onClick={handleRetryPayment}
+                      className="w-full py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Coba Metode Lain
+                    </button>
+                  </>
+                )}
+                
+                {paymentStatus === 'failed' && (
+                  <button
+                    onClick={handleRetryPayment}
+                    className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    Coba Pembayaran Ulang
+                  </button>
+                )}
+                
+                {paymentStatus === 'expired' && (
+                  <Link
+                    href="/search"
+                    className="block w-full py-3 text-center bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors"
+                  >
+                    Booking Baru
+                  </Link>
+                )}
+                
+                <Link
+                  href="/my-bookings"
+                  className="block w-full py-3 text-center bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Lihat Semua Booking
+                </Link>
+                
+                <Link
+                  href="/search"
+                  className="block w-full py-3 text-center bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Booking Lagi
+                </Link>
+              </div>
+              
+              {/* Important Notes */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Catatan Penting</h4>
+                <ul className="space-y-2 text-sm text-gray-600">
+                  <li className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span>E-ticket akan dikirim ke email setelah pembayaran berhasil</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span>Check-in online tersedia 2 jam sebelum keberangkatan</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span>Bawa identitas asli saat keberangkatan</span>
+                  </li>
+                </ul>
+              </div>
+              
+              {/* Help Section */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Butuh Bantuan?</h4>
+                <div className="space-y-2 text-sm">
+                  <a href="tel:1500123" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                    </svg>
+                    <span>Customer Service: 1500-123</span>
+                  </a>
+                  <a href="mailto:support@tripgo.com" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                      <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                    </svg>
+                    <span>support@tripgo.com</span>
+                  </a>
+                  <Link href="/help" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                    <span>FAQs</span>
+                  </Link>
+                </div>
+              </div>
+              
+              {/* Booking Status Summary */}
+              <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Status Booking</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Booking</span>
+                    <span className="text-sm font-medium text-green-600">✓ Selesai</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Pembayaran</span>
+                    <span className={`text-sm font-medium ${
+                      paymentStatus === 'success' ? 'text-green-600' :
+                      paymentStatus === 'pending' ? 'text-yellow-600' :
+                      paymentStatus === 'expired' || paymentStatus === 'failed' ? 'text-red-600' :
+                      'text-blue-600'
+                    }`}>
+                      {paymentStatus === 'success' ? '✓ Berhasil' :
+                       paymentStatus === 'pending' ? '⏳ Menunggu' :
+                       paymentStatus === 'processing' ? '🔄 Diproses' :
+                       paymentStatus === 'failed' ? '✗ Gagal' :
+                       '⌛ Kadaluarsa'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">E-Ticket</span>
+                    <span className={`text-sm font-medium ${
+                      paymentStatus === 'success' ? 'text-green-600' : 'text-gray-400'
+                    }`}>
+                      {paymentStatus === 'success' ? '✓ Tersedia' : 'Menunggu pembayaran'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+      </main>
 
-        {/* Important Notes */}
-        <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <h3 className="text-lg font-bold text-yellow-800 mb-3">Penting untuk Diingat:</h3>
-          <ul className="space-y-2 text-yellow-700">
-            <li className="flex items-start">
-              <span className="mr-2">•</span>
-              <span>Pastikan Anda tiba di bandara minimal 2 jam sebelum keberangkatan</span>
-            </li>
-            <li className="flex items-start">
-              <span className="mr-2">•</span>
-              <span>Bawa dokumen identitas yang valid (KTP/Paspor)</span>
-            </li>
-            <li className="flex items-start">
-              <span className="mr-2">•</span>
-              <span>Check-in online tersedia 24 jam sebelum keberangkatan</span>
-            </li>
-            <li className="flex items-start">
-              <span className="mr-2">•</span>
-              <span>Untuk pertanyaan atau bantuan, hubungi customer service kami</span>
-            </li>
-          </ul>
+      {/* Footer */}
+      <footer className="bg-gray-800 text-white mt-12">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="mb-4 md:mb-0">
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-[#FD7E14] rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-lg">TG</span>
+                </div>
+                <span className="ml-3 text-xl font-bold">TripGo</span>
+              </div>
+              <p className="text-gray-400 mt-2 text-sm">Platform booking kereta api terpercaya</p>
+            </div>
+            
+            <div className="flex space-x-6">
+              <Link href="/privacy" className="text-gray-400 hover:text-white text-sm transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="text-gray-400 hover:text-white text-sm transition-colors">Terms & Conditions</Link>
+              <Link href="/faq" className="text-gray-400 hover:text-white text-sm transition-colors">FAQ</Link>
+            </div>
+          </div>
+          
+          <div className="border-t border-gray-700 mt-6 pt-6 text-center text-gray-400 text-sm">
+            © {new Date().getFullYear()} TripGo. All rights reserved.
+          </div>
         </div>
-      </div>
+      </footer>
     </div>
   );
 };
 
-// --- Halaman Utama Konfirmasi Booking ---
+// --- Export dengan Suspense ---
 export default function BookingConfirmationPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FD7E14] mx-auto mb-4"></div>
           <p className="text-gray-600">Memuat konfirmasi booking...</p>
         </div>
       </div>

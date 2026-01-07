@@ -37,6 +37,8 @@ export interface Wagon {
 }
 
 export interface Train {
+  [x: string]: any;
+  harga: number;
   id: string;
   trainNumber: string;
   trainName?: string;
@@ -52,6 +54,57 @@ export interface Train {
   wagons: Wagon[];
   seats: Seat[];
   class: 'economy' | 'business' | 'executive' | 'ekonomi' | 'bisnis' | 'eksekutif';
+}
+export interface Ticket {
+  id: string;
+  ticket_number: string;
+  passenger_name: string;
+  passenger_email: string;
+  departure_location: string;
+  destination_location: string;
+  departure_date: string | Date;
+  arrival_date: string | Date;
+  flight_number: string;
+  seat_number: string;
+  gate: string;
+  booking_reference?: string;
+  ticket_class?: string;
+  price?: number;
+  status: 'confirmed' | 'pending' | 'cancelled' | 'completed';
+  qr_code_url?: string;
+  email_sent?: boolean;
+  email_sent_at?: string;
+  last_email_status?: string;
+  email_message_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface EmailResult {
+  success: boolean;
+  messageId?: string;
+  error?: string;
+  code?: string;
+  message?: string;
+}
+
+export interface PDFGenerationResult {
+  success: boolean;
+  buffer?: Buffer;
+  error?: string;
+}
+interface Window {
+  snap: {
+    pay: (
+      token: string,
+      options: {
+        onSuccess?: (result: any) => void;
+        onPending?: (result: any) => void;
+        onError?: (result: any) => void;
+        onClose?: () => void;
+      }
+    ) => void;
+  };  
 }
 
 export interface Airport {

@@ -1,189 +1,189 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+// app/api/payments/webhook/route.ts
+import { type NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/app/lib/supabaseClient';
 import crypto from 'crypto';
-
-// Initialize Supabase client with fallback
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://huwcvhngslkmfljfnxrv.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1d2N2aG5nc2xrbWZsamZueHJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY4ODA0NjQsImV4cCI6MjA3MjQ1NjQ2NH0.EFKYTaaftNNV0W_4buhjPA5hFS35CHYCqr5nWw54TWg';
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// Midtrans webhook signature verification
-// Refer to Midtrans docs: signature_key = sha512(order_id + status_code + gross_amount + server_key)
-const verifySignature = (payload: any): boolean => {
-  try {
-    const serverKey = process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-YourServerKey';
-    const { order_id, status_code, gross_amount, signature_key } = payload || {};
-    if (!order_id || !status_code || !gross_amount || !signature_key) return false;
-    const raw = `${order_id}${status_code}${gross_amount}${serverKey}`;
-    const expected = crypto.createHash('sha512').update(raw).digest('hex');
-    return signature_key === expected;
-  } catch {
-    return false;
-  }
-};
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.text();
-    const notification = JSON.parse(body);
-
-    // Verify webhook signature using signature_key
-    if (!verifySignature(notification)) {
-      console.error('Invalid webhook signature');
-      return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 401 }
-      );
-    }
-
+    const body = await request.json();
     const {
       order_id,
       transaction_status,
       fraud_status,
-      transaction_id,
-      payment_type,
       gross_amount,
-      settlement_time,
-      status_code,
-      status_message
-    } = notification;
+      payment_type,
+      signature_key
+    } = body;
 
-    console.log('Payment webhook received:', {
-      order_id,
-      transaction_status,
-      fraud_status,
-      transaction_id
-    });
+    // 1. Verify signature key (penting untuk keamanan)
+    const expectedSignature = crypto
+      .createHash('sha512')
+      .update(
+        order_id +
+        transaction_status +
+        gross_amount +
+        process.env.MIDTRANS_SERVER_KEY
+      )
+      .digest('hex');
 
-    // Update transaction status in database
-    const { error: updateError } = await supabase
-      .from('transactions')
-      .update({
-        status: transaction_status,
-        fraud_status,
-        transaction_id,
-        payment_type,
-        settlement_time,
-        status_code,
-        status_message,
-        updated_at: new Date().toISOString()
-      })
-      .eq('order_id', order_id);
-
-    if (updateError) {
-      console.error('Database update error:', updateError);
+    if (signature_key !== expectedSignature && process.env.NODE_ENV === 'production') {
       return NextResponse.json(
-        { error: 'Failed to update transaction' },
-        { status: 500 }
+        { error: 'Invalid signature' },
+        { status: 400 }
       );
     }
 
-    // If payment is successful, create booking
-    if (transaction_status === 'capture' || transaction_status === 'settlement') {
-      try {
-        // Get transaction details
-        const { data: transaction, error: fetchError } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('order_id', order_id)
-          .single();
+    // 2. Find payment transaction
+    const { data: payment, error: paymentError } = await supabase
+      .from('payment_transactions')
+      .select('*')
+      .eq('order_id', order_id)
+      .single();
 
-        if (fetchError || !transaction) {
-          console.error('Transaction fetch error:', fetchError);
-          return NextResponse.json(
-            { error: 'Transaction not found' },
-            { status: 404 }
-          );
-        }
+    if (paymentError || !payment) {
+      return NextResponse.json(
+        { error: 'Payment transaction not found' },
+        { status: 404 }
+      );
+    }
 
-        // Create booking record
-        const { error: bookingError } = await supabase
-          .from('bookings')
-          .insert({
-            transaction_id: transaction.id,
-            order_id: order_id,
-            customer_email: transaction.customer_email,
-            customer_name: transaction.customer_name,
-            total_amount: transaction.amount,
-            status: 'confirmed',
-            booking_date: new Date().toISOString()
-          });
+    // 3. Update payment status
+    let paymentStatus = 'pending';
+    let bookingStatus = 'waiting_payment';
 
-        if (bookingError) {
-          console.error('Booking creation error:', bookingError);
-          // Don't fail the webhook, just log the error
+    switch (transaction_status) {
+      case 'capture':
+        if (fraud_status === 'accept') {
+          paymentStatus = 'success';
+          bookingStatus = 'confirmed';
         } else {
-          console.log('Booking created successfully for order:', order_id);
+          paymentStatus = 'failed';
+          bookingStatus = 'cancelled';
         }
+        break;
+      case 'settlement':
+        paymentStatus = 'success';
+        bookingStatus = 'confirmed';
+        break;
+      case 'pending':
+        paymentStatus = 'pending';
+        bookingStatus = 'waiting_payment';
+        break;
+      case 'deny':
+      case 'cancel':
+      case 'expire':
+        paymentStatus = 'failed';
+        bookingStatus = 'cancelled';
+        break;
+      default:
+        paymentStatus = 'pending';
+    }
 
-        // Send notification to user
+    // 4. Update payment transaction
+    const { error: updatePaymentError } = await supabase
+      .from('payment_transactions')
+      .update({
+        status: paymentStatus,
+        transaction_data: body,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', payment.id);
+
+    if (updatePaymentError) {
+      console.error('Update payment error:', updatePaymentError);
+      throw new Error('Failed to update payment status');
+    }
+
+    // 5. Update booking status
+    let bookingTable = 'bookings_kereta';
+    let bookingIdColumn = 'booking_code';
+    
+    const { data: booking, error: bookingError } = await supabase
+      .from(bookingTable)
+      .select('*')
+      .eq(bookingIdColumn, payment.booking_id)
+      .single();
+
+    if (!bookingError && booking) {
+      await supabase
+        .from(bookingTable)
+        .update({
+          status: bookingStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', booking.id);
+
+      // Jika pembayaran berhasil, buat invoice dan tiket
+      if (paymentStatus === 'success') {
+        // Buat invoice
+        const invoiceNumber = `INV-${order_id.slice(-8)}`;
         await supabase
-          .from('notifications')
+          .from('invoices')
           .insert({
-            user_id: transaction.user_id || null,
-            type: 'payment_success',
-            title: 'Pembayaran Berhasil',
-            message: `Pembayaran untuk order ${order_id} berhasil diproses. Tiket Anda akan segera dikirim.`,
-            data: {
-              order_id,
-              transaction_id,
-              amount: transaction.amount
-            },
-            created_at: new Date().toISOString()
+            booking_id: booking.id,
+            invoice_number: invoiceNumber,
+            total_amount: gross_amount,
+            tax_amount: 0,
+            service_fee: 0,
+            insurance_fee: 0,
+            discount_amount: 0,
+            final_amount: gross_amount,
+            payment_method: payment_type,
+            payment_status: 'paid',
+            paid_at: new Date().toISOString(),
+            due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
           });
 
-      } catch (error) {
-        console.error('Error processing successful payment:', error);
-        // Don't fail the webhook
+        // Buat tiket
+        const ticketNumber = `TICKET-${order_id.slice(-8)}`;
+        await supabase
+          .from('tickets')
+          .insert({
+            ticket_number: ticketNumber,
+            order_id: order_id,
+            booking_id: payment.booking_id,
+            customer_email: payment.customer_email,
+            customer_name: payment.customer_name,
+            qr_code: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${ticketNumber}`,
+            status: 'active',
+            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          });
       }
     }
 
-    // Handle failed payments
-    if (transaction_status === 'deny' || transaction_status === 'failure') {
-      try {
-        const { data: transaction } = await supabase
-          .from('transactions')
-          .select('user_id')
-          .eq('order_id', order_id)
-          .single();
+    // 6. Create activity log
+    await supabase
+      .from('activity_logs')
+      .insert({
+        action: 'payment_webhook_received',
+        data: {
+          order_id,
+          transaction_status,
+          paymentStatus,
+          booking_status: bookingStatus,
+          amount: gross_amount
+        },
+        ip_address: request.headers.get('x-forwarded-for') || 'unknown',
+        user_agent: request.headers.get('user-agent')
+      });
 
-        if (transaction?.user_id) {
-          await supabase
-            .from('notifications')
-            .insert({
-              user_id: transaction.user_id,
-              type: 'payment_failed',
-              title: 'Pembayaran Gagal',
-              message: `Pembayaran untuk order ${order_id} gagal. Silakan coba metode pembayaran lain.`,
-              data: {
-                order_id,
-                transaction_id,
-                status: transaction_status
-              },
-              created_at: new Date().toISOString()
-            });
-        }
-      } catch (error) {
-        console.error('Error processing failed payment notification:', error);
-      }
-    }
+    return NextResponse.json({
+      success: true,
+      message: 'Webhook processed successfully',
+      payment_status: paymentStatus,
+      booking_status: bookingStatus
+    });
 
-    return NextResponse.json({ status: 'success' });
-
-  } catch (error) {
-    console.error('Webhook processing error:', error);
+  } catch (err: any) {
+    console.error('Webhook error:', err);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      {
+        success: false,
+        error: 'Failed to process webhook',
+        detail: process.env.NODE_ENV === 'development' ? err.message : undefined
+      },
       { status: 500 }
     );
   }
 }
 
-// Handle GET requests for webhook verification
-export async function GET(request: NextRequest) {
-  return NextResponse.json({ 
-    message: 'Payment webhook endpoint is active',
-    timestamp: new Date().toISOString()
-  });
-}
