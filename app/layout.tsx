@@ -9,6 +9,7 @@ import { LoadingProvider } from './contexts/LoadingContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { NetworkErrorBanner } from './components/NetworkErrorBanner';
 import { NetworkDiagnostics } from './components/NetworkDiagnostics';
+import { TripPointsProvider } from '@/app/contexts/TripPointsContext';
 
 // Optimize fonts
 const inter = Inter({ 
@@ -52,6 +53,7 @@ interface RootLayoutProps {
   modal?: React.ReactNode;
 }
 
+
 export default function RootLayout({ children, modal }: Readonly<RootLayoutProps>) {
   return (
     <html lang="id" className={`${inter.variable} ${poppins.variable}`}>
@@ -68,6 +70,7 @@ export default function RootLayout({ children, modal }: Readonly<RootLayoutProps
         <ToastProvider>
           <LoadingProvider>
             <AuthProvider>
+              <TripPointsProvider>
               <NetworkErrorBanner />
               <NetworkDiagnostics />
               <WalletProvider>
@@ -78,6 +81,7 @@ export default function RootLayout({ children, modal }: Readonly<RootLayoutProps
                 <Footer />
                 {modal}
               </WalletProvider>
+              </TripPointsProvider>
             </AuthProvider>
           </LoadingProvider>
         </ToastProvider>

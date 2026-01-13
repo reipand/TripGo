@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TransitService } from '@/app/services/transitService';
+import { TransitService } from '../../services/transitService';
 
 // GET /api/transit/seats - Check seat availability
 export async function GET(request: NextRequest) {

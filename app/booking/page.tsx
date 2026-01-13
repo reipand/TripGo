@@ -19,14 +19,14 @@ interface Passenger {
   wagonNumber: string;
   wagonClass: string;
   useContactDetail: boolean;
-  idType: string; // Tambahkan ini
+  idType: string;
 }
 
 interface ContactDetail {
   fullName: string;
   email: string;
   phoneNumber: string;
-  title: string; // Tambahkan ini
+  title: string;
 }
 
 interface TrainDetail {
@@ -94,6 +94,30 @@ interface PaymentMethod {
   midtrans_payment_type?: string;
 }
 
+interface PromoVoucher {
+  id: string;
+  name: string;
+  description: string;
+  promo_code: string;
+  discount_type: 'percentage' | 'fixed';
+  discount_value: number;
+  min_order_amount: number;
+  max_discount_amount: number;
+  start_date: string;
+  end_date: string;
+  usage_limit: number;
+  usage_count: number;
+  user_limit: number;
+  is_active: boolean;
+  applicable_to: string[] | null;
+  specific_dates?: Array<{
+    start_date: string;
+    end_date: string;
+  }>;
+  created_at?: string;
+  updated_at?: string;
+}
+
 // --- Komponen Ikon ---
 const ArrowLeftIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -134,6 +158,12 @@ const CheckIcon = () => (
 const InfoIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+  </svg>
+);
+
+const TagIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+    <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
   </svg>
 );
 
@@ -236,6 +266,15 @@ const formatDepartureDate = (dateString: string): string => {
   }
 };
 
+const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+};
+
 // Fungsi untuk mendapatkan tanggal realtime dari URL atau default ke hari ini
 const getRealtimeDepartureDate = (dateFromUrl: string | null): string => {
   if (dateFromUrl) {
@@ -293,6 +332,357 @@ const autoSelectSeats = (trainData: Train | null, passengerCount: number): Seat[
   return selectedSeats.slice(0, passengerCount);
 };
 
+// Fungsi untuk membaca promo dari database
+const fetchPromotionsFromDatabase = async (): Promise<PromoVoucher[]> => {
+  try {
+    const response = await fetch('/api/promotions/active');
+    if (!response.ok) {
+      throw new Error('Failed to fetch promotions');
+    }
+    const data = await response.json();
+    return data.promotions || [];
+  } catch (error) {
+    console.error('Error fetching promotions:', error);
+    return []; // Fallback ke dummy data jika error
+  }
+};
+
+// Fungsi untuk validasi promo dengan data dari database
+const validatePromoCodeFromDB = async (
+  promoCode: string, 
+  basePrice: number, 
+  passengerCount: number, 
+  trainType: string,
+  departureDate: string,
+  userId?: string
+): Promise<{ isValid: boolean; promo?: PromoVoucher; discountAmount: number; message: string }> => {
+  
+  try {
+    // 1. Cek promo di database
+    const promoResponse = await fetch(`/api/promotions/validate?code=${promoCode}`);
+    if (!promoResponse.ok) {
+      throw new Error('Failed to validate promo');
+    }
+    
+    const promoData = await promoResponse.json();
+    
+    if (!promoData.promo) {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: 'Kode promo/voucher tidak ditemukan'
+      };
+    }
+    
+    const promo = promoData.promo;
+    
+    // 2. Cek apakah promo aktif
+    if (!promo.is_active) {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: 'Promo/voucher tidak aktif'
+      };
+    }
+    
+    // 3. Cek tanggal berlaku
+    const today = new Date();
+    const startDate = new Date(promo.start_date);
+    const endDate = new Date(promo.end_date);
+    
+    if (today < startDate) {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: `Promo akan berlaku mulai ${formatDate(promo.start_date)}`
+      };
+    }
+    
+    if (today > endDate) {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: 'Promo/voucher telah kadaluarsa'
+      };
+    }
+    
+    // 4. Cek kuota penggunaan
+    if (promo.usage_limit > 0 && promo.usage_count >= promo.usage_limit) {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: 'Kuota promo/voucher telah habis'
+      };
+    }
+    
+    // 5. Cek minimal pembelian
+    const totalPrice = basePrice * passengerCount;
+    if (totalPrice < promo.min_order_amount) {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: `Minimal pembelian Rp ${promo.min_order_amount.toLocaleString('id-ID')}`
+      };
+    }
+    
+    // 6. Cek tipe kereta yang berlaku
+    if (promo.applicable_to && Array.isArray(promo.applicable_to)) {
+      if (!promo.applicable_to.includes(trainType)) {
+        return {
+          isValid: false,
+          discountAmount: 0,
+          message: `Promo tidak berlaku untuk kelas ${trainType}`
+        };
+      }
+    }
+    
+    // 7. Cek limit penggunaan per user (jika ada userId)
+    if (userId && promo.user_limit > 0) {
+      const userUsageResponse = await fetch(
+        `/api/promotions/user-usage?userId=${userId}&promoId=${promo.id}`
+      );
+      if (userUsageResponse.ok) {
+        const usageData = await userUsageResponse.json();
+        if (usageData.usage_count >= promo.user_limit) {
+          return {
+            isValid: false,
+            discountAmount: 0,
+            message: `Anda telah mencapai batas penggunaan promo ini`
+          };
+        }
+      }
+    }
+    
+    // 8. Hitung jumlah diskon
+    let discountAmount = 0;
+    
+    if (promo.discount_type === 'percentage') {
+      discountAmount = totalPrice * (promo.discount_value / 100);
+      // Batasi dengan max discount
+      if (promo.max_discount_amount > 0 && discountAmount > promo.max_discount_amount) {
+        discountAmount = promo.max_discount_amount;
+      }
+    } else if (promo.discount_type === 'fixed') {
+      discountAmount = promo.discount_value;
+    }
+    
+    // 9. Cek special conditions
+    if (promo.promo_code === 'FAMILY30' && passengerCount < 3) {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: 'Promo keluarga berlaku untuk minimal 3 penumpang'
+      };
+    }
+    
+    // 10. Cek apakah promo hanya berlaku untuk tanggal tertentu
+    if (promo.specific_dates && Array.isArray(promo.specific_dates)) {
+      const departureDateObj = new Date(departureDate);
+      const isDateValid = promo.specific_dates.some((dateRange: any) => {
+        const start = new Date(dateRange.start_date);
+        const end = new Date(dateRange.end_date);
+        return departureDateObj >= start && departureDateObj <= end;
+      });
+      
+      if (!isDateValid) {
+        return {
+          isValid: false,
+          discountAmount: 0,
+          message: 'Promo tidak berlaku untuk tanggal keberangkatan yang dipilih'
+        };
+      }
+    }
+    
+    return {
+      isValid: true,
+      promo,
+      discountAmount,
+      message: `Promo/voucher berhasil diterapkan! Diskon: Rp ${discountAmount.toLocaleString('id-ID')}`
+    };
+    
+  } catch (error) {
+    console.error('Error validating promo:', error);
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: 'Terjadi kesalahan saat validasi promo'
+    };
+  }
+};
+
+const recordPromoUsage = async (
+  promoId: string,
+  userId: string,
+  bookingId: string,
+  discountApplied: number
+) => {
+  try {
+    const response = await fetch('/api/promotions/record-usage', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        promo_id: promoId,
+        user_id: userId,
+        booking_id: bookingId,
+        discount_applied: discountApplied
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn('Failed to record promo usage. Status:', response.status);
+      // Jangan throw error, cukup log dan lanjutkan
+      // throw new Error('Failed to record promo usage');
+      return null; // Return null instead of throwing
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error recording promo usage:', error);
+    // Tetap lanjutkan booking meskipun gagal merekam penggunaan promo
+    return null;
+  }
+};
+
+// Dummy data fallback
+const DUMMY_PROMO_VOUCHERS: PromoVoucher[] = [
+  {
+    id: '1',
+    name: 'Flash Sale 40%',
+    description: 'Diskon 40% untuk pembelian cepat',
+    promo_code: 'FLASH40',
+    discount_type: 'percentage',
+    discount_value: 40,
+    min_order_amount: 200000,
+    max_discount_amount: 200000,
+    start_date: '2025-01-01T00:00:00Z',
+    end_date: '2026-12-31T23:59:59Z',
+    usage_limit: 500,
+    usage_count: 250,
+    user_limit: 1,
+    is_active: true,
+    applicable_to: ['Executive', 'Business', 'Economy']
+  },
+  {
+    id: '2',
+    name: 'Welcome Discount',
+    description: 'Diskon 10% untuk pembelian pertama',
+    promo_code: 'WELCOME10',
+    discount_type: 'percentage',
+    discount_value: 10,
+    min_order_amount: 100000,
+    max_discount_amount: 50000,
+    start_date: '2024-01-01T00:00:00Z',
+    end_date: '2024-12-31T23:59:59Z',
+    usage_limit: 1000,
+    usage_count: 245,
+    user_limit: 1,
+    is_active: true,
+    applicable_to: ['Executive', 'Business', 'Economy']
+  },
+];
+
+// Fungsi untuk validasi promo/voucher (fallback)
+const validatePromoCode = (
+  promoCode: string, 
+  basePrice: number, 
+  passengerCount: number, 
+  trainType: string,
+  departureDate: string
+): { isValid: boolean; promo?: PromoVoucher; discountAmount: number; message: string } => {
+  
+  const promo = DUMMY_PROMO_VOUCHERS.find(p => 
+    p.promo_code.toUpperCase() === promoCode.toUpperCase() && p.is_active
+  );
+  
+  if (!promo) {
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: 'Kode promo/voucher tidak valid atau telah kadaluarsa'
+    };
+  }
+  
+  // Cek tanggal berlaku
+  const today = new Date();
+  const startDate = new Date(promo.start_date);
+  const endDate = new Date(promo.end_date);
+  
+  if (today < startDate) {
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: `Promo akan berlaku mulai ${formatDate(promo.start_date)}`
+    };
+  }
+  
+  if (today > endDate) {
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: 'Promo/voucher telah kadaluarsa'
+    };
+  }
+  
+  // Cek kuota penggunaan
+  if (promo.usage_count >= promo.usage_limit) {
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: 'Kuota promo/voucher telah habis'
+    };
+  }
+  
+  // Cek minimal pembelian
+  const totalPrice = basePrice * passengerCount;
+  if (totalPrice < promo.min_order_amount) {
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: `Minimal pembelian Rp ${promo.min_order_amount.toLocaleString('id-ID')}`
+    };
+  }
+  
+  // Cek tipe kereta yang berlaku
+  if (promo.applicable_to && !promo.applicable_to.includes(trainType)) {
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: `Promo tidak berlaku untuk kelas ${trainType}`
+    };
+  }
+  
+  // Cek special case untuk promo keluarga
+  if (promo.promo_code === 'FAMILY30' && passengerCount < 3) {
+    return {
+      isValid: false,
+      discountAmount: 0,
+      message: 'Promo keluarga berlaku untuk minimal 3 penumpang'
+    };
+  }
+  
+  // Hitung jumlah diskon
+  let discountAmount = 0;
+  
+  if (promo.discount_type === 'percentage') {
+    discountAmount = totalPrice * (promo.discount_value / 100);
+    // Batasi dengan max discount
+    if (promo.max_discount_amount > 0 && discountAmount > promo.max_discount_amount) {
+      discountAmount = promo.max_discount_amount;
+    }
+  } else if (promo.discount_type === 'fixed') {
+    discountAmount = promo.discount_value;
+  }
+  
+  return {
+    isValid: true,
+    promo,
+    discountAmount,
+    message: `Promo/voucher berhasil diterapkan! Diskon: Rp ${discountAmount.toLocaleString('id-ID')}`
+  };
+};
+
 // --- Komponen Utama ---
 const BookingPageContent = () => {
   const router = useRouter();
@@ -302,13 +692,13 @@ const BookingPageContent = () => {
   const [trainData, setTrainData] = useState<Train | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [passengers, setPassengers] = useState<Passenger[]>([]);
+  const [passengers, setPassengers] = useState<Passenger[]>([createDefaultPassenger(Date.now())]);
   const [passengerCount, setPassengerCount] = useState(1);
   const [contactDetail, setContactDetail] = useState<ContactDetail>({
     fullName: '',
     email: '',
     phoneNumber: '',
-    title: 'Tn' // Tambahkan title dengan nilai default
+    title: 'Tn'
   });
   const [selectedPayment, setSelectedPayment] = useState<string>('bank-transfer');
   const [agreement, setAgreement] = useState(false);
@@ -320,8 +710,18 @@ const BookingPageContent = () => {
   const [showSeatMap, setShowSeatMap] = useState(false);
   const [autoSelectEnabled, setAutoSelectEnabled] = useState(true);
   const [passengerDataFilled, setPassengerDataFilled] = useState(false);
-  const [activePassenger, setActivePassenger] = useState<number | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  
+  // State untuk promo/voucher
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState<PromoVoucher | null>(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [promoMessage, setPromoMessage] = useState('');
+  const [promoError, setPromoError] = useState('');
+  const [showPromoList, setShowPromoList] = useState(false);
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
+  const [availablePromos, setAvailablePromos] = useState<PromoVoucher[]>([]);
+  const [userId, setUserId] = useState<string>('');
 
   // Ambil parameter dari URL
   const scheduleId = searchParams.get('scheduleId');
@@ -416,7 +816,7 @@ const BookingPageContent = () => {
   };
 
   // Hitung total harga
-  const totalPrice = trainDetail ? trainDetail.price * passengerCount : 0;
+  const basePrice = trainDetail ? trainDetail.price * passengerCount : 0;
   const adminFee = 5000;
   const insuranceFee = 10000;
   const selectedPaymentMethod = PAYMENT_METHODS.find(method => method.id === selectedPayment);
@@ -427,7 +827,9 @@ const BookingPageContent = () => {
     return sum + (seat.price - basePrice);
   }, 0);
   
-  const grandTotal = totalPrice + adminFee + insuranceFee + paymentFee + seatPriceAdjustment;
+  const subtotal = basePrice + seatPriceAdjustment;
+  const totalBeforeDiscount = subtotal + adminFee + insuranceFee + paymentFee;
+  const grandTotal = totalBeforeDiscount - discountAmount;
 
   // Generate booking code
   useEffect(() => {
@@ -445,7 +847,7 @@ const BookingPageContent = () => {
     return Date.now() + Math.floor(Math.random() * 1000);
   };
 
-  // PERBAIKAN 1: Initialize passengers dengan logika yang benar
+  // Initialize passengers dengan logika yang benar
   const initializePassengers = (count: number) => {
     const initialPassengers: Passenger[] = [];
     for (let i = 0; i < count; i++) {
@@ -460,6 +862,24 @@ const BookingPageContent = () => {
     }
     return initialPassengers;
   };
+
+  // Load promo dari database
+  useEffect(() => {
+    const loadPromotions = async () => {
+      try {
+        const promos = await fetchPromotionsFromDatabase();
+        setAvailablePromos(promos.length > 0 ? promos : DUMMY_PROMO_VOUCHERS);
+      } catch (error) {
+        console.error('Failed to load promotions:', error);
+        setAvailablePromos(DUMMY_PROMO_VOUCHERS);
+      }
+    };
+
+    loadPromotions();
+    
+    // Simulasi userId (dalam aplikasi sebenarnya ambil dari session/context)
+    setUserId('user-id-123'); // Ganti dengan userId dari session/authentication
+  }, []);
 
   // Load data kereta
   useEffect(() => {
@@ -509,10 +929,10 @@ const BookingPageContent = () => {
         
         setTrainDetail(dummyData);
         
-        const urlPassengerCount = Math.min(urlPassengers, 9);
+        const urlPassengerCount = Math.max(1, Math.min(urlPassengers, 9)); // Pastikan minimal 1
         setPassengerCount(urlPassengerCount);
         
-        // PERBAIKAN 2: Gunakan fungsi initialize yang baru
+        // Inisialisasi passengers dengan data default
         const initialPassengers = initializePassengers(urlPassengerCount);
         setPassengers(initialPassengers);
         
@@ -554,7 +974,7 @@ const BookingPageContent = () => {
 
   // Update jumlah penumpang
   useEffect(() => {
-    const maxPassengers = Math.min(passengerCount, 9);
+    const maxPassengers = Math.max(1, Math.min(passengerCount, 9)); // Pastikan minimal 1
     
     if (passengers.length < maxPassengers) {
       const newPassengers = [...passengers];
@@ -571,7 +991,9 @@ const BookingPageContent = () => {
       setPassengers(newPassengers);
     }
     
-    if (passengerCount > 9) {
+    if (passengerCount < 1) {
+      setPassengerCount(1);
+    } else if (passengerCount > 9) {
       setPassengerCount(9);
     }
 
@@ -624,7 +1046,7 @@ const BookingPageContent = () => {
     setPassengers(updatedPassengers);
   }, [selectedSeats]);
 
-  // PERBAIKAN 3: Handle perubahan data penumpang dengan logika yang diperbaiki
+  // Handle perubahan data penumpang
   const handlePassengerChange = (index: number, field: keyof Passenger, value: string | boolean) => {
     const updatedPassengers = passengers.map((passenger, i) => {
       if (i === index) {
@@ -633,7 +1055,6 @@ const BookingPageContent = () => {
           [field]: value
         };
 
-        // Jika user memilih untuk menggunakan contact detail
         if (field === 'useContactDetail' && value === true) {
           updatedPassenger.fullName = contactDetail.fullName;
           updatedPassenger.email = contactDetail.email;
@@ -648,7 +1069,7 @@ const BookingPageContent = () => {
     setPassengers(updatedPassengers);
   };
 
-  // PERBAIKAN 4: Handle perubahan contact detail dengan sync yang benar
+  // Handle perubahan contact detail dengan sync yang benar
   const handleContactDetailChange = (field: keyof ContactDetail, value: string) => {
     const updatedContactDetail = {
       ...contactDetail,
@@ -656,7 +1077,6 @@ const BookingPageContent = () => {
     };
     setContactDetail(updatedContactDetail);
 
-    // Sync ke penumpang yang memilih useContactDetail
     const updatedPassengers = passengers.map(passenger => {
       if (passenger.useContactDetail) {
         const updatedPassenger = { ...passenger };
@@ -683,7 +1103,7 @@ const BookingPageContent = () => {
     setPassengers(updatedPassengers);
   };
 
-  // PERBAIKAN 5: Salin data contact detail ke penumpang tertentu
+  // Salin data contact detail ke penumpang tertentu
   const copyContactDetailToPassenger = (index: number) => {
     const updatedPassengers = [...passengers];
     updatedPassengers[index] = {
@@ -727,11 +1147,11 @@ const BookingPageContent = () => {
     setAutoSelectEnabled(!autoSelectEnabled);
   };
 
-  // PERBAIKAN 6: Validasi form dengan logika yang lebih jelas
+  // Validasi form
   const validateStep1 = (): { isValid: boolean; errors: string[] } => {
     const validationErrors: string[] = [];
     
-    // Validasi Contact Details (SELALU diperlukan)
+    // Validasi Contact Details
     if (!contactDetail.fullName.trim()) {
       validationErrors.push('Nama lengkap kontak utama harus diisi');
     }
@@ -754,7 +1174,6 @@ const BookingPageContent = () => {
         validationErrors.push(`Nomor KTP/NIK penumpang ${index + 1} harus 16 digit`);
       }
       
-      // Untuk penumpang yang TIDAK menggunakan contact detail, validasi kontaknya
       if (!passenger.useContactDetail) {
         if (!passenger.phoneNumber.trim() || passenger.phoneNumber.length < 10) {
           validationErrors.push(`Nomor telepon penumpang ${index + 1} tidak valid`);
@@ -770,6 +1189,84 @@ const BookingPageContent = () => {
       isValid: validationErrors.length === 0,
       errors: validationErrors
     };
+  };
+
+  // Handle apply promo code dari database
+  const handleApplyPromo = async () => {
+    if (!promoCodeInput.trim()) {
+      setPromoError('Masukkan kode promo/voucher');
+      return;
+    }
+
+    if (!trainDetail) {
+      setPromoError('Data kereta tidak tersedia');
+      return;
+    }
+
+    setIsApplyingPromo(true);
+    setPromoError('');
+    setPromoMessage('');
+
+    try {
+      // Gunakan validasi dari database
+      const validation = await validatePromoCodeFromDB(
+        promoCodeInput, 
+        trainDetail.price, 
+        passengerCount, 
+        trainDetail.trainType,
+        trainDetail.departureDate,
+        userId
+      );
+
+      if (validation.isValid && validation.promo) {
+        setAppliedPromo(validation.promo);
+        setDiscountAmount(validation.discountAmount);
+        setPromoMessage(validation.message);
+        setPromoError('');
+      } else {
+        setAppliedPromo(null);
+        setDiscountAmount(0);
+        setPromoError(validation.message);
+      }
+    } catch (error) {
+      console.error('Error applying promo:', error);
+      // Fallback ke validasi lokal
+      const validation = validatePromoCode(
+        promoCodeInput, 
+        trainDetail.price, 
+        passengerCount, 
+        trainDetail.trainType,
+        trainDetail.departureDate
+      );
+
+      if (validation.isValid && validation.promo) {
+        setAppliedPromo(validation.promo);
+        setDiscountAmount(validation.discountAmount);
+        setPromoMessage(validation.message);
+        setPromoError('');
+      } else {
+        setAppliedPromo(null);
+        setDiscountAmount(0);
+        setPromoError(validation.message);
+      }
+    } finally {
+      setIsApplyingPromo(false);
+    }
+  };
+
+  // Handle remove promo
+  const handleRemovePromo = () => {
+    setAppliedPromo(null);
+    setDiscountAmount(0);
+    setPromoCodeInput('');
+    setPromoMessage('');
+    setPromoError('');
+  };
+
+  // Handle select promo from list
+  const handleSelectPromo = (promo: PromoVoucher) => {
+    setPromoCodeInput(promo.promo_code);
+    setShowPromoList(false);
   };
 
   // Handle lanjut ke pembayaran
@@ -815,16 +1312,33 @@ const BookingPageContent = () => {
         trainDetail,
         selectedSeats,
         fareBreakdown: {
-          base_fare: totalPrice,
+          base_fare: basePrice,
           seat_premium: seatPriceAdjustment,
           admin_fee: adminFee,
           insurance_fee: insuranceFee,
           payment_fee: paymentFee,
+          discount: discountAmount,
+          subtotal: totalBeforeDiscount,
           total: grandTotal
         },
+        promoVoucher: appliedPromo ? {
+          code: appliedPromo.promo_code,
+          name: appliedPromo.name,
+          discountAmount: discountAmount
+        } : null,
         paymentMethod: selectedPayment,
         bookingTime: new Date().toISOString()
       };
+      
+      if (appliedPromo && userId) {
+        // Rekam penggunaan promo
+        await recordPromoUsage(
+          appliedPromo.id,
+          userId,
+          generatedBookingCode,
+          discountAmount
+        );
+      }
       
       sessionStorage.setItem('currentBooking', JSON.stringify(bookingData));
       localStorage.setItem('latestBooking', JSON.stringify(bookingData));
@@ -839,7 +1353,8 @@ const BookingPageContent = () => {
         passengerCount: passengers.length.toString(),
         paymentMethod: selectedPayment,
         paymentFee: paymentFee.toString(),
-        seatPremium: seatPriceAdjustment.toString()
+        seatPremium: seatPriceAdjustment.toString(),
+        discountAmount: discountAmount.toString()
       });
       
       if (trainDetail) {
@@ -849,6 +1364,11 @@ const BookingPageContent = () => {
         queryParams.append('destination', trainDetail.destination);
         queryParams.append('departureDate', trainDetail.departureDate);
         queryParams.append('departureTime', trainDetail.departureTime);
+      }
+
+      if (appliedPromo) {
+        queryParams.append('promoCode', appliedPromo.promo_code);
+        queryParams.append('promoName', appliedPromo.name);
       }
       
       router.push(`/payment?${queryParams.toString()}`);
@@ -957,6 +1477,117 @@ const BookingPageContent = () => {
                   className="px-6 py-3 bg-[#FD7E14] text-white rounded-lg hover:bg-[#E06700] font-medium"
                 >
                   Simpan Pilihan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Komponen Promo List Modal
+  const PromoListModal = () => {    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-800">Daftar Promo & Voucher</h3>
+                <p className="text-gray-600">Pilih promo yang sesuai dengan perjalanan Anda</p>
+              </div>
+              <button 
+                onClick={() => setShowPromoList(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+          
+            {availablePromos.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <TagIcon />
+                </div>
+                <p className="text-gray-500">Tidak ada promo yang tersedia saat ini</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {availablePromos.map((promo) => (
+                  <div key={promo.id} className="border border-gray-200 rounded-xl p-5 hover:border-orange-300 transition-colors">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between">
+                      <div className="mb-4 md:mb-0">
+                        <div className="flex items-center mb-2">
+                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+                            <TagIcon />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-lg text-gray-800">{promo.name}</h4>
+                            <div className="flex items-center mt-1">
+                              <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full font-medium">
+                                {promo.promo_code}
+                              </span>
+                              <span className="mx-2 text-gray-400">•</span>
+                              <span className="text-sm text-gray-600">
+                                {promo.usage_count}/{promo.usage_limit} digunakan
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <p className="text-gray-600 mb-3">{promo.description}</p>
+                        
+                        <div className="flex flex-wrap gap-2">
+                          <div className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+                            {promo.discount_type === 'percentage' ? `${promo.discount_value}%` : `Rp ${promo.discount_value.toLocaleString('id-ID')}`}
+                          </div>
+                          <div className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full">
+                            Min. beli Rp {promo.min_order_amount.toLocaleString('id-ID')}
+                          </div>
+                          {promo.max_discount_amount > 0 && promo.discount_type === 'percentage' && (
+                            <div className="px-3 py-1 bg-purple-100 text-purple-800 text-sm rounded-full">
+                              Maks. Rp {promo.max_discount_amount.toLocaleString('id-ID')}
+                            </div>
+                          )}
+                          <div className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
+                            Berlaku untuk: {(promo.applicable_to || []).join(', ')}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-end">
+                        <button
+                          onClick={() => handleSelectPromo(promo)}
+                          className="px-4 py-2 bg-[#FD7E14] text-white rounded-lg hover:bg-[#E06700] font-medium"
+                        >
+                          Pakai Promo
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Berlaku hingga {formatDate(promo.end_date)}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {promo.promo_code === 'FAMILY30' && (
+                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p className="text-sm text-yellow-800">
+                          📢 <span className="font-medium">Promo khusus:</span> Diskon {promo.discount_value}% berlaku untuk minimal 3 penumpang
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div className="mt-6 pt-6 border-t">
+              <div className="text-center">
+                <button
+                  onClick={() => setShowPromoList(false)}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                >
+                  Tutup
                 </button>
               </div>
             </div>
@@ -1225,14 +1856,13 @@ const BookingPageContent = () => {
                   </div>
                 </div>
                 
-                {/* PERBAIKAN 7: Contact Details Section - SELALU DITAMPILKAN */}
+                {/* Contact Details Section */}
                 <div className="mb-10 border-b pb-10">
                   <h3 className="text-xl font-bold text-gray-800 mb-6">Contact Details</h3>
                   <p className="text-gray-600 mb-6 text-sm">
                     The contact details will be used to send the e-ticket and for refund purposes.
                   </p>
                   
-                  {/* Salutation */}
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       Title
@@ -1266,7 +1896,6 @@ const BookingPageContent = () => {
                     </div>
                   </div>
                   
-                  {/* Full Name */}
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Full Name According to ID/Passport *
@@ -1281,7 +1910,6 @@ const BookingPageContent = () => {
                     />
                   </div>
                   
-                  {/* Mobile Number */}
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Mobile Number *
@@ -1296,7 +1924,6 @@ const BookingPageContent = () => {
                     />
                   </div>
                   
-                  {/* Email Address */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Email Address *
@@ -1315,14 +1942,13 @@ const BookingPageContent = () => {
                   </div>
                 </div>
                 
-                {/* PERBAIKAN 8: Passenger Details Section - DITAMPILKAN UNTUK SETIAP PENUMPANG */}
+                {/* Passenger Details Section */}
                 <div>
                   <h3 className="text-xl font-bold text-gray-800 mb-6">Passenger Details</h3>
                   <p className="text-gray-600 mb-6 text-sm">
                     Make sure the data are correct. Please contact PT KAI if there's incorrect data.
                   </p>
                   
-                  {/* PERBAIKAN 9: Passenger List dengan logika yang benar */}
                   <div className="space-y-8">
                     {passengers.map((passenger, index) => (
                       <div key={`passenger-${passenger.id}`} className="border rounded-xl p-6">
@@ -1331,9 +1957,9 @@ const BookingPageContent = () => {
                             <h4 className="font-bold text-lg text-gray-800">
                               Passenger {index + 1} (Adult)
                             </h4>
-                            {index === 0 && passengerCount === 1 && (
+                            {index === 0 && (
                               <span className="ml-3 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                                Kontak Utama
+                                {passengerCount === 1 ? 'Kontak Utama' : 'Penumpang 1'}
                               </span>
                             )}
                           </div>
@@ -1352,7 +1978,6 @@ const BookingPageContent = () => {
                           )}
                         </div>
                         
-                        {/* PERBAIKAN 10: Info untuk penumpang apakah menggunakan contact detail */}
                         <div className="mb-6 p-4 bg-gray-50 rounded-lg">
                           <div className="flex items-center justify-between">
                             <div>
@@ -1390,7 +2015,6 @@ const BookingPageContent = () => {
                           </div>
                         </div>
                         
-                        {/* Title untuk penumpang */}
                         <div className="mb-6">
                           <h5 className="font-medium text-gray-700 mb-3">Passenger Info</h5>
                           <div className="flex space-x-4">
@@ -1423,7 +2047,6 @@ const BookingPageContent = () => {
                           </div>
                         </div>
                         
-                        {/* Full Name */}
                         <div className="mb-6">
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Full Name According to ID/Passport *
@@ -1446,7 +2069,6 @@ const BookingPageContent = () => {
                           )}
                         </div>
                         
-                        {/* Identity Info */}
                         <div className="mb-6">
                           <h5 className="font-medium text-gray-700 mb-3">Identity Info</h5>
                           <div className="flex space-x-4">
@@ -1478,7 +2100,6 @@ const BookingPageContent = () => {
                           </div>
                         </div>
                         
-                        {/* ID Number */}
                         <div className="mb-6">
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             {passenger.idType === 'Passport' ? 'Passport Number *' : 'ID Number (16 digit) *'}
@@ -1493,7 +2114,6 @@ const BookingPageContent = () => {
                           />
                         </div>
                         
-                        {/* Contact Info untuk penumpang (jika tidak menggunakan contact detail) */}
                         {!passenger.useContactDetail && (
                           <div className="mt-6 pt-6 border-t grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
@@ -1528,7 +2148,6 @@ const BookingPageContent = () => {
                       </div>
                     ))}
                     
-                    {/* Add Passenger Button */}
                     {passengerCount < 9 && (
                       <div className="text-center">
                         <button
@@ -1672,9 +2291,6 @@ const BookingPageContent = () => {
                         {selectedPayment === 'e-wallet' && (
                           'Scan QR code atau masukkan nomor telepon. Konfirmasi pembayaran di aplikasi e-wallet Anda.'
                         )}
-                        {selectedPayment === 'qris' && (
-                          'Scan QR code dengan aplikasi e-wallet atau mobile banking yang mendukung QRIS.'
-                        )}
                         {selectedPayment === 'virtual-account' && (
                           'Bayar melalui ATM/Internet Banking/Mobile Banking dengan nomor Virtual Account yang diberikan.'
                         )}
@@ -1724,11 +2340,87 @@ const BookingPageContent = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-6">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Ringkasan Pemesanan</h2>
               
+              {/* Promo/Voucher Section */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-700">Promo & Voucher</h3>
+                  <button
+                    onClick={() => setShowPromoList(true)}
+                    className="text-sm text-[#FD7E14] hover:text-[#E06700] font-medium"
+                  >
+                    Lihat Promo
+                  </button>
+                </div>
+                
+                {/* Applied Promo */}
+                {appliedPromo ? (
+                  <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center">
+                        <TagIcon />
+                        <div className="ml-2">
+                          <h4 className="font-bold text-green-800">{appliedPromo.name}</h4>
+                          <p className="text-xs text-green-600">{appliedPromo.promo_code}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleRemovePromo}
+                        className="text-red-500 hover:text-red-700 text-sm"
+                      >
+                        ✕ Hapus
+                      </button>
+                    </div>
+                    <p className="text-sm text-green-700">{appliedPromo.description}</p>
+                    <div className="mt-2 flex items-center">
+                      <span className="text-sm font-bold text-green-800">
+                        Diskon: -Rp {discountAmount.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Masukkan kode promo"
+                        value={promoCodeInput}
+                        onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                        className="flex-1 border rounded-lg px-4 py-2.5 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      />
+                      <button
+                        onClick={handleApplyPromo}
+                        disabled={isApplyingPromo || !promoCodeInput.trim()}
+                        className={`px-4 py-2.5 bg-[#FD7E14] text-white rounded-lg font-medium ${
+                          isApplyingPromo || !promoCodeInput.trim()
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'hover:bg-[#E06700]'
+                        }`}
+                      >
+                        {isApplyingPromo ? '...' : 'Pakai'}
+                      </button>
+                    </div>
+                    
+                    {promoMessage && (
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-sm text-green-700">{promoMessage}</p>
+                      </div>
+                    )}
+                    
+                    {promoError && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-700">{promoError}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* Fare Breakdown */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Tiket ({passengerCount} orang)</span>
                   <span className="font-semibold text-gray-800">
-                    Rp {totalPrice.toLocaleString('id-ID')}
+                    Rp {basePrice.toLocaleString('id-ID')}
                   </span>
                 </div>
                 
@@ -1737,6 +2429,15 @@ const BookingPageContent = () => {
                     <span className="text-gray-600">Tambahan kursi premium</span>
                     <span className="font-semibold text-green-600">
                       +Rp {seatPriceAdjustment.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                )}
+                
+                {discountAmount > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Diskon Promo</span>
+                    <span className="font-semibold text-red-600">
+                      -Rp {discountAmount.toLocaleString('id-ID')}
                     </span>
                   </div>
                 )}
@@ -1767,65 +2468,71 @@ const BookingPageContent = () => {
                       Rp {grandTotal.toLocaleString('id-ID')}
                     </span>
                   </div>
+                  {discountAmount > 0 && (
+                    <p className="text-sm text-gray-500 mt-1 text-right">
+                      <span className="line-through">Rp {totalBeforeDiscount.toLocaleString('id-ID')}</span>
+                      <span className="ml-2 text-green-600">Hemat Rp {discountAmount.toLocaleString('id-ID')}</span>
+                    </p>
+                  )}
                 </div>
-                
-                {/* Booking Info */}
-                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Kode Booking</span>
-                      <span className="font-mono font-bold text-gray-800">{generatedBookingCode}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Order ID</span>
-                      <span className="font-mono text-xs text-gray-600">{generatedOrderId}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Status</span>
-                      <span className="text-sm font-medium text-orange-600">
-                        {bookingStep === 1 ? 'Data Penumpang' : 'Pembayaran'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Tanggal Keberangkatan</span>
-                      <span className="text-sm font-medium text-blue-600">
-                        {formatDepartureDate(trainDetail?.departureDate || '')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Contact Info */}
-                {contactDetail.fullName && (
-                  <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                    <h4 className="font-semibold text-blue-800 mb-2">Kontak Utama</h4>
-                    <div className="text-sm text-blue-700 space-y-1">
-                      <div className="font-medium">{contactDetail.fullName}</div>
-                      <div>{contactDetail.email}</div>
-                      <div>{contactDetail.phoneNumber}</div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Seat Info */}
-                {selectedSeats.length > 0 && (
-                  <div className="mt-6 p-4 bg-orange-50 rounded-lg">
-                    <h4 className="font-semibold text-orange-800 mb-2">Kursi Terpilih</h4>
-                    <div className="space-y-1">
-                      {selectedSeats.map((seat, index) => (
-                        <div key={`seat-summary-${seat.id}`} className="flex justify-between items-center text-sm">
-                          <span className="text-orange-700">
-                            <span className="font-medium">P{index + 1}:</span> {seat.number}
-                          </span>
-                          <span className="text-orange-800">
-                            Rp {seat.price.toLocaleString('id-ID')}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
+              
+              {/* Booking Info */}
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Kode Booking</span>
+                    <span className="font-mono font-bold text-gray-800">{generatedBookingCode}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Order ID</span>
+                    <span className="font-mono text-xs text-gray-600">{generatedOrderId}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Status</span>
+                    <span className="text-sm font-medium text-orange-600">
+                      {bookingStep === 1 ? 'Data Penumpang' : 'Pembayaran'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Tanggal Keberangkatan</span>
+                    <span className="text-sm font-medium text-blue-600">
+                      {formatDepartureDate(trainDetail?.departureDate || '')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Contact Info */}
+              {contactDetail.fullName && (
+                <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-semibold text-blue-800 mb-2">Kontak Utama</h4>
+                  <div className="text-sm text-blue-700 space-y-1">
+                    <div className="font-medium">{contactDetail.fullName}</div>
+                    <div>{contactDetail.email}</div>
+                    <div>{contactDetail.phoneNumber}</div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Seat Info */}
+              {selectedSeats.length > 0 && (
+                <div className="mt-6 p-4 bg-orange-50 rounded-lg">
+                  <h4 className="font-semibold text-orange-800 mb-2">Kursi Terpilih</h4>
+                  <div className="space-y-1">
+                    {selectedSeats.map((seat, index) => (
+                      <div key={`seat-summary-${seat.id}`} className="flex justify-between items-center text-sm">
+                        <span className="text-orange-700">
+                          <span className="font-medium">P{index + 1}:</span> {seat.number}
+                        </span>
+                        <span className="text-orange-800">
+                          Rp {seat.price.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               {/* Important Info */}
               <div className="mt-8">
@@ -1887,6 +2594,9 @@ const BookingPageContent = () => {
 
       {/* Seat Map Modal */}
       {showSeatMap && <SeatMapModal />}
+
+      {/* Promo List Modal */}
+      {showPromoList && <PromoListModal />}
 
       {/* Footer */}
       <footer className="bg-gray-800 text-white mt-12">

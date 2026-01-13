@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TransitService, RouteSegment } from '@/app/services/transitServices';
+import { TransitService, RouteSegment } from '@/app/services/transitService';
 
 interface TransitBookingFormProps {
   scheduleId: string;

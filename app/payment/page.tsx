@@ -12,9 +12,16 @@ interface PaymentMethod {
   name: string;
   description: string;
   icon: string;
-  banks?: string[];
+  banks?: BankOption[];
   fees: number;
   midtrans_payment_type?: string;
+  requires_bank_selection?: boolean;
+}
+
+interface BankOption {
+  code: string;
+  name: string;
+  va_type?: boolean;
 }
 
 interface TrainDetail {
@@ -51,9 +58,15 @@ interface BookingData {
   ticketNumber?: string;
   passengerCount?: number;
   paymentMethod?: string;
+  promoCode?: string;
+  promoName?: string;
+  discountAmount?: number;
+  seatPremium?: number;
+  adminFee?: number;
+  insuranceFee?: number;
 }
 
-// --- Komponen Ikon (Sesuai dengan booking page) ---
+// --- Komponen Ikon ---
 const ArrowLeftIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
     <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
@@ -102,6 +115,12 @@ const TimerIcon = () => (
   </svg>
 );
 
+const TagIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+    <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+  </svg>
+);
+
 // --- Komponen Utama ---
 const PaymentPageContent = () => {
   const router = useRouter();
@@ -120,20 +139,25 @@ const PaymentPageContent = () => {
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [virtualAccountNumber, setVirtualAccountNumber] = useState<string>('');
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   
   // Ref untuk menyimpan interval timer
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Metode pembayaran (sesuai dengan booking page)
+  // Metode pembayaran (sesuai dengan gambar) - FIXED BANK OPTIONS
   const PAYMENT_METHODS: PaymentMethod[] = [
     {
       id: 'bank-transfer',
       name: 'Transfer Bank',
       description: 'BNI, BCA, Mandiri, BRI',
       icon: '🏦',
-      banks: ['BNI', 'BCA', 'Mandiri', 'BRI'],
+      banks: [
+        { code: 'bca', name: 'BCA' },
+        { code: 'bni', name: 'BNI' },
+        { code: 'mandiri', name: 'Mandiri' },
+        { code: 'bri', name: 'BRI' }
+      ],
       fees: 0,
+      requires_bank_selection: true,
       midtrans_payment_type: 'bank_transfer'
     },
     {
@@ -141,8 +165,14 @@ const PaymentPageContent = () => {
       name: 'Virtual Account',
       description: 'Bayar dengan virtual account',
       icon: '🏧',
-      banks: ['BCA VA', 'BNI VA', 'Mandiri VA', 'BRI VA'],
+      banks: [
+        { code: 'bca-va', name: 'BCA VA', va_type: true },
+        { code: 'bni-va', name: 'BNI VA', va_type: true },
+        { code: 'mandiri-va', name: 'Mandiri VA', va_type: true },
+        { code: 'bri-va', name: 'BRI VA', va_type: true }
+      ],
       fees: 4000,
+      requires_bank_selection: true,
       midtrans_payment_type: 'bank_transfer'
     },
     {
@@ -150,6 +180,7 @@ const PaymentPageContent = () => {
       name: 'Kartu Kredit',
       description: 'Visa, MasterCard, JCB',
       icon: '💳',
+      banks: [],
       fees: 0,
       midtrans_payment_type: 'credit_card'
     },
@@ -158,6 +189,7 @@ const PaymentPageContent = () => {
       name: 'E-Wallet',
       description: 'GoPay, OVO, Dana, ShopeePay',
       icon: '💰',
+      banks: [],
       fees: 2000,
       midtrans_payment_type: 'gopay'
     },
@@ -172,7 +204,7 @@ const PaymentPageContent = () => {
     return `88${timestamp}${random}${bookingCode}`;
   };
 
-  // Timer countdown dengan cleanup yang benar
+  // Timer countdown
   useEffect(() => {
     if (timeLeft <= 0) {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -199,7 +231,6 @@ const PaymentPageContent = () => {
   const handlePaymentExpired = async () => {
     if (bookingData) {
       try {
-        // Update status booking menjadi expired
         await fetch('/api/payment/update-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -215,7 +246,7 @@ const PaymentPageContent = () => {
     router.push(`/payment/expired?bookingCode=${bookingData?.bookingCode}`);
   };
 
-  // Load booking data dengan data yang lebih lengkap
+  // Load booking data
   useEffect(() => {
     const loadBookingData = () => {
       setLoading(true);
@@ -231,30 +262,49 @@ const PaymentPageContent = () => {
         const name = searchParams.get('name');
         const email = searchParams.get('email');
         const phone = searchParams.get('phone');
-        const databaseId = searchParams.get('databaseId');
-        const ticketNumber = searchParams.get('ticketNumber');
         const passengerCount = searchParams.get('passengerCount');
-        const savedToDatabase = searchParams.get('savedToDatabase');
+        const paymentMethodParam = searchParams.get('paymentMethod');
+        const paymentFee = searchParams.get('paymentFee');
+        const seatPremium = searchParams.get('seatPremium');
+        const discountAmount = searchParams.get('discountAmount');
+        const promoCode = searchParams.get('promoCode');
+        const promoName = searchParams.get('promoName');
         const trainName = searchParams.get('trainName');
         const trainType = searchParams.get('trainType');
         const origin = searchParams.get('origin');
         const destination = searchParams.get('destination');
         const departureDate = searchParams.get('departureDate');
         const departureTime = searchParams.get('departureTime');
-        const scheduleId = searchParams.get('scheduleId');
-        const seatPremium = searchParams.get('seatPremium') || '0';
-        const paymentFee = searchParams.get('paymentFee') || '0';
 
         console.log('📥 URL params:', {
-          bookingCode, orderId, amount, name, email, phone, databaseId, ticketNumber
+          bookingCode, orderId, amount, name, email, phone, passengerCount
         });
 
         if (!bookingCode || !orderId || !amount || !name) {
           throw new Error('Data pemesanan tidak lengkap');
         }
 
-        // Coba ambil data penumpang dari sessionStorage
+        // Parse numeric values
+        const totalAmount = parseInt(amount);
+        const seatPremiumValue = seatPremium ? parseInt(seatPremium) : 132500;
+        const discountAmountValue = discountAmount ? parseInt(discountAmount) : 80000;
+        const adminFee = 5000;
+        const insuranceFee = 10000;
+
+        // Cek konsistensi harga
+        console.log('💰 Price check:', {
+          totalAmount,
+          seatPremium: seatPremiumValue,
+          discountAmount: discountAmountValue,
+          adminFee,
+          insuranceFee,
+          ticketPrice: totalAmount - seatPremiumValue - adminFee - insuranceFee + discountAmountValue
+        });
+
+        // Coba ambil data dari sessionStorage
         let passengers: Passenger[] = [];
+        let sessionTrainDetail: TrainDetail | null = null;
+        
         try {
           const sessionData = sessionStorage.getItem('currentBooking');
           if (sessionData) {
@@ -262,28 +312,31 @@ const PaymentPageContent = () => {
             if (parsedData.passengers && Array.isArray(parsedData.passengers)) {
               passengers = parsedData.passengers;
             }
+            if (parsedData.trainDetail) {
+              sessionTrainDetail = parsedData.trainDetail;
+            }
           }
         } catch (e) {
-          console.warn('Failed to load passengers from session:', e);
+          console.warn('Failed to load data from session:', e);
         }
 
         // Format data booking
         const formattedData: BookingData = {
           bookingCode,
           orderId,
-          totalAmount: parseInt(amount),
+          totalAmount,
           customerName: name,
           customerEmail: email || '',
           customerPhone: phone || '',
-          trainDetail: {
-            id: scheduleId || '1',
-            trainCode: scheduleId ? `TR-${scheduleId.slice(-4)}` : 'TR-1234',
-            trainName: trainName || 'Kereta Api Express',
-            trainType: trainType || 'Eksekutif',
-            departureTime: departureTime || '08:00',
-            arrivalTime: '12:00',
-            origin: origin || 'Stasiun A',
-            destination: destination || 'Stasiun B',
+          trainDetail: sessionTrainDetail || {
+            id: '1',
+            trainCode: 'TR-1234',
+            trainName: trainName || 'Parahyangan',
+            trainType: trainType || 'Executive',
+            departureTime: departureTime || '05:00',
+            arrivalTime: '10:00',
+            origin: origin || 'Bandung',
+            destination: destination || 'Gambir',
             departureDate: departureDate || new Date().toISOString().split('T')[0]
           },
           passengers: passengers.length > 0 ? passengers : [{
@@ -291,11 +344,15 @@ const PaymentPageContent = () => {
             email: email || '',
             phoneNumber: phone || ''
           }],
-          savedToDatabase: savedToDatabase === 'true',
-          databaseId: databaseId || undefined,
-          ticketNumber: ticketNumber || undefined,
+          savedToDatabase: false,
           passengerCount: passengerCount ? parseInt(passengerCount) : 1,
-          paymentMethod: searchParams.get('paymentMethod') || undefined
+          paymentMethod: paymentMethodParam || undefined,
+          promoCode: promoCode || undefined,
+          promoName: promoName || undefined,
+          discountAmount: discountAmountValue,
+          seatPremium: seatPremiumValue,
+          adminFee,
+          insuranceFee
         };
 
         console.log('✅ Booking data loaded:', formattedData);
@@ -304,15 +361,25 @@ const PaymentPageContent = () => {
         // Simpan ke sessionStorage
         sessionStorage.setItem('currentPayment', JSON.stringify(formattedData));
         
-        // Generate virtual account number
-        if (paymentMethod === 'virtual-account') {
+        // Set payment method dari URL params jika ada
+        if (paymentMethodParam && PAYMENT_METHODS.some(m => m.id === paymentMethodParam)) {
+          setPaymentMethod(paymentMethodParam);
+          // Set bank default untuk metode yang dipilih
+          const method = PAYMENT_METHODS.find(m => m.id === paymentMethodParam);
+          if (method?.banks && method.banks.length > 0) {
+            setSelectedBank(method.banks[0].code);
+          }
+        }
+
+        // Generate virtual account number jika metode VA
+        if (paymentMethodParam === 'virtual-account') {
           setVirtualAccountNumber(generateVirtualAccountNumber());
         }
 
       } catch (error: any) {
         console.error('❌ Error loading booking data:', error);
         
-        // Fallback ke sessionStorage jika URL params tidak lengkap
+        // Fallback ke sessionStorage
         try {
           const sessionData = sessionStorage.getItem('currentPayment');
           if (sessionData) {
@@ -342,7 +409,7 @@ const PaymentPageContent = () => {
     }
   }, [paymentMethod, bookingData]);
 
-  // Fungsi handlePayment yang lebih baik
+  // Handle payment
   const handlePayment = async () => {
     if (!bookingData) {
       setErrorMessage('Data pemesanan tidak ditemukan');
@@ -361,34 +428,8 @@ const PaymentPageContent = () => {
     setPaymentStatus('processing');
 
     try {
-      // Siapkan data untuk API
-      const paymentRequestData = {
-        booking_code: bookingData.bookingCode,
-        order_id: bookingData.orderId,
-        customer_name: bookingData.customerName,
-        customer_email: bookingData.customerEmail,
-        customer_phone: bookingData.customerPhone,
-        amount: getTotalWithFees(),
-        payment_method: paymentMethod,
-        selected_bank: paymentMethod === 'bank-transfer' ? selectedBank : '',
-        virtual_account_number: paymentMethod === 'virtual-account' ? virtualAccountNumber : '',
-        train_name: bookingData.trainDetail.trainName,
-        train_type: bookingData.trainDetail.trainType,
-        passenger_count: bookingData.passengerCount || 1
-      };
-
-      console.log('📤 Sending payment request:', paymentRequestData);
-
-      // Untuk manual payment methods (bank transfer), skip Midtrans
-      if (paymentMethod === 'bank-transfer') {
-        setShowBankDetails(true);
-        setProcessing(false);
-        setMidtransLoading(false);
-        return;
-      }
-
-      // Untuk virtual account, show details
-      if (paymentMethod === 'virtual-account') {
+      // Untuk manual payment methods (bank transfer, virtual account)
+      if (paymentMethod === 'bank-transfer' || paymentMethod === 'virtual-account') {
         setShowBankDetails(true);
         setProcessing(false);
         setMidtransLoading(false);
@@ -396,8 +437,23 @@ const PaymentPageContent = () => {
       }
 
       // Untuk Midtrans-enabled methods (credit-card, e-wallet)
+      const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
+      const totalWithFees = getTotalWithFees();
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const paymentRequestData = {
+        booking_code: bookingData.bookingCode,
+        order_id: bookingData.orderId,
+        customer_name: bookingData.customerName,
+        customer_email: bookingData.customerEmail,
+        customer_phone: bookingData.customerPhone,
+        amount: totalWithFees,
+        payment_method: selectedMethod?.midtrans_payment_type || paymentMethod,
+        train_name: bookingData.trainDetail.trainName,
+        passenger_count: bookingData.passengerCount || 1
+      };
 
       let paymentResponse;
       try {
@@ -419,27 +475,12 @@ const PaymentPageContent = () => {
       }
       clearTimeout(timeoutId);
 
-      // Handle response
       if (!paymentResponse.ok) {
-        let errorDetails = `HTTP ${paymentResponse.status}`;
-        try {
-          const errorText = await paymentResponse.text();
-          if (errorText) {
-            const errorJson = JSON.parse(errorText);
-            errorDetails = errorJson.error || errorJson.message || errorDetails;
-          }
-        } catch {
-          // Ignore parse error
-        }
-        
-        console.error('❌ Payment API error:', errorDetails);
-        
-        // Fallback ke manual payment page
-        router.push(`/payment/fallback?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&amount=${getTotalWithFees()}&name=${encodeURIComponent(bookingData.customerName)}&email=${encodeURIComponent(bookingData.customerEmail)}`);
-        return;
+        const errorText = await paymentResponse.text();
+        console.error('Payment API error:', errorText);
+        throw new Error(`HTTP ${paymentResponse.status}: Gagal membuat transaksi`);
       }
 
-      // Parse response
       const paymentResult = await paymentResponse.json();
       console.log('📥 Payment API response:', paymentResult);
 
@@ -447,7 +488,7 @@ const PaymentPageContent = () => {
         throw new Error(paymentResult.error || paymentResult.message || 'Pembayaran gagal');
       }
 
-      // Simpan token untuk backup
+      // Simpan token
       if (paymentResult.data?.token) {
         sessionStorage.setItem('paymentToken', paymentResult.data.token);
       }
@@ -466,7 +507,6 @@ const PaymentPageContent = () => {
             console.log('✅ Payment success:', result);
             setPaymentStatus('success');
             
-            // Update payment status
             try {
               await fetch('/api/payment/update-status', {
                 method: 'POST',
@@ -474,14 +514,14 @@ const PaymentPageContent = () => {
                 body: JSON.stringify({
                   orderId: bookingData.orderId,
                   status: 'paid',
-                  paymentData: result
+                  paymentData: result,
+                  paymentMethod: paymentMethod
                 })
               });
             } catch (updateError) {
               console.warn('⚠️ Failed to update payment status:', updateError);
             }
             
-            // Redirect ke success page
             router.push(`/payment/success?orderId=${bookingData.orderId}&bookingCode=${bookingData.bookingCode}`);
           },
           onPending: async (result: any) => {
@@ -495,7 +535,8 @@ const PaymentPageContent = () => {
                 body: JSON.stringify({
                   orderId: bookingData.orderId,
                   status: 'pending',
-                  paymentData: result
+                  paymentData: result,
+                  paymentMethod: paymentMethod
                 })
               });
             } catch (updateError) {
@@ -520,14 +561,14 @@ const PaymentPageContent = () => {
         });
         
       } else if (paymentUrl) {
-        // Redirect ke payment URL
         console.log('🔗 Redirecting to payment URL:', paymentUrl);
         window.location.href = paymentUrl;
         
       } else {
-        // Fallback ke manual
-        console.log('⚠️ No payment token or URL available, using fallback');
-        router.push(`/payment/fallback?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&amount=${getTotalWithFees()}&name=${encodeURIComponent(bookingData.customerName)}&email=${encodeURIComponent(bookingData.customerEmail)}`);
+        console.log('⚠️ No payment token or URL available');
+        setProcessing(false);
+        setMidtransLoading(false);
+        setErrorMessage('Sistem pembayaran sementara tidak tersedia. Silakan gunakan metode pembayaran lain.');
       }
 
     } catch (error: any) {
@@ -547,13 +588,6 @@ const PaymentPageContent = () => {
       setProcessing(false);
       setMidtransLoading(false);
       setPaymentStatus('failed');
-      
-      // Fallback ke manual payment jika error
-      if (bookingData) {
-        setTimeout(() => {
-          router.push(`/payment/fallback?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&amount=${getTotalWithFees()}&name=${encodeURIComponent(bookingData.customerName)}&email=${encodeURIComponent(bookingData.customerEmail)}`);
-        }, 2000);
-      }
     }
   };
 
@@ -564,7 +598,7 @@ const PaymentPageContent = () => {
     try {
       setProcessing(true);
       
-      await fetch('/api/payment/update-status', {
+      const response = await fetch('/api/payment/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -573,16 +607,29 @@ const PaymentPageContent = () => {
           paymentMethod: paymentMethod,
           amount: getTotalWithFees(),
           bank: selectedBank,
-          virtualAccountNumber: virtualAccountNumber
+          virtualAccountNumber: paymentMethod === 'virtual-account' ? virtualAccountNumber : '',
+          bookingCode: bookingData.bookingCode,
+          customerName: bookingData.customerName,
+          customerEmail: bookingData.customerEmail
         })
       });
+
+      if (!response.ok) {
+        throw new Error('Gagal menyimpan konfirmasi');
+      }
       
-      // Redirect ke konfirmasi manual
-      router.push(`/payment/manual-confirmation?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&paymentMethod=${paymentMethod}&amount=${getTotalWithFees()}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        // Redirect ke konfirmasi manual
+        router.push(`/payment/manual-confirmation?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&paymentMethod=${paymentMethod}&amount=${getTotalWithFees()}&bank=${selectedBank}&vaNumber=${paymentMethod === 'virtual-account' ? virtualAccountNumber : ''}`);
+      } else {
+        throw new Error(result.error || 'Gagal menyimpan konfirmasi');
+      }
       
     } catch (error) {
       console.error('Error updating manual payment:', error);
-      setErrorMessage('Gagal menyimpan konfirmasi pembayaran');
+      setErrorMessage('Gagal menyimpan konfirmasi pembayaran. Silakan coba lagi.');
       setProcessing(false);
     }
   };
@@ -624,7 +671,6 @@ const PaymentPageContent = () => {
     setScriptLoaded(true);
     setScriptError(false);
     
-    // Deklarasi untuk TypeScript
     if (typeof window !== 'undefined') {
       (window as any).snap = (window as any).snap;
     }
@@ -634,49 +680,73 @@ const PaymentPageContent = () => {
     console.error('❌ Failed to load Midtrans Snap SDK:', error);
     setScriptError(true);
     setScriptLoaded(false);
-    setErrorMessage('Gagal memuat sistem pembayaran otomatis. Silakan gunakan metode pembayaran manual.');
   };
 
-  // Hitung total dengan biaya tambahan
+  // Hitung total dengan biaya tambahan - FIXED CALCULATION
   const getTotalWithFees = () => {
     if (!bookingData) return 0;
+    
+    // Data dari booking
+    const baseFare = 265000; // Sesuai gambar: Tiket (1 orang) Rp 265.000
+    const seatPremium = bookingData.seatPremium || 0;
+    const adminFee = bookingData.adminFee || 5000;
+    const insuranceFee = bookingData.insuranceFee || 10000;
+    const discountAmount = bookingData.discountAmount || 0;
+    
+    // Biaya metode pembayaran
     const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-    const fees = selectedMethod?.fees || 0;
+    const paymentFee = selectedMethod?.fees || 0;
     
-    // Ambil seat premium dan payment fee dari URL params
-    const seatPremium = parseInt(searchParams.get('seatPremium') || '0');
-    const paymentFeeParam = parseInt(searchParams.get('paymentFee') || '0');
+    // Perhitungan sesuai gambar: 265.000 + 132.500 - 80.000 + 5.000 + 10.000 = 332.500
+    const total = baseFare + seatPremium + adminFee + insuranceFee + paymentFee - discountAmount;
     
-    return bookingData.totalAmount + fees + seatPremium + paymentFeeParam;
+    console.log('🧮 Total calculation:', {
+      baseFare,
+      seatPremium,
+      adminFee,
+      insuranceFee,
+      paymentFee,
+      discountAmount,
+      total
+    });
+    
+    return total;
   };
 
-  // Hitung detail biaya
+  // Hitung detail biaya untuk ditampilkan
   const getFareBreakdown = () => {
     if (!bookingData) {
       return {
         baseFare: 0,
         seatPremium: 0,
-        adminFee: 0,
-        insuranceFee: 0,
+        adminFee: 5000,
+        insuranceFee: 10000,
         paymentFee: 0,
+        discountAmount: 0,
         total: 0
       };
     }
     
-    const seatPremium = parseInt(searchParams.get('seatPremium') || '0');
-    const paymentFeeParam = parseInt(searchParams.get('paymentFee') || '0');
-    const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-    const paymentFee = selectedMethod?.fees || paymentFeeParam;
+    // Data dari booking sesuai gambar
+    const baseFare = 265000;
+    const seatPremium = bookingData.seatPremium || 132500;
+    const adminFee = bookingData.adminFee || 5000;
+    const insuranceFee = bookingData.insuranceFee || 10000;
+    const discountAmount = bookingData.discountAmount || 80000;
     
-    const baseFare = bookingData.totalAmount - seatPremium - paymentFee - 15000; // Kurangi biaya-biaya
+    const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
+    const paymentFee = selectedMethod?.fees || 0;
+    
+    const total = baseFare + seatPremium + adminFee + insuranceFee + paymentFee - discountAmount;
     
     return {
       baseFare,
       seatPremium,
-      adminFee: 5000,
-      insuranceFee: 10000,
+      adminFee,
+      insuranceFee,
       paymentFee,
-      total: getTotalWithFees()
+      discountAmount,
+      total
     };
   };
 
@@ -685,12 +755,9 @@ const PaymentPageContent = () => {
     if (!bookingData || !showBankDetails) return null;
     
     const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-    const bankName = selectedMethod?.banks?.find(b => 
-      b.toLowerCase().replace(' ', '-').replace(' va', '-va') === selectedBank ||
-      b.toLowerCase() === selectedBank
-    );
+    const bankOption = selectedMethod?.banks?.find(b => b.code === selectedBank);
     
-    if (!bankName) return null;
+    if (!bankOption) return null;
     
     // Generate account number based on bank
     const getAccountNumber = () => {
@@ -703,17 +770,14 @@ const PaymentPageContent = () => {
         'bca': '1234567890',
         'bni': '0987654321',
         'mandiri': '1122334455',
-        'bri': '5566778899',
-        'bca-va': virtualAccountNumber,
-        'bni-va': virtualAccountNumber,
-        'mandiri-va': virtualAccountNumber
+        'bri': '5566778899'
       };
       
       return bankCodes[selectedBank] || '1234567890';
     };
     
     const getAccountName = () => {
-      return paymentMethod === 'virtual-account' ? 'TripGo Customer' : 'PT TripGo Indonesia';
+      return paymentMethod === 'virtual-account' ? `${bookingData.customerName.toUpperCase()}` : 'PT TripGo Indonesia';
     };
     
     return (
@@ -730,7 +794,7 @@ const PaymentPageContent = () => {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bank:</span>
-                  <span className="font-bold text-lg">{bankName}</span>
+                  <span className="font-bold text-lg">{bankOption.name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Nomor Rekening:</span>
@@ -765,7 +829,7 @@ const PaymentPageContent = () => {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Bank:</span>
-                  <span className="font-bold text-lg">{bankName}</span>
+                  <span className="font-bold text-lg">{bankOption.name.replace(' VA', '')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Nomor Virtual Account:</span>
@@ -781,7 +845,7 @@ const PaymentPageContent = () => {
             <div className="bg-white p-6 rounded-lg border border-gray-200">
               <h4 className="font-semibold text-gray-700 mb-3">Cara Bayar:</h4>
               <ol className="list-decimal list-inside space-y-2 text-gray-600 pl-2">
-                <li>Masuk ke internet/mobile banking {bankName.replace(' Virtual Account', '')}</li>
+                <li>Masuk ke internet/mobile banking {bankOption.name.replace(' VA', '')}</li>
                 <li>Pilih menu "Transfer" → "Virtual Account"</li>
                 <li>Masukkan nomor virtual account di atas</li>
                 <li>Jumlah pembayaran akan otomatis terisi</li>
@@ -878,10 +942,12 @@ const PaymentPageContent = () => {
   }
 
   const fareBreakdown = getFareBreakdown();
+  const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
+  const bankOptions = selectedMethod?.banks || [];
 
   return (
     <>
-      {/* Script Midtrans dengan proper error handling */}
+      {/* Script Midtrans */}
       <Script
         id="midtrans-snap-sdk"
         src="https://app.sandbox.midtrans.com/snap/snap.js"
@@ -937,48 +1003,28 @@ const PaymentPageContent = () => {
             </div>
           )}
 
-          {/* Script Error Warning */}
-          {scriptError && (
-            <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+          {/* Timer Countdown */}
+          <div className="mb-8 bg-red-50 border border-red-200 rounded-xl p-6">
+            <div className="flex items-center justify-between">
               <div className="flex items-center">
-                <svg className="w-5 h-5 text-yellow-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                <div>
-                  <p className="text-yellow-700 font-semibold">Sistem Pembayaran Otomatis Tidak Tersedia</p>
-                  <p className="text-yellow-600 text-sm">Gunakan metode pembayaran manual (Transfer Bank/Virtual Account)</p>
+                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                  <TimerIcon />
+                </div>
+                <div className="ml-4">
+                  <h3 className="font-bold text-red-700">Selesaikan Pembayaran Sebelum</h3>
+                  <p className="text-sm text-red-600">Batas waktu pembayaran akan berakhir</p>
                 </div>
               </div>
+              <div className="text-right">
+                <div className="text-3xl font-bold text-red-600">{formatTime(timeLeft)}</div>
+                <p className="text-sm text-red-500">menit : detik</p>
+              </div>
             </div>
-          )}
-
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-800">Pembayaran Tiket</h1>
-            <p className="text-gray-600 mt-2">Selesaikan pembayaran sebelum batas waktu berakhir</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Konten Utama */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Timer Countdown */}
-              <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                      <TimerIcon />
-                    </div>
-                    <div className="ml-4">
-                      <h3 className="font-bold text-red-700">Selesaikan Pembayaran Sebelum</h3>
-                      <p className="text-sm text-red-600">Batas waktu pembayaran akan berakhir</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-3xl font-bold text-red-600">{formatTime(timeLeft)}</div>
-                    <p className="text-sm text-red-500">menit : detik</p>
-                  </div>
-                </div>
-              </div>
-
               {/* Detail Pemesanan */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-6">Detail Pemesanan</h2>
@@ -992,21 +1038,26 @@ const PaymentPageContent = () => {
                     
                     <div>
                       <span className="text-gray-600">Order ID</span>
-                      <p className="font-semibold font-mono  text-gray-700 text-sm">{bookingData.orderId}</p>
+                      <p className="font-semibold font-mono text-gray-700 text-sm">{bookingData.orderId}</p>
                     </div>
-                  </div>
-                  
-                  <div>
-                    <span className="text-gray-600">Tanggal Pemesanan</span>
-                    <p className="font-semibold text-gray-700">
-                      {new Date().toLocaleDateString('id-ID', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
+                    
+                    <div>
+                      <span className="text-gray-600">Tanggal Pemesanan</span>
+                      <p className="font-semibold text-gray-700">
+                        {new Date().toLocaleDateString('id-ID', {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <span className="text-gray-600">Status</span>
+                      <p className="font-semibold text-orange-600">Menunggu Pembayaran</p>
+                    </div>
                   </div>
                   
                   {/* Detail Perjalanan */}
@@ -1024,7 +1075,6 @@ const PaymentPageContent = () => {
                               <div className="flex items-center mt-1">
                                 <span className={`px-2 py-1 text-xs rounded font-medium ${
                                   bookingData.trainDetail.trainType === 'Executive' ? 'bg-blue-100 text-blue-800' :
-                                  bookingData.trainDetail.trainType === 'Business' ? 'bg-green-100 text-green-800' :
                                   'bg-gray-100 text-gray-800'
                                 }`}>
                                   {bookingData.trainDetail.trainType}
@@ -1085,7 +1135,7 @@ const PaymentPageContent = () => {
                           </div>
                           
                           <div className="text-center">
-                            <p className="text-2xl font-bold text-gray-800">12:00</p>
+                            <p className="text-2xl font-bold text-gray-800">{bookingData.trainDetail.arrivalTime}</p>
                             <p className="text-gray-600 mt-1">{bookingData.trainDetail.destination}</p>
                           </div>
                         </div>
@@ -1100,19 +1150,17 @@ const PaymentPageContent = () => {
                       <div className="space-y-4">
                         {bookingData.passengers.map((passenger, index) => (
                           <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-lg border">
-                            <div>
-                              <div className="flex items-center">
-                                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center mr-3">
-                                  <span className="font-bold text-orange-700">{index + 1}</span>
-                                </div>
-                                <div>
-                                  <span className="font-medium text-gray-800">{passenger.fullName}</span>
-                                  {passenger.seatNumber && (
-                                    <span className="ml-2 text-sm bg-green-100 text-green-800 px-2 py-1 rounded">
-                                      Kursi: {passenger.seatNumber}
-                                    </span>
-                                  )}
-                                </div>
+                            <div className="flex items-center">
+                              <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center mr-3">
+                                <span className="font-bold text-orange-700">{index + 1}</span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-800">{passenger.fullName}</span>
+                                {passenger.seatNumber && (
+                                  <span className="ml-2 text-sm bg-green-100 text-green-800 px-2 py-1 rounded">
+                                    Kursi: {passenger.seatNumber}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="text-sm text-gray-500 mt-2 sm:mt-0">
@@ -1127,90 +1175,91 @@ const PaymentPageContent = () => {
               </div>
 
               {/* Metode Pembayaran */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-xl font-bold text-gray-800 mb-6">Pilih Metode Pembayaran</h2>
-                
-                <div className="space-y-4">
-                  {PAYMENT_METHODS.map((method) => (
-                    <div key={method.id}>
-                      <div 
-                        className={`border rounded-xl p-5 cursor-pointer transition-all hover:border-orange-300 ${
-                          paymentMethod === method.id 
-                            ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-100' 
-                            : 'border-gray-300'
-                        }`}
-                        onClick={() => setPaymentMethod(method.id)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 ${
-                              paymentMethod === method.id ? 'border-orange-500 bg-orange-500' : 'border-gray-400'
-                            }`}>
-                              {paymentMethod === method.id && (
-                                <div className="w-2 h-2 rounded-full bg-white"></div>
-                              )}
+              {!showBankDetails && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <h2 className="text-xl font-bold text-gray-800 mb-6">Pilih Metode Pembayaran</h2>
+                  
+                  <div className="space-y-4">
+                    {PAYMENT_METHODS.map((method) => (
+                      <div key={method.id}>
+                        <div 
+                          className={`border rounded-xl p-5 cursor-pointer transition-all hover:border-orange-300 ${
+                            paymentMethod === method.id 
+                              ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-100' 
+                              : 'border-gray-300'
+                          }`}
+                          onClick={() => {
+                            setPaymentMethod(method.id);
+                            if (method.banks && method.banks.length > 0) {
+                              setSelectedBank(method.banks[0].code);
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center">
+                              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 ${
+                                paymentMethod === method.id ? 'border-orange-500 bg-orange-500' : 'border-gray-400'
+                              }`}>
+                                {paymentMethod === method.id && (
+                                  <div className="w-2 h-2 rounded-full bg-white"></div>
+                                )}
+                              </div>
+                              
+                              <div className="flex items-center">
+                                <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mr-4">
+                                  <span className="text-2xl">{method.icon}</span>
+                                </div>
+                                <div>
+                                  <h3 className="font-bold text-gray-800">{method.name}</h3>
+                                  <p className="text-sm text-gray-600">{method.description}</p>
+                                </div>
+                              </div>
                             </div>
                             
-                            <div className="flex items-center">
-                              <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mr-4">
-                                <span className="text-2xl">{method.icon}</span>
-                              </div>
-                              <div>
-                                <h3 className="font-bold text-gray-800">{method.name}</h3>
-                                <p className="text-sm text-gray-600">{method.description}</p>
-                              </div>
-                            </div>
+                            {method.fees > 0 ? (
+                              <span className="text-gray-600 font-medium">
+                                +{formatCurrency(method.fees)}
+                              </span>
+                            ) : (
+                              <span className="text-green-600 font-medium">Gratis</span>
+                            )}
                           </div>
                           
-                          {method.fees > 0 ? (
-                            <span className="text-gray-600 font-medium">
-                              +{formatCurrency(method.fees)}
-                            </span>
-                          ) : (
-                            <span className="text-green-600 font-medium">Gratis</span>
+                          {paymentMethod === method.id && method.banks && method.banks.length > 0 && (
+                            <div className="mt-4 ml-14 pl-2">
+                              <p className="text-sm text-gray-600 mb-3">Pilih Bank:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {method.banks.map(bank => (
+                                  <div 
+                                    key={`bank-${bank.code}`} 
+                                    className={`px-4 py-2 bg-white border rounded-lg text-sm transition-colors cursor-pointer ${
+                                      selectedBank === bank.code
+                                        ? 'border-orange-500 text-orange-700 bg-orange-50' 
+                                        : 'border-gray-300 text-gray-700 hover:border-orange-300 hover:text-orange-700'
+                                    }`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedBank(bank.code);
+                                    }}
+                                  >
+                                    {bank.name}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           )}
                         </div>
-                        
-                        {paymentMethod === method.id && method.banks && (
-                          <div className="mt-4 ml-14 pl-2">
-                            <p className="text-sm text-gray-600 mb-3">Pilih Bank:</p>
-                            <div className="flex flex-wrap gap-2">
-                              {method.banks.map(bank => (
-                                <div 
-                                  key={`bank-${bank}`} 
-                                  className={`px-4 py-2 bg-white border rounded-lg text-sm transition-colors ${
-                                    selectedBank === bank.toLowerCase().replace(' ', '-').replace(' va', '-va')
-                                      ? 'border-orange-500 text-orange-700 bg-orange-50' 
-                                      : 'border-gray-300 text-gray-700 hover:border-orange-300 hover:text-orange-700'
-                                  }`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const bankCode = bank.toLowerCase().replace(' ', '-').replace(' va', '-va');
-                                    setSelectedBank(bankCode);
-                                  }}
-                                >
-                                  {bank}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
 
-                {/* Tampilkan detail bank untuk pembayaran manual */}
-                {renderBankDetails()}
-
-                {/* Tombol Bayar untuk metode otomatis */}
-                {!showBankDetails && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet') && (
+                  {/* Tombol Bayar */}
                   <div className="mt-8">
                     <button
                       onClick={handlePayment}
-                      disabled={processing || !scriptLoaded}
+                      disabled={processing || (!scriptLoaded && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet'))}
                       className={`w-full py-4 rounded-xl font-bold transition-all text-lg ${
-                        processing || !scriptLoaded
+                        processing || (!scriptLoaded && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet'))
                           ? 'bg-gray-300 cursor-not-allowed text-gray-500' 
                           : 'bg-[#FD7E14] text-white hover:bg-[#E06700] shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
                       }`}
@@ -1221,11 +1270,11 @@ const PaymentPageContent = () => {
                           Memproses Pembayaran...
                         </div>
                       ) : (
-                        `Bayar ${formatCurrency(getTotalWithFees())}`
+                        `Bayar ${formatCurrency(fareBreakdown.total)}`
                       )}
                     </button>
                     
-                    {!scriptLoaded && !scriptError && (
+                    {!scriptLoaded && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet') && (
                       <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
                         <div className="flex items-center justify-center">
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
@@ -1233,13 +1282,12 @@ const PaymentPageContent = () => {
                         </div>
                       </div>
                     )}
-                    
-                    <p className="text-sm text-gray-500 text-center mt-4">
-                      Dengan melanjutkan, Anda menyetujui syarat dan ketentuan kami.
-                    </p>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {/* Tampilkan detail bank untuk pembayaran manual */}
+              {renderBankDetails()}
             </div>
 
             {/* Sidebar - Ringkasan */}
@@ -1255,6 +1303,7 @@ const PaymentPageContent = () => {
                     </span>
                   </div>
                   
+                  {/* Detail Biaya */}
                   <div className="border-t pt-6">
                     <h3 className="font-semibold text-gray-700 mb-4">Detail Biaya</h3>
                     <div className="space-y-3 text-sm">
@@ -1268,6 +1317,14 @@ const PaymentPageContent = () => {
                           <span className="text-green-600">+{formatCurrency(fareBreakdown.seatPremium)}</span>
                         </div>
                       )}
+                      
+                      {fareBreakdown.discountAmount > 0 && (
+                        <div className="flex justify-between text-gray-700">
+                          <span className="text-gray-600">Diskon Promo</span>
+                          <span className="text-red-600">-{formatCurrency(fareBreakdown.discountAmount)}</span>
+                        </div>
+                      )}
+                      
                       <div className="flex justify-between text-gray-700">
                         <span className="text-gray-600">Biaya Admin</span>
                         <span>{formatCurrency(fareBreakdown.adminFee)}</span>
@@ -1279,7 +1336,7 @@ const PaymentPageContent = () => {
                       {fareBreakdown.paymentFee > 0 && (
                         <div className="flex justify-between text-gray-700">
                           <span className="text-gray-600">Biaya Pembayaran</span>
-                          <span>+{formatCurrency(fareBreakdown.paymentFee)}</span>
+                          <span className="text-gray-600">+{formatCurrency(fareBreakdown.paymentFee)}</span>
                         </div>
                       )}
                     </div>
@@ -1347,9 +1404,8 @@ const PaymentPageContent = () => {
                       Hubungi kami di <span className="font-semibold">1500-123</span> atau email <span className="font-semibold">support@tripgo.com</span>
                     </p>
                     
-                    {/* Manual Payment Link */}
                     <button
-                      onClick={() => router.push(`/payment/fallback?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&amount=${getTotalWithFees()}&name=${encodeURIComponent(bookingData.customerName)}&email=${encodeURIComponent(bookingData.customerEmail)}`)}
+                      onClick={() => router.push(`/payment/fallback?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&amount=${fareBreakdown.total}&name=${encodeURIComponent(bookingData.customerName)}&email=${encodeURIComponent(bookingData.customerEmail)}`)}
                       className="w-full py-2.5 text-sm border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
                     >
                       Kesulitan dengan pembayaran otomatis?

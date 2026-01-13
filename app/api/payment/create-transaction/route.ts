@@ -56,7 +56,7 @@ async function createMidtransTransaction(data: any) {
   }
 }
 
-// **FUNGSI BARU: Cari booking_id berdasarkan booking_code**
+// **FUNGSI YANG DIPERBAIKI: Cari booking_id berdasarkan booking_code**
 async function findBookingId(bookingCode: string): Promise<string | null> {
   try {
     console.log('🔍 Mencari booking_id untuk booking_code:', bookingCode);
@@ -157,25 +157,98 @@ async function checkTableSchema(tableName: string) {
   }
 }
 
+// **FUNGSI BARU: Dapatkan data dari request (JSON body atau query params)**
+async function getRequestData(request: NextRequest) {
+  const url = new URL(request.url);
+  const searchParams = url.searchParams;
+  
+  let data: any = {};
+  
+  // **PERBAIKAN: Coba ambil dari JSON body terlebih dahulu**
+  try {
+    // Cek jika request memiliki body
+    if (request.body) {
+      const bodyText = await request.text();
+      if (bodyText.trim()) {
+        const jsonData = JSON.parse(bodyText);
+        data = { ...data, ...jsonData };
+        console.log('📦 Data dari JSON body diterima');
+      }
+    }
+  } catch (error) {
+    console.log('ℹ️ Tidak ada JSON body yang valid, gunakan query params');
+  }
+  
+  // **PERBAIKAN: Ambil dari query parameters juga**
+  // Parameter yang mungkin dikirim frontend
+  const queryParams = [
+    'booking_code', 'order_id', 'customer_name', 'customer_email',
+    'amount', 'payment_method', 'customer_phone', 'train_name',
+    'train_type', 'origin', 'destination', 'departure_date',
+    'departure_time', 'passenger_count', 'seat_premium'
+  ];
+  
+  queryParams.forEach(param => {
+    const value = searchParams.get(param);
+    if (value !== null && value !== undefined) {
+      data[param] = value;
+    }
+  });
+  
+  // **PERBAIKAN: Parse tipe data yang diperlukan**
+  if (data.amount) {
+    data.amount = parseInt(data.amount);
+  }
+  
+  if (data.passenger_count) {
+    data.passenger_count = parseInt(data.passenger_count) || 1;
+  }
+  
+  if (data.seat_premium) {
+    data.seat_premium = parseInt(data.seat_premium) || 0;
+  }
+  
+  console.log('📥 Data gabungan dari request:', {
+    order_id: data.order_id,
+    booking_code: data.booking_code,
+    amount: data.amount,
+    source: data.booking_code && !data.order_id ? 'query_params' : 'json_body'
+  });
+  
+  return data;
+}
+
 export async function POST(request: NextRequest) {
   console.log('🔍 /api/payment/create-transaction called');
   
   try {
-    const body = await request.json();
+    // **PERBAIKAN UTAMA: Gunakan fungsi baru untuk mendapatkan data**
+    const body = await getRequestData(request);
     
     console.log('📥 Payment request data:', {
       booking_code: body.booking_code,
       order_id: body.order_id,
       amount: body.amount,
       customer_name: body.customer_name,
-      customer_email: body.customer_email
+      customer_email: body.customer_email,
+      customer_phone: body.customer_phone,
+      payment_method: body.payment_method,
+      passenger_count: body.passenger_count || 1
     });
 
     // Validasi
     if (!body.order_id || !body.amount || !body.customer_email) {
       return NextResponse.json({
         success: false,
-        error: 'Missing required fields: order_id, amount, customer_email are required'
+        error: 'Missing required fields: order_id, amount, customer_email are required',
+        received: {
+          order_id: body.order_id,
+          amount: body.amount,
+          customer_email: body.customer_email,
+          has_booking_code: !!body.booking_code,
+          total_fields: Object.keys(body).length
+        },
+        help: 'Send data as JSON body or query parameters'
       }, { status: 400 });
     }
 
@@ -183,7 +256,8 @@ export async function POST(request: NextRequest) {
     if (isNaN(amount) || amount < 10000) {
       return NextResponse.json({
         success: false,
-        error: 'Amount must be a number and at least 10,000'
+        error: 'Amount must be a number and at least 10,000',
+        received_amount: body.amount
       }, { status: 400 });
     }
 
@@ -232,7 +306,8 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ Midtrans response:', {
       has_token: !!midtransResponse.token,
-      has_redirect_url: !!midtransResponse.redirect_url
+      has_redirect_url: !!midtransResponse.redirect_url,
+      is_fallback: midtransResponse.is_fallback || false
     });
 
     // **PERBAIKAN 2: Cek schema dan pastikan booking_id ada**
@@ -312,7 +387,11 @@ export async function POST(request: NextRequest) {
         console.log('ℹ️ Menggunakan booking_id sementara:', paymentData.booking_id);
       }
 
-      console.log('💾 Saving to payment_transactions:', paymentData);
+      console.log('💾 Saving to payment_transactions:', {
+        order_id: paymentData.order_id,
+        booking_id: paymentData.booking_id,
+        amount: paymentData.amount
+      });
 
       try {
         const { data: insertedData, error: insertError } = await supabase
@@ -392,7 +471,11 @@ export async function POST(request: NextRequest) {
         paymentsData.booking_id = `temp-${body.order_id}`;
       }
 
-      console.log('💾 Saving to payments table:', paymentsData);
+      console.log('💾 Saving to payments table:', {
+        order_id: paymentsData.order_id,
+        booking_id: paymentsData.booking_id,
+        amount: paymentsData.amount
+      });
 
       try {
         const { data: altData, error: altError } = await supabase
@@ -454,7 +537,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // **Response**
+    // **Response dengan data lengkap**
     return NextResponse.json({
       success: true,
       data: {
@@ -467,11 +550,15 @@ export async function POST(request: NextRequest) {
         amount: amount,
         customer_name: body.customer_name,
         customer_email: body.customer_email,
+        customer_phone: body.customer_phone,
+        payment_method: body.payment_method,
+        passenger_count: body.passenger_count || 1,
         payment_id: savedPaymentId,
         payment_saved: !!savedPaymentId,
         used_table: usedTable,
         expires_at: new Date(Date.now() + 3600000).toISOString(), // 1 jam
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        ...(midtransResponse.is_fallback && { is_fallback: true })
       },
       ...(paymentError && { warning: `Database save issue: ${paymentError}` }),
       message: 'Transaksi pembayaran berhasil dibuat'
@@ -491,4 +578,34 @@ export async function POST(request: NextRequest) {
       }
     }, { status: 500 });
   }
+}
+
+// **PERBAIKAN: Tambah GET method untuk testing query parameters**
+export async function GET(request: NextRequest) {
+  console.log('🔍 /api/payment/create-transaction GET called (for testing)');
+  
+  const url = new URL(request.url);
+  const searchParams = url.searchParams;
+  
+  // Ambil data dari query parameters
+  const testData = {
+    booking_code: searchParams.get('booking_code'),
+    order_id: searchParams.get('order_id'),
+    customer_name: searchParams.get('customer_name'),
+    customer_email: searchParams.get('customer_email'),
+    amount: searchParams.get('amount'),
+    payment_method: searchParams.get('payment_method')
+  };
+  
+  return NextResponse.json({
+    success: false,
+    error: 'Use POST method instead of GET',
+    received_query_params: testData,
+    help: 'This API requires POST method. Send data as:',
+    examples: {
+      curl_post_json: 'curl -X POST "http://localhost:3000/api/payment/create-transaction" -H "Content-Type: application/json" -d \'{"order_id":"ORDER-123","amount":150000,"customer_email":"test@example.com"}\'',
+      curl_post_params: 'curl -X POST "http://localhost:3000/api/payment/create-transaction?order_id=ORDER-123&amount=150000&customer_email=test@example.com"',
+      fetch_example: 'fetch("/api/payment/create-transaction", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:"ORDER-123",amount:150000,customer_email:"test@example.com"})})'
+    }
+  }, { status: 405 });
 }

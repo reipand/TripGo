@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/app/lib/supabaseClient';
 import { User } from '@supabase/supabase-js';
+import LogoutButton from './LogoutButton'; // Import LogoutButton baru
 
 // Icon Components
 const SearchIcon = ({ className = "" }: { className?: string }) => (
@@ -84,6 +85,7 @@ const Navbar = () => {
   const [loading, setLoading] = useState(true);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   const router = useRouter();
   const pathname = usePathname();
@@ -334,20 +336,61 @@ const Navbar = () => {
     return 'User';
   };
 
-  // Handle logout
-  const handleLogout = async () => {
+  // **PERBAIKAN: Handle logout yang lebih baik**
+  const handleLogout = async (): Promise<void> => {
     try {
+      setIsLoggingOut(true);
+      
+      // Sign out from Supabase
       await supabase.auth.signOut();
+      
+      // Clear local state
       setUser(null);
       setUserProfile(null);
-      setIsUserMenuOpen(false);
-      setIsMobileMenuOpen(false);
       setNotifications([]);
       setNotificationCount(0);
       localStorage.removeItem('notificationCount');
-      router.push('/');
-    } catch (error) {
+      
+      // Close menus
+      setIsUserMenuOpen(false);
+      setIsMobileMenuOpen(false);
+      setIsNotificationsOpen(false);
+      
+      // Show success toast (optional)
+      window.dispatchEvent(new CustomEvent('showToast', {
+        detail: {
+          type: 'success',
+          message: 'Logout berhasil! Anda telah keluar dari akun.'
+        }
+      }));
+      
+      // Clear any pending notifications
+      window.dispatchEvent(new CustomEvent('notificationUpdate', { 
+        detail: { count: 0 } 
+      }));
+      
+      // Redirect to home
+      setTimeout(() => {
+        router.push('/');
+        router.refresh(); // Refresh to update auth state
+      }, 500);
+      
+      return Promise.resolve();
+      
+    } catch (error: any) {
       console.error('Error logging out:', error);
+      
+      // Show error toast
+      window.dispatchEvent(new CustomEvent('showToast', {
+        detail: {
+          type: 'error',
+          message: 'Gagal melakukan logout. Silakan coba lagi.'
+        }
+      }));
+      
+      throw error; // Re-throw so LogoutButton can catch it
+    } finally {
+      setIsLoggingOut(false);
     }
   };
 
@@ -579,7 +622,8 @@ const Navbar = () => {
                 <>
                   <button
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                    className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg px-3 py-2 hover:from-blue-100 hover:to-blue-200 transition-all duration-200 shadow-sm"
+                    disabled={isLoggingOut}
+                    className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg px-3 py-2 hover:from-blue-100 hover:to-blue-200 transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-md">
                       <span className="text-white text-sm font-bold">{getUserInitials()}</span>
@@ -673,13 +717,20 @@ const Navbar = () => {
                       
                       <div className="border-t border-gray-100 my-2"></div>
                       
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-b-xl"
-                      >
-                        <LogoutIcon className="mr-3" />
-                        Keluar
-                      </button>
+                      {/* **PERBAIKAN: Gunakan LogoutButton yang baru ** */}
+                      <div className="px-1">
+                        <LogoutButton
+                          onLogout={handleLogout}
+                          variant="text"
+                          size="full"
+                          className="w-full flex items-center justify-start px-3 py-2.5 text-red-600 hover:bg-red-50 transition-colors rounded-lg text-sm font-medium"
+                          showConfirmation={true}
+                          redirectTo="/"
+                        >
+                          <LogoutIcon className="w-4 h-4 mr-3" />
+                          <span>Keluar</span>
+                        </LogoutButton>
+                      </div>
                     </div>
                   )}
                 </>
@@ -811,13 +862,21 @@ const Navbar = () => {
                       Admin Panel
                     </Link>
                   )}
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center py-3 px-4 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <LogoutIcon className="mr-3" />
-                    Keluar
-                  </button>
+                  
+                  {/* **PERBAIKAN: Gunakan LogoutButton untuk mobile juga ** */}
+                  <div className="mt-2 pt-2 border-t border-gray-200">
+                    <LogoutButton
+                      onLogout={handleLogout}
+                      variant="text"
+                      size="full"
+                      className="w-full flex items-center justify-start py-3 px-4 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
+                      showConfirmation={true}
+                      redirectTo="/"
+                    >
+                      <LogoutIcon className="w-5 h-5 mr-3" />
+                      <span>Keluar</span>
+                    </LogoutButton>
+                  </div>
                 </div>
               </div>
             )}

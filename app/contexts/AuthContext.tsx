@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/app/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
@@ -18,7 +18,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, userData?: any) => Promise<{ error: AuthError | null; needsVerification?: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signInWithGoogle: (redirectUrl?: string) => Promise<{ error: AuthError | null }>;
-  signOut: () => Promise<void>;
+  signOut: () => Promise<{ error: AuthError | null; success: boolean }>;
   handleOAuthCallback: () => Promise<{ error: AuthError | null }>;
   resetPassword: (email: string) => Promise<{ error: AuthError | null; success?: boolean }>;
   updatePassword: (newPassword: string) => Promise<{ error: AuthError | null; success?: boolean }>;
@@ -52,114 +52,90 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [networkError, setNetworkError] = useState(false);
   const [supabaseError, setSupabaseError] = useState<string | null>(null);
   const router = useRouter();
-
-  // Check Supabase client initialization
-  useEffect(() => {
-    const checkSupabaseClient = () => {
-      if (!supabase) {
-        const errorMsg = 'Supabase client is not initialized. Check environment variables.';
-        console.error(errorMsg);
-        setSupabaseError(errorMsg);
-        setLoading(false);
-        return false;
-      }
-      
-      // Check if auth module exists
-      if (!supabase.auth) {
-        const errorMsg = 'Supabase auth module is not available.';
-        console.error(errorMsg);
-        setSupabaseError(errorMsg);
-        setLoading(false);
-        return false;
-      }
-      
-      return true;
-    };
-    
-    checkSupabaseClient();
-  }, []);
+  // Hapus retryCount dari state atau gunakan ref
+  const retryCountRef = React.useRef(0);
 
   // Clear errors function
-  const clearErrors = () => {
+  const clearErrors = useCallback(() => {
     setSupabaseError(null);
     setNetworkError(false);
-  };
+  }, []);
 
-  // Function to fetch user profile from users table
-  const fetchUserProfile = async () => {
-    if (!supabase) {
-      console.error('Cannot fetch user profile: Supabase client not available');
-      return;
-    }
-
+  // **VERSI SIMPLIFIED: Tidak perlu table users**
+  const fetchUserProfile = useCallback(async () => {
     if (!user) {
-      console.log('No user, skipping profile fetch');
+      if (isDevelopment) {
+        console.log('No user, skipping profile fetch');
+      }
       return;
     }
 
     try {
-      const { data: userData, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (error) {
-        if (typeof error === 'object' && error !== null) {
-          if (error.code === 'PGRST116') {
-            // User profile doesn't exist yet - this is normal for new users
-            if (isDevelopment) {
-              console.log('User profile not found in database (new user)');
-            }
-          } else {
-            console.error('Error fetching user profile:', {
-              message: error.message,
-              code: error.code,
-              details: error.details
-            });
-            
-            if (error.message?.includes('NetworkError') || error.message?.includes('fetch')) {
-              setNetworkError(true);
-              console.warn('Network error fetching user profile, will retry...');
-              setTimeout(() => fetchUserProfile(), 3000);
-            }
-          }
-        } else {
-          console.error('Unexpected error format:', error);
-        }
-      } else {
-        setUserProfile(userData);
-        setNetworkError(false);
-        if (isDevelopment) {
-          console.log('User profile loaded:', userData);
-        }
+      // Create profile directly from auth user data
+      const profileData = {
+        id: user.id,
+        email: user.email || '',
+        name: user.user_metadata?.name || 
+              user.user_metadata?.full_name || 
+              user.user_metadata?.user_name ||
+              '',
+        phone: user.user_metadata?.phone || '',
+        avatar_url: user.user_metadata?.avatar_url || 
+                   user.user_metadata?.picture || 
+                   user.user_metadata?.avatar || 
+                   '',
+        created_at: user.created_at,
+        updated_at: new Date().toISOString(),
+        // Include any other metadata
+        ...user.user_metadata
+      };
+      
+      setUserProfile(profileData);
+      
+      if (isDevelopment) {
+        console.log('User profile created from auth data:', profileData);
       }
+      
     } catch (error) {
-      console.error('Exception fetching user profile:', {
-        error: error,
-        message: error instanceof Error ? error.message : String(error)
-      });
-      if (error instanceof TypeError && error.message?.includes('fetch')) {
-        setNetworkError(true);
-        setTimeout(() => fetchUserProfile(), 3000);
-      }
+      console.error('Error creating user profile:', error);
+      
+      // Minimal fallback
+      const fallbackProfile = {
+        id: user.id,
+        email: user.email || '',
+        created_at: user.created_at,
+        updated_at: new Date().toISOString()
+      };
+      setUserProfile(fallbackProfile);
     }
-  };
+  }, [user]);
 
-  // Initialize auth
-  useEffect(() => {
-    if (supabaseError) {
-      setLoading(false);
+  // Function untuk retry dengan delay
+  const retryWithDelay = useCallback((callback: () => void, delay: number, maxRetries: number) => {
+    if (retryCountRef.current >= maxRetries) {
+      console.warn(`Max retries (${maxRetries}) reached`);
       return;
     }
+    
+    retryCountRef.current += 1;
+    console.warn(`Retry ${retryCountRef.current}/${maxRetries} after ${delay}ms`);
+    
+    setTimeout(() => {
+      callback();
+    }, delay);
+  }, []);
 
+  // Initialize auth - FIXED: Pisahkan retry logic
+  useEffect(() => {
     let mounted = true;
     let authSubscription: any;
 
     const initializeAuth = async () => {
       if (!supabase || !supabase.auth) {
-        setSupabaseError('Authentication service is not available');
-        setLoading(false);
+        const errorMsg = 'Authentication service is not available';
+        console.error(errorMsg);
+        setSupabaseError(errorMsg);
+        if (mounted) setLoading(false);
         return;
       }
 
@@ -168,19 +144,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('Error getting session:', error);
+          console.error('Error getting session:', {
+            error,
+            message: error.message,
+            name: error.name
+          });
           
-          // Check for "Invalid API key" error
           if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-            const errorMsg = 'Invalid Supabase API key configuration. Please check your environment variables.';
-            console.error(errorMsg);
+            const errorMsg = 'Invalid Supabase API key configuration.';
             setSupabaseError(errorMsg);
           } else if (error.message?.includes('NetworkError') || error.message?.includes('fetch')) {
             setNetworkError(true);
-            console.warn('Network error detected, will retry...');
-            setTimeout(() => {
-              if (mounted) initializeAuth();
-            }, 5000);
+            
+            // Gunakan ref-based retry tanpa memicu re-render
+            if (retryCountRef.current < 3) {
+              console.warn(`Network error detected, retrying... (${retryCountRef.current + 1}/3)`);
+              
+              // Gunakan setTimeout langsung tanpa setState
+              setTimeout(() => {
+                if (mounted) {
+                  initializeAuth();
+                }
+              }, 3000);
+            }
           }
         } else {
           setSession(session);
@@ -189,62 +175,88 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setSupabaseError(null);
           
           // Fetch user profile if user exists
-          if (session?.user) {
-            setTimeout(() => {
-              if (mounted) fetchUserProfile();
-            }, 100);
+          if (session?.user && mounted) {
+            fetchUserProfile();
           }
         }
       } catch (error: any) {
-        console.error('Exception getting session:', error);
+        console.error('Exception getting session:', {
+          error,
+          message: error?.message || 'Unknown error',
+          stack: error?.stack
+        });
         if (error instanceof TypeError && error.message?.includes('fetch')) {
           setNetworkError(true);
-          setTimeout(() => {
-            if (mounted) initializeAuth();
-          }, 5000);
         }
       } finally {
         if (mounted) {
           setLoading(false);
         }
       }
+    };
 
-      // Set up auth state change listener
+    initializeAuth();
+
+    // Set up auth state change listener
+    const setupAuthListener = () => {
+      if (!supabase || !supabase.auth) return null;
+
       try {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          async (event: string, session: Session | null) => {
+          async (event: string, currentSession: Session | null) => {
             if (!mounted) return;
             
+            console.log('Auth state changed:', event);
+            
             try {
-              setSession(session);
-              setUser(session?.user ?? null);
+              setSession(currentSession);
+              setUser(currentSession?.user ?? null);
               setNetworkError(false);
               setSupabaseError(null);
 
-              // Handle auth events
-              if (event === 'SIGNED_IN' && session?.user) {
-                // Fetch user profile
-                setTimeout(() => {
-                  if (mounted) fetchUserProfile();
-                }, 100);
-                
-                // Redirect based on stored URL or default
-                const redirectUrl = localStorage.getItem('tripgo_redirect_url');
-                if (redirectUrl) {
+              switch (event) {
+                case 'SIGNED_IN':
+                  if (currentSession?.user) {
+                    // Fetch user profile
+                    fetchUserProfile();
+                    
+                    // Reset retry counter on successful auth
+                    retryCountRef.current = 0;
+                    
+                    // Redirect based on stored URL or default
+                    const redirectUrl = localStorage.getItem('tripgo_redirect_url');
+                    if (redirectUrl) {
+                      localStorage.removeItem('tripgo_redirect_url');
+                      router.push(redirectUrl);
+                    } else {
+                      router.push('/dashboard');
+                    }
+                  }
+                  break;
+                  
+                case 'SIGNED_OUT':
+                  setUserProfile(null);
+                  setUser(null);
+                  setSession(null);
+                  // Reset retry counter on sign out
+                  retryCountRef.current = 0;
                   localStorage.removeItem('tripgo_redirect_url');
-                  router.push(redirectUrl);
-                } else {
-                  router.push('/dashboard');
-                }
-              } else if (event === 'SIGNED_OUT') {
-                setUserProfile(null);
-                router.push('/');
-              } else if (event === 'USER_UPDATED') {
-                fetchUserProfile();
-              } else if (event === 'TOKEN_REFRESHED') {
-                if (isDevelopment) {
-                  console.log('Session token refreshed');
-                }
+                  localStorage.removeItem('notificationCount');
+                  router.push('/');
+                  break;
+                  
+                case 'USER_UPDATED':
+                  fetchUserProfile();
+                  break;
+                  
+                case 'TOKEN_REFRESHED':
+                  if (isDevelopment) {
+                    console.log('Session token refreshed');
+                  }
+                  break;
+                  
+                default:
+                  break;
               }
             } catch (eventError) {
               console.error('Error in auth state change:', eventError);
@@ -252,21 +264,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         );
 
-        authSubscription = subscription;
+        return subscription;
       } catch (error) {
         console.error('Error setting up auth listener:', error);
+        return null;
       }
     };
 
-    initializeAuth();
+    authSubscription = setupAuthListener();
 
     return () => {
       mounted = false;
       if (authSubscription) {
         authSubscription.unsubscribe();
       }
+      // Reset retry counter on unmount
+      retryCountRef.current = 0;
     };
-  }, [router, supabaseError]);
+  }, [router, fetchUserProfile]); // Hapus retryCount dari dependencies
 
   const signUp = async (email: string, password: string, userData?: any) => {
     clearErrors();
@@ -291,23 +306,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         password,
         options: {
           data: userData,
-          emailRedirectTo: `${window.location.origin}/auth/verify-email?email=${encodeURIComponent(email)}`
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
 
       if (error) {
-        console.error('SignUp Error:', error);
+        console.error('SignUp Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         
-        // Check for API key error
         if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
+          const errorMsg = 'Invalid Supabase configuration.';
           setSupabaseError(errorMsg);
           return { error: { message: errorMsg } as AuthError };
         }
         
         if (error.message?.includes('NetworkError') || error.message?.includes('fetch')) {
           setNetworkError(true);
-          return { error: { message: 'Network error. Please check your internet connection and try again.' } as AuthError };
+          return { error: { message: 'Network error. Silakan coba lagi.' } as AuthError };
         }
         
         // Handle specific errors
@@ -316,11 +334,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         if (error.message.includes('User already registered')) {
-          return { error: { message: 'Email sudah terdaftar. Silakan gunakan email lain atau login' } as AuthError };
-        }
-        
-        if (error.message.includes('Invalid email')) {
-          return { error: { message: 'Email tidak valid' } as AuthError };
+          return { error: { message: 'Email sudah terdaftar.' } as AuthError };
         }
         
         return { error };
@@ -332,8 +346,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       return { error: null };
-    } catch (error) {
-      console.error('SignUp Exception:', error);
+    } catch (error: any) {
+      console.error('SignUp Exception:', {
+        error,
+        message: error?.message || 'Unknown error'
+      });
       return { error: error as AuthError };
     }
   };
@@ -364,18 +381,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
-        console.error('SignIn Error:', error);
+        console.error('SignIn Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         
-        // Check for API key error
         if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
+          const errorMsg = 'Invalid Supabase configuration.';
           setSupabaseError(errorMsg);
           return { error: { message: errorMsg } as AuthError };
         }
         
         if (error.message?.includes('NetworkError') || error.message?.includes('fetch')) {
           setNetworkError(true);
-          return { error: { message: 'Network error. Please check your internet connection and try again.' } as AuthError };
+          return { error: { message: 'Network error.' } as AuthError };
         }
         
         // Handle specific login errors
@@ -384,15 +404,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         if (error.message.includes('Email not confirmed')) {
-          return { error: { message: 'Email belum diverifikasi. Silakan cek email Anda dan klik link verifikasi' } as AuthError };
-        }
-        
-        if (error.message.includes('Too many requests')) {
-          return { error: { message: 'Terlalu banyak percobaan login. Silakan coba lagi nanti' } as AuthError };
-        }
-        
-        if (error.message.includes('User not found')) {
-          return { error: { message: 'Email tidak terdaftar. Silakan daftar terlebih dahulu' } as AuthError };
+          return { error: { message: 'Email belum diverifikasi.' } as AuthError };
         }
         
         return { error };
@@ -402,7 +414,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return { error: null };
     } catch (error: any) {
-      console.error('SignIn Exception:', error);
+      console.error('SignIn Exception:', {
+        error,
+        message: error?.message || 'Unknown error'
+      });
       return { error: error as AuthError };
     }
   };
@@ -416,50 +431,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     try {
-      let redirectTo = `${window.location.origin}/auth/callback`;
-      
-      if (redirectUrl) {
-        redirectTo = redirectUrl;
-      }
-
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
+          redirectTo: redirectUrl || `${window.location.origin}/auth/callback`,
+        }
       });
 
       if (error) {
-        console.error('Google Sign In Error:', error);
-        
-        // Check for API key error
-        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
-          setSupabaseError(errorMsg);
-          return { error: { message: errorMsg } as AuthError };
-        }
-        
-        if (error.message.includes('popup_blocked')) {
-          return { error: { message: 'Popup diblokir oleh browser. Silakan izinkan popup untuk situs ini.' } as AuthError };
-        }
-        
-        if (error.message.includes('access_denied')) {
-          return { error: { message: 'Anda membatalkan proses login dengan Google.' } as AuthError };
-        }
-        
-        if (error.message.includes('provider_disabled')) {
-          return { error: { message: 'Login dengan Google belum diaktifkan di sistem.' } as AuthError };
-        }
-        
-        if (error.message.includes('network_error')) {
-          setNetworkError(true);
-          return { error: { message: 'Network error. Please check your internet connection and try again.' } as AuthError };
-        }
-        
+        console.error('Google Sign In Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return { error };
       }
 
@@ -470,18 +454,67 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Sign Out Function
   const signOut = async () => {
     clearErrors();
     
     if (!supabase || !supabase.auth) {
       console.error('Cannot sign out: Authentication service not available');
-      return;
+      return { error: { message: 'Authentication service is not available' } as AuthError, success: false };
     }
 
     try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Error signing out:', error);
+      // Clear local state first
+      setUserProfile(null);
+      setUser(null);
+      setSession(null);
+      
+      // Reset retry counter
+      retryCountRef.current = 0;
+      
+      // Clear local storage
+      localStorage.removeItem('notificationCount');
+      localStorage.removeItem('tripgo_redirect_url');
+      
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Supabase sign out error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
+        
+        // Even if there's an error, clear local state
+        setUser(null);
+        setSession(null);
+        setUserProfile(null);
+        
+        return { error, success: false };
+      }
+      
+      // Dispatch events to notify other components
+      window.dispatchEvent(new CustomEvent('authChange', { detail: { user: null } }));
+      window.dispatchEvent(new CustomEvent('notificationUpdate', { detail: { count: 0 } }));
+      
+      return { error: null, success: true };
+      
+    } catch (error: any) {
+      console.error('Error signing out:', {
+        error,
+        message: error?.message || 'Unknown error'
+      });
+      
+      // Clear state even if there's an error
+      setUser(null);
+      setSession(null);
+      setUserProfile(null);
+      
+      return { 
+        error: error as AuthError, 
+        success: false 
+      };
     }
   };
 
@@ -497,7 +530,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
-        console.error('OAuth callback error:', error);
+        console.error('OAuth callback error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return { error };
       }
       
@@ -536,23 +573,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
-        console.error('Reset Password Error:', error);
-        
-        // Check for API key error
-        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
-          setSupabaseError(errorMsg);
-          return { error: { message: errorMsg } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('User not found')) {
-          return { error: { message: 'Email tidak terdaftar' } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Too many requests')) {
-          return { error: { message: 'Terlalu banyak permintaan. Silakan coba lagi nanti' } as AuthError, success: false };
-        }
-        
+        console.error('Reset Password Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return { error, success: false };
       }
 
@@ -580,19 +605,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
-        console.error('Update Password Error:', error);
-        
-        // Check for API key error
-        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
-          setSupabaseError(errorMsg);
-          return { error: { message: errorMsg } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Password should contain')) {
-          return { error: { message: 'Password harus mengandung minimal 1 huruf kecil, 1 huruf besar, dan 1 angka' } as AuthError, success: false };
-        }
-        
+        console.error('Update Password Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return { error, success: false };
       }
 
@@ -628,31 +645,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
-        console.error('Verify Email Error:', error);
-        
-        // Check for API key error
-        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
-          setSupabaseError(errorMsg);
-          return { error: { message: errorMsg } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Token has expired') || error.message.includes('otp expired')) {
-          return { error: { message: 'Kode verifikasi sudah kadaluarsa. Silakan minta kode baru.' } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Invalid token') || error.message.includes('Token is invalid')) {
-          return { error: { message: 'Kode verifikasi tidak valid' } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Email not found')) {
-          return { error: { message: 'Email tidak ditemukan' } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('too many requests')) {
-          return { error: { message: 'Terlalu banyak percobaan. Silakan coba lagi nanti.' } as AuthError, success: false };
-        }
-        
+        console.error('Verify Email Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return { error, success: false };
       }
 
@@ -664,7 +661,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { error: { message: 'Verifikasi gagal' } as AuthError, success: false };
       }
     } catch (error: any) {
-      console.error('Verify Email Exception:', error);
+      console.error('Verify Email Exception:', {
+        error,
+        message: error?.message || 'Unknown error'
+      });
       return { error: error as AuthError, success: false };
     }
   };
@@ -686,38 +686,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         type: 'signup',
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/verify-email`
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
 
       if (error) {
-        console.error('Resend Verification Code Error:', error);
-        
-        // Check for API key error
-        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
-          setSupabaseError(errorMsg);
-          return { error: { message: errorMsg } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Email not found')) {
-          return { error: { message: 'Email tidak ditemukan' } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Too many requests')) {
-          return { error: { message: 'Terlalu banyak permintaan. Silakan coba lagi nanti.' } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('already confirmed')) {
-          return { error: { message: 'Email sudah diverifikasi. Silakan login.' } as AuthError, success: false };
-        }
-        
+        console.error('Resend Verification Code Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return { error, success: false };
       }
 
       return { error: null, success: true };
     } catch (error: any) {
-      console.error('Resend Verification Code Exception:', error);
+      console.error('Resend Verification Code Exception:', {
+        error,
+        message: error?.message || 'Unknown error'
+      });
       return { error: error as AuthError, success: false };
     }
   };
@@ -740,23 +727,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
-        console.error('Verify Email Token Error:', error);
-        
-        // Check for API key error
-        if (error.message?.includes('Invalid API key') || error.message?.includes('JWT')) {
-          const errorMsg = 'Invalid Supabase configuration. Please contact support.';
-          setSupabaseError(errorMsg);
-          return { error: { message: errorMsg } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Token has expired') || error.message.includes('otp expired')) {
-          return { error: { message: 'Token verifikasi sudah kadaluarsa. Silakan minta kode baru' } as AuthError, success: false };
-        }
-        
-        if (error.message.includes('Invalid token')) {
-          return { error: { message: 'Token verifikasi tidak valid' } as AuthError, success: false };
-        }
-        
+        console.error('Verify Email Token Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return { error, success: false };
       }
 
@@ -768,7 +743,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { error: { message: 'Verifikasi gagal' } as AuthError, success: false };
       }
     } catch (error: any) {
-      console.error('Verify Email Token Exception:', error);
+      console.error('Verify Email Token Exception:', {
+        error,
+        message: error?.message || 'Unknown error'
+      });
       return { error: error as AuthError, success: false };
     }
   };
@@ -784,7 +762,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const { data, error } = await supabase.auth.refreshSession();
       if (error) {
-        console.error('Refresh Session Error:', error);
+        console.error('Refresh Session Error:', {
+          error,
+          message: error.message,
+          name: error.name
+        });
         return;
       }
       

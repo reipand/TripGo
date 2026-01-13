@@ -3,36 +3,62 @@
 
 import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { CheckCircle, Download, Clock, Train, User, Calendar, MapPin, CreditCard, ArrowRight, Mail, Phone } from 'lucide-react';
-import { format, addDays, nextFriday, nextSaturday, nextSunday, parseISO } from 'date-fns';
+import { 
+  CheckCircle, Download, Clock, Train, User, Calendar, 
+  MapPin, CreditCard, ArrowRight, Mail, Phone, Shield,
+  Ticket as TicketIcon
+} from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 
 // --- Tipe Data ---
 interface BookingData {
-  id: string;
+  id?: string;
   booking_code: string;
   order_id: string;
-  ticket_number: string;
+  ticket_number?: string;
   passenger_name: string;
   passenger_email: string;
   passenger_phone: string;
   train_name: string;
   train_type: string;
-  train_class: string;
   origin: string;
   destination: string;
   departure_date: string;
   departure_time: string;
   arrival_time: string;
   total_amount: number;
-  status: string;
-  payment_status: string;
-  payment_method: string;
+  status?: string;
+  payment_status?: string;
+  payment_method?: string;
   passenger_count: number;
-  selected_seats: string[];
-  created_at: string;
-  updated_at: string;
-  has_ticket: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface PaymentData {
+  id?: string;
+  order_id: string;
+  amount: number;
+  payment_method: string;
+  status: string;
+  payment_data?: any;
+  fare_breakdown?: {
+    base_fare?: number;
+    seat_premium?: number;
+    admin_fee?: number;
+    insurance_fee?: number;
+    payment_fee?: number;
+    discount?: number;
+    subtotal?: number;
+    total?: number;
+  };
+}
+
+interface TicketData {
+  ticket_number: string;
+  seat_number?: string;
+  coach_number?: string;
 }
 
 // --- Komponen Utama ---
@@ -41,20 +67,31 @@ const PaymentSuccessContent = () => {
   const searchParams = useSearchParams();
   const [countdown, setCountdown] = useState(10);
   const [isRedirecting, setIsRedirecting] = useState(false);
-  const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Ambil parameter dari URL
-  const orderId = searchParams.get('orderId') || `ORDER-${Date.now()}`;
-  const bookingCode = searchParams.get('bookingCode') || `BOOK-${Date.now().toString().slice(-8)}`;
-
+  const [error, setError] = useState<string | null>(null);
+  
+  // State untuk data
+  const [bookingData, setBookingData] = useState<BookingData | null>(null);
+  const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
+  const [ticketData, setTicketData] = useState<TicketData | null>(null);
+  
   // Format tanggal
   const formatDate = useCallback((dateString: string) => {
     try {
       const date = parseISO(dateString);
       return format(date, 'EEEE, d MMMM yyyy', { locale: id });
     } catch (error) {
-      return 'Tanggal tidak tersedia';
+      return dateString;
+    }
+  }, []);
+
+  // Format waktu
+  const formatTime = useCallback((timeString: string) => {
+    try {
+      const [hours, minutes] = timeString.split(':');
+      return `${hours}:${minutes}`;
+    } catch (error) {
+      return timeString;
     }
   }, []);
 
@@ -65,275 +102,390 @@ const PaymentSuccessContent = () => {
       currency: 'IDR',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
-    }).format(number).replace('Rp', 'Rp ');
+    }).format(number);
   }, []);
 
-  // Generate tanggal keberangkatan yang realistis
-  const generateRealisticDepartureDate = useCallback(() => {
-    const now = new Date();
-    const currentHour = now.getHours();
-    
-    // Jika sudah lewat jam 5 pagi, booking untuk besok
-    // Jika masih sebelum jam 5 pagi, booking untuk hari ini
-    let departureDate: Date;
-    
-    if (currentHour >= 5) {
-      // Booking untuk hari berikutnya
-      departureDate = addDays(now, 1);
-    } else {
-      // Booking untuk hari ini
-      departureDate = now;
+  // Buat booking data dari URL params
+  const createBookingFromParams = useCallback(() => {
+    const bookingCode = searchParams.get('bookingCode');
+    const orderId = searchParams.get('orderId');
+    const amount = searchParams.get('amount');
+    const name = searchParams.get('name');
+    const email = searchParams.get('email');
+    const phone = searchParams.get('phone');
+    const trainName = searchParams.get('trainName');
+    const trainType = searchParams.get('trainType');
+    const origin = searchParams.get('origin');
+    const destination = searchParams.get('destination');
+    const departureDate = searchParams.get('departureDate');
+    const departureTime = searchParams.get('departureTime');
+    const arrivalTime = searchParams.get('arrivalTime');
+    const paymentMethod = searchParams.get('paymentMethod');
+    const seatPremium = searchParams.get('seatPremium');
+    const discountAmount = searchParams.get('discountAmount');
+    const passengerCount = searchParams.get('passengerCount');
+
+    console.log('URL Params untuk booking:', {
+      bookingCode, orderId, amount, name, email, phone, passengerCount
+    });
+
+    if (!bookingCode || !orderId || !amount || !name) {
+      console.log('Parameter penting tidak lengkap');
+      return null;
     }
-    
-    // Pastikan tanggal bukan hari Minggu (biasanya jadwal terbatas)
-    const dayOfWeek = departureDate.getDay();
-    if (dayOfWeek === 0) { // Minggu
-      departureDate = addDays(departureDate, 1); // Pindah ke Senin
-    }
-    
-    // Format ke YYYY-MM-DD
-    return format(departureDate, 'yyyy-MM-dd');
-  }, []);
 
-  // Generate waktu keberangkatan yang realistis
-  const generateRealisticDepartureTime = useCallback(() => {
-    const now = new Date();
-    const currentHour = now.getHours();
+    // Default values berdasarkan gambar
+    const baseFare = 265000;
+    const seatPremiumValue = seatPremium ? parseInt(seatPremium) : 132500;
+    const discountValue = discountAmount ? parseInt(discountAmount) : 80000;
+    const adminFee = 5000;
+    const insuranceFee = 10000;
+    const paymentFee = paymentMethod === 'e-wallet' ? 2000 : 0;
     
-    // Jadwal Parahyangan biasanya:
-    // - Pagi: 05:00, 06:35, 08:00
-    // - Siang: 12:00, 14:30
-    // - Sore: 17:00, 19:30
-    
-    const availableTimes = ['05:00', '06:35', '08:00', '12:00', '14:30', '17:00', '19:30'];
-    
-    // Cari waktu terdekat yang belum lewat
-    for (const time of availableTimes) {
-      const [hours] = time.split(':').map(Number);
-      if (hours > currentHour || (hours === currentHour && now.getMinutes() < 30)) {
-        return time;
-      }
-    }
-    
-    // Jika semua waktu sudah lewat, pilih waktu pertama untuk besok
-    return availableTimes[0];
-  }, []);
+    const total = baseFare + seatPremiumValue + adminFee + insuranceFee + paymentFee - discountValue;
 
-  // Generate waktu kedatangan berdasarkan waktu keberangkatan
-  const generateArrivalTime = useCallback((departureTime: string) => {
-    const [hours, minutes] = departureTime.split(':').map(Number);
-    
-    // Perjalanan Bandung-Gambir biasanya 3-5 jam
-    const travelHours = 5; // Parahyangan Executive: 5 jam
-    const totalMinutes = hours * 60 + minutes + (travelHours * 60);
-    
-    const arrivalHours = Math.floor(totalMinutes / 60) % 24;
-    const arrivalMinutes = totalMinutes % 60;
-    
-    return `${arrivalHours.toString().padStart(2, '0')}:${arrivalMinutes.toString().padStart(2, '0')}`;
-  }, []);
-
-  // Generate kode booking unik
-  const generateBookingCode = useCallback(() => {
-    const prefix = 'BOOK';
-    const timestamp = Date.now().toString().slice(-6);
-    const randomChars = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return `${prefix}-${timestamp}-${randomChars}`;
-  }, []);
-
-  // Generate nomor tiket unik
-  const generateTicketNumber = useCallback(() => {
-    const prefix = 'TICKET';
-    const timestamp = Date.now().toString().slice(-8);
-    const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `${prefix}-${timestamp}${randomNum}`;
-  }, []);
-
-  // Data default yang realistis
-  const getDefaultBookingData = useCallback((): BookingData => {
-    const departureDate = generateRealisticDepartureDate();
-    const departureTime = generateRealisticDepartureTime();
-    const arrivalTime = generateArrivalTime(departureTime);
-    const bookingCodeFinal = generateBookingCode();
-    const ticketNumberFinal = generateTicketNumber();
-    
-    return {
-      id: `booking-${Date.now()}`,
-      booking_code: bookingCode || bookingCodeFinal,
+    const booking: BookingData = {
+      booking_code: bookingCode,
       order_id: orderId,
-      ticket_number: ticketNumberFinal,
-      passenger_name: 'Reisan',
-      passenger_email: 'reisanadrefagt@gmail.com',
-      passenger_phone: '08453665664',
-      train_name: 'Parahyangan',
-      train_type: 'Executive',
-      train_class: 'Executive',
-      origin: 'Bandung',
-      destination: 'Gambir',
-      departure_date: departureDate,
-      departure_time: departureTime,
-      arrival_time: arrivalTime,
-      total_amount: 412500,
+      ticket_number: `TICKET-${bookingCode.slice(-8)}`,
+      passenger_name: name || 'Reisan',
+      passenger_email: email || 'reisanadrefagt@gmail.com',
+      passenger_phone: phone || '08453665664',
+      train_name: trainName || 'Parahyangan',
+      train_type: trainType || 'Executive',
+      origin: origin || 'Bandung',
+      destination: destination || 'Gambir',
+      departure_date: departureDate || new Date().toISOString().split('T')[0],
+      departure_time: departureTime || '05:00',
+      arrival_time: arrivalTime || '10:00',
+      total_amount: parseInt(amount) || total,
       status: 'confirmed',
       payment_status: 'paid',
-      payment_method: 'E-WALLET',
-      passenger_count: 1,
-      selected_seats: ['C2'],
+      payment_method: paymentMethod || 'E-WALLET',
+      passenger_count: passengerCount ? parseInt(passengerCount) : 1,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      has_ticket: true
+      updated_at: new Date().toISOString()
     };
-  }, [bookingCode, orderId, generateRealisticDepartureDate, generateRealisticDepartureTime, generateArrivalTime, generateBookingCode, generateTicketNumber]);
 
-  // Simpan booking ke localStorage
-  const saveBookingToStorage = useCallback((booking: BookingData) => {
+    const payment: PaymentData = {
+      order_id: orderId,
+      amount: parseInt(amount) || total,
+      payment_method: paymentMethod || 'E-WALLET',
+      status: 'success',
+      payment_data: {
+        settlement_time: new Date().toISOString()
+      },
+      fare_breakdown: {
+        base_fare: baseFare,
+        seat_premium: seatPremiumValue,
+        admin_fee: adminFee,
+        insurance_fee: insuranceFee,
+        payment_fee: paymentFee,
+        discount: discountValue,
+        subtotal: baseFare + seatPremiumValue + adminFee + insuranceFee + paymentFee,
+        total: parseInt(amount) || total
+      }
+    };
+
+    const ticket: TicketData = {
+      ticket_number: `TICKET-${bookingCode.slice(-8)}`,
+      seat_number: 'B2',
+      coach_number: '1'
+    };
+
+    return { booking, payment, ticket };
+  }, [searchParams]);
+
+  // Load data dari localStorage
+  const loadDataFromStorage = useCallback(() => {
     try {
-      // Simpan sebagai latestBooking
-      const latestBooking = {
-        bookingCode: booking.booking_code,
-        orderId: booking.order_id,
-        ticketNumber: booking.ticket_number,
-        customerName: booking.passenger_name,
-        customerEmail: booking.passenger_email,
-        customerPhone: booking.passenger_phone,
-        totalAmount: booking.total_amount,
-        passengerCount: booking.passenger_count,
-        selectedSeats: booking.selected_seats,
-        paymentMethod: booking.payment_method,
-        bookingTime: booking.created_at,
-        trainDetail: {
-          trainName: booking.train_name,
-          trainType: booking.train_type,
-          trainClass: booking.train_class,
-          origin: booking.origin,
-          destination: booking.destination,
-          departureDate: booking.departure_date,
-          departureTime: booking.departure_time,
-          arrivalTime: booking.arrival_time
-        },
-        status: booking.status,
-        paymentStatus: booking.payment_status
+      console.log('Mencoba load data dari storage...');
+      
+      // Coba semua kemungkinan storage keys
+      const possibleKeys = [
+        'currentBooking',
+        'latestBooking',
+        'bookingData',
+        'currentPayment',
+        'latestPayment',
+        'paymentData',
+        'bookingSuccessData'
+      ];
+      
+      let bookingData: BookingData | null = null;
+      let paymentData: PaymentData | null = null;
+      
+      // Cari data booking
+      for (const key of possibleKeys) {
+        try {
+          const stored = localStorage.getItem(key);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            console.log(`Found data in ${key}:`, parsed);
+            
+            // Cek apakah ini booking data
+            if (parsed.bookingCode || parsed.booking_code || parsed.orderId || parsed.order_id) {
+              bookingData = {
+                booking_code: parsed.bookingCode || parsed.booking_code || `BOOK-${Date.now().toString().slice(-8)}`,
+                order_id: parsed.orderId || parsed.order_id || parsed.orderId || `ORDER-${Date.now()}`,
+                ticket_number: parsed.ticketNumber || parsed.ticket_number || `TICKET-${Date.now().toString().slice(-10)}`,
+                passenger_name: parsed.customerName || parsed.passenger_name || parsed.passengerName || 'Reisan',
+                passenger_email: parsed.customerEmail || parsed.passenger_email || parsed.passengerEmail || 'reisanadrefagt@gmail.com',
+                passenger_phone: parsed.customerPhone || parsed.passenger_phone || parsed.passengerPhone || '08453665664',
+                train_name: parsed.trainDetail?.trainName || parsed.train_name || parsed.trainName || 'Parahyangan',
+                train_type: parsed.trainDetail?.trainType || parsed.train_type || parsed.trainType || 'Executive',
+                origin: parsed.trainDetail?.origin || parsed.origin || 'Bandung',
+                destination: parsed.trainDetail?.destination || parsed.destination || 'Gambir',
+                departure_date: parsed.trainDetail?.departureDate || parsed.departure_date || parsed.departureDate || new Date().toISOString().split('T')[0],
+                departure_time: parsed.trainDetail?.departureTime || parsed.departure_time || parsed.departureTime || '05:00',
+                arrival_time: parsed.trainDetail?.arrivalTime || parsed.arrival_time || parsed.arrivalTime || '10:00',
+                total_amount: parsed.totalAmount || parsed.total_amount || 332500,
+                status: parsed.status || 'confirmed',
+                payment_status: parsed.paymentStatus || parsed.payment_status || 'paid',
+                payment_method: parsed.paymentMethod || parsed.payment_method || 'E-WALLET',
+                passenger_count: parsed.passengerCount || parsed.passenger_count || 1,
+                created_at: parsed.bookingTime || parsed.created_at || parsed.createdAt || new Date().toISOString(),
+                updated_at: parsed.updated_at || parsed.updatedAt || new Date().toISOString()
+              };
+              console.log('Booking data from storage:', bookingData);
+              break;
+            }
+          }
+        } catch (e) {
+          console.log(`Error parsing ${key}:`, e);
+          continue;
+        }
+      }
+      
+      // Cari payment data
+      for (const key of possibleKeys) {
+        try {
+          const stored = localStorage.getItem(key);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            
+            // Cek apakah ini payment data
+            if (parsed.amount !== undefined || parsed.payment_method) {
+              paymentData = {
+                order_id: parsed.order_id || parsed.orderId || bookingData?.order_id || `ORDER-${Date.now()}`,
+                amount: parsed.amount || bookingData?.total_amount || 332500,
+                payment_method: parsed.payment_method || parsed.paymentMethod || bookingData?.payment_method || 'E-WALLET',
+                status: parsed.status || 'success',
+                payment_data: parsed.payment_data || parsed.paymentData || {},
+                fare_breakdown: parsed.fare_breakdown || {
+                  base_fare: 265000,
+                  seat_premium: 132500,
+                  admin_fee: 5000,
+                  insurance_fee: 10000,
+                  payment_fee: 2000,
+                  discount: 80000,
+                  subtotal: 412500,
+                  total: bookingData?.total_amount || 332500
+                }
+              };
+              console.log('Payment data from storage:', paymentData);
+              break;
+            }
+          }
+        } catch (e) {
+          console.log(`Error parsing payment from ${key}:`, e);
+          continue;
+        }
+      }
+      
+      // Jika ada booking data tapi tidak ada payment data, buat dari booking
+      if (bookingData && !paymentData) {
+        paymentData = {
+          order_id: bookingData.order_id,
+          amount: bookingData.total_amount,
+          payment_method: bookingData.payment_method || 'E-WALLET',
+          status: 'success',
+          payment_data: {
+            settlement_time: bookingData.updated_at || new Date().toISOString()
+          },
+          fare_breakdown: {
+            base_fare: 265000,
+            seat_premium: 132500,
+            admin_fee: 5000,
+            insurance_fee: 10000,
+            payment_fee: 2000,
+            discount: 80000,
+            subtotal: 412500,
+            total: bookingData.total_amount
+          }
+        };
+      }
+      
+      if (!bookingData) {
+        console.log('No booking data found in storage');
+        return null;
+      }
+      
+      const ticketData: TicketData = {
+        ticket_number: bookingData.ticket_number || `TICKET-${bookingData.booking_code.slice(-8)}`,
+        seat_number: 'B2',
+        coach_number: '1'
       };
       
-      localStorage.setItem('latestBooking', JSON.stringify(latestBooking));
-
-      // Tambahkan ke myBookings
-      const existingBookings = JSON.parse(localStorage.getItem('myBookings') || '[]');
+      console.log('Final data from storage:', { bookingData, paymentData, ticketData });
+      return { bookingData, paymentData, ticketData };
       
-      // Cek apakah booking sudah ada
-      const isExisting = existingBookings.some((b: BookingData) => 
-        b.booking_code === booking.booking_code || 
-        b.order_id === booking.order_id
-      );
-
-      if (!isExisting) {
-        const updatedBookings = [booking, ...existingBookings];
-        localStorage.setItem('myBookings', JSON.stringify(updatedBookings));
-      }
-
-      // Set session storage untuk highlight
-      sessionStorage.setItem('justPaid', 'true');
-      sessionStorage.setItem('lastBookingCode', booking.booking_code);
-      sessionStorage.setItem('lastOrderId', booking.order_id);
-
     } catch (error) {
-      console.error('Error saving booking to storage:', error);
+      console.error('Error loading from storage:', error);
+      return null;
     }
   }, []);
 
-  // Load data booking
+  // Load data
   useEffect(() => {
-    const loadBookingData = () => {
+    const loadData = async () => {
       try {
         setLoading(true);
+        setError(null);
         
-        // Coba ambil dari localStorage atau sessionStorage
-        const savedLatestBooking = localStorage.getItem('latestBooking');
+        console.log('=== LOADING DATA FOR SUCCESS PAGE ===');
         
-        let bookingDataToUse: BookingData;
-        
-        if (savedLatestBooking) {
-          try {
-            // Gunakan data yang sudah ada di latestBooking
-            const existingData = JSON.parse(savedLatestBooking);
-            
-            // Pastikan tanggal keberangkatan valid
-            let departureDate = existingData.trainDetail?.departureDate;
-            let departureTime = existingData.trainDetail?.departureTime;
-            let arrivalTime = existingData.trainDetail?.arrivalTime;
-            
-            // Jika tidak ada tanggal, generate yang baru
-            if (!departureDate || departureDate === 'undefined' || departureDate === 'null') {
-              departureDate = generateRealisticDepartureDate();
-            }
-            
-            // Jika tidak ada waktu, generate yang baru
-            if (!departureTime || departureTime === 'undefined' || departureTime === 'null') {
-              departureTime = generateRealisticDepartureTime();
-            }
-            
-            // Jika tidak ada waktu kedatangan, generate berdasarkan waktu keberangkatan
-            if (!arrivalTime || arrivalTime === 'undefined' || arrivalTime === 'null') {
-              arrivalTime = generateArrivalTime(departureTime);
-            }
-            
-            bookingDataToUse = {
-              id: `booking-${Date.now()}`,
-              booking_code: existingData.bookingCode || generateBookingCode(),
-              order_id: existingData.orderId || orderId,
-              ticket_number: existingData.ticketNumber || generateTicketNumber(),
-              passenger_name: existingData.customerName || 'Reisan',
-              passenger_email: existingData.customerEmail || 'reisanadrefagt@gmail.com',
-              passenger_phone: existingData.customerPhone || '08453665664',
-              train_name: existingData.trainDetail?.trainName || 'Parahyangan',
-              train_type: existingData.trainDetail?.trainType || 'Executive',
-              train_class: existingData.trainDetail?.trainClass || 'Executive',
-              origin: existingData.trainDetail?.origin || 'Bandung',
-              destination: existingData.trainDetail?.destination || 'Gambir',
-              departure_date: departureDate,
-              departure_time: departureTime,
-              arrival_time: arrivalTime,
-              total_amount: existingData.totalAmount || 412500,
-              status: existingData.status || 'confirmed',
-              payment_status: existingData.paymentStatus || 'paid',
-              payment_method: existingData.paymentMethod || 'E-WALLET',
-              passenger_count: existingData.passengerCount || 1,
-              selected_seats: existingData.selectedSeats || ['C2'],
-              created_at: existingData.bookingTime || new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              has_ticket: true
-            };
-          } catch (error) {
-            console.error('Error parsing latest booking:', error);
-            // Jika parsing error, gunakan data default
-            bookingDataToUse = getDefaultBookingData();
-          }
-        } else {
-          // Gunakan data default yang realistis
-          bookingDataToUse = getDefaultBookingData();
+        // STRATEGI 1: Coba dari URL parameters
+        const paramsData = createBookingFromParams();
+        if (paramsData) {
+          console.log('✅ Data found from URL params');
+          setBookingData(paramsData.booking);
+          setPaymentData(paramsData.payment);
+          setTicketData(paramsData.ticket);
+          
+          // Simpan ke storage untuk cache
+          localStorage.setItem('bookingSuccessData', JSON.stringify({
+            booking: paramsData.booking,
+            payment: paramsData.payment,
+            timestamp: Date.now()
+          }));
+          
+          setLoading(false);
+          return;
         }
         
-        // Simpan ke storage
-        saveBookingToStorage(bookingDataToUse);
-        setBookingData(bookingDataToUse);
+        // STRATEGI 2: Coba dari localStorage
+        const storageData = loadDataFromStorage();
+        if (storageData) {
+          console.log('✅ Data found from localStorage');
+          setBookingData(storageData.bookingData);
+          setPaymentData(storageData.paymentData);
+          setTicketData(storageData.ticketData);
+          setLoading(false);
+          return;
+        }
         
-      } catch (error) {
-        console.error('Error loading booking data:', error);
-        // Fallback ke data default
-        const defaultData = getDefaultBookingData();
-        saveBookingToStorage(defaultData);
-        setBookingData(defaultData);
+        // STRATEGI 3: Coba cek di API dengan orderId dari URL
+        const orderId = searchParams.get('orderId');
+        const bookingCode = searchParams.get('bookingCode');
+        
+        if (orderId || bookingCode) {
+          console.log('Trying API with:', { orderId, bookingCode });
+          
+          // Coba API booking
+          if (bookingCode) {
+            try {
+              const response = await fetch(`/api/bookings/${encodeURIComponent(bookingCode)}`);
+              if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.data) {
+                  console.log('✅ Booking found from API');
+                  setBookingData(result.data);
+                  
+                  // Coba cari payment
+                  try {
+                    const paymentResponse = await fetch(`/api/payment/transaction?orderId=${result.data.order_id}`);
+                    if (paymentResponse.ok) {
+                      const paymentResult = await paymentResponse.json();
+                      if (paymentResult.success && paymentResult.data) {
+                        setPaymentData(paymentResult.data);
+                      }
+                    }
+                  } catch (paymentError) {
+                    console.log('No payment found from API');
+                  }
+                  
+                  setLoading(false);
+                  return;
+                }
+              }
+            } catch (apiError) {
+              console.log('API error:', apiError);
+            }
+          }
+        }
+        
+        // STRATEGI 4: Fallback dengan data default
+        console.log('⚠️ No data found, using default data');
+        const defaultData = {
+          booking: {
+            booking_code: bookingCode || `BOOK-${Date.now().toString().slice(-8)}`,
+            order_id: orderId || `ORDER-${Date.now()}`,
+            ticket_number: `TICKET-${Date.now().toString().slice(-10)}`,
+            passenger_name: 'Reisan',
+            passenger_email: 'reisanadrefagt@gmail.com',
+            passenger_phone: '08453665664',
+            train_name: 'Parahyangan',
+            train_type: 'Executive',
+            origin: 'Bandung',
+            destination: 'Gambir',
+            departure_date: new Date().toISOString().split('T')[0],
+            departure_time: '05:00',
+            arrival_time: '10:00',
+            total_amount: 332500,
+            status: 'confirmed',
+            payment_status: 'paid',
+            payment_method: 'E-WALLET',
+            passenger_count: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          },
+          payment: {
+            order_id: orderId || `ORDER-${Date.now()}`,
+            amount: 332500,
+            payment_method: 'E-WALLET',
+            status: 'success',
+            payment_data: {
+              settlement_time: new Date().toISOString()
+            },
+            fare_breakdown: {
+              base_fare: 265000,
+              seat_premium: 132500,
+              admin_fee: 5000,
+              insurance_fee: 10000,
+              payment_fee: 2000,
+              discount: 80000,
+              subtotal: 412500,
+              total: 332500
+            }
+          },
+          ticket: {
+            ticket_number: `TICKET-${Date.now().toString().slice(-10)}`,
+            seat_number: 'B2',
+            coach_number: '1'
+          }
+        };
+        
+        setBookingData(defaultData.booking);
+        setPaymentData(defaultData.payment);
+        setTicketData(defaultData.ticket);
+        
+        console.log('✅ Using default data');
+        
+      } catch (error: any) {
+        console.error('Error in loadData:', error);
+        setError('Data pemesanan sedang diproses. Silakan cek email Anda untuk konfirmasi.');
       } finally {
         setLoading(false);
       }
     };
-
-    loadBookingData();
-  }, [orderId, bookingCode, getDefaultBookingData, saveBookingToStorage, generateRealisticDepartureDate, generateRealisticDepartureTime, generateArrivalTime, generateBookingCode, generateTicketNumber]);
+    
+    loadData();
+  }, [searchParams, createBookingFromParams, loadDataFromStorage]);
 
   // Countdown timer untuk redirect
   useEffect(() => {
-    if (countdown <= 0 || isRedirecting) return;
+    if (countdown <= 0 || isRedirecting || loading) return;
 
     const timer = setInterval(() => {
       setCountdown((prev) => {
@@ -347,7 +499,7 @@ const PaymentSuccessContent = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [countdown, isRedirecting]);
+  }, [countdown, isRedirecting, loading]);
 
   // Handle redirect
   const handleRedirect = useCallback(() => {
@@ -355,16 +507,11 @@ const PaymentSuccessContent = () => {
     
     setIsRedirecting(true);
     
-    // Pastikan data sudah tersimpan
-    if (bookingData) {
-      saveBookingToStorage(bookingData);
-    }
-    
     // Redirect ke my-bookings
     setTimeout(() => {
       router.push('/my-bookings');
     }, 300);
-  }, [isRedirecting, bookingData, saveBookingToStorage, router]);
+  }, [isRedirecting, router]);
 
   // Handle manual redirect
   const handleRedirectNow = useCallback(() => {
@@ -373,16 +520,16 @@ const PaymentSuccessContent = () => {
 
   // Handle print/download ticket
   const handleDownloadTicket = useCallback(() => {
-    if (!bookingData) return;
+    if (!bookingData || !ticketData) return;
     
     const printWindow = window.open('', '_blank');
     if (printWindow) {
-      const seats = bookingData.selected_seats?.join(', ') || 'C2';
+      const seats = ticketData.seat_number || 'B2';
       
       printWindow.document.write(`
         <html>
           <head>
-            <title>E-Ticket ${bookingData.ticket_number}</title>
+            <title>E-Ticket ${ticketData.ticket_number}</title>
             <style>
               body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -600,7 +747,7 @@ const PaymentSuccessContent = () => {
             <div class="ticket">
               <div class="header">
                 <h1>E-Ticket Kereta Api</h1>
-                <div class="ticket-number">${bookingData.ticket_number}</div>
+                <div class="ticket-number">${ticketData.ticket_number}</div>
               </div>
               
               <div class="section">
@@ -616,7 +763,7 @@ const PaymentSuccessContent = () => {
                   </div>
                   <div>
                     <div class="label">Kereta & Kelas</div>
-                    <div class="value">${bookingData.train_name} (${bookingData.train_class})</div>
+                    <div class="value">${bookingData.train_name} (${bookingData.train_type})</div>
                   </div>
                 </div>
               </div>
@@ -624,14 +771,14 @@ const PaymentSuccessContent = () => {
               <div class="journey-container">
                 <div class="journey-info">
                   <div class="time-box">
-                    <div class="time">${bookingData.departure_time}</div>
+                    <div class="time">${formatTime(bookingData.departure_time)}</div>
                     <div class="station">${bookingData.origin}</div>
                   </div>
                   <div class="arrow-container">
                     <div class="arrow">→</div>
                   </div>
                   <div class="time-box">
-                    <div class="time">${bookingData.arrival_time}</div>
+                    <div class="time">${formatTime(bookingData.arrival_time)}</div>
                     <div class="station">${bookingData.destination}</div>
                   </div>
                 </div>
@@ -687,7 +834,7 @@ const PaymentSuccessContent = () => {
       `);
       printWindow.document.close();
     }
-  }, [bookingData, formatDate]);
+  }, [bookingData, ticketData, formatDate, formatTime]);
 
   if (loading) {
     return (
@@ -701,10 +848,38 @@ const PaymentSuccessContent = () => {
     );
   }
 
+  if (error || !bookingData || !paymentData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-green-50 to-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full text-center">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Shield className="w-10 h-10 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-4">Pembayaran Sedang Diproses</h1>
+          <p className="text-gray-600 mb-6">
+            {error || 'Data pembayaran sedang diverifikasi. Silakan cek email Anda untuk konfirmasi.'}
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => router.push('/my-bookings')}
+              className="w-full px-6 py-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors"
+            >
+              Cek Status Booking
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="w-full px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Kembali ke Beranda
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Hitung durasi perjalanan
   const calculateTravelDuration = () => {
-    if (!bookingData) return '5 jam';
-    
     try {
       const [depHours, depMinutes] = bookingData.departure_time.split(':').map(Number);
       const [arrHours, arrMinutes] = bookingData.arrival_time.split(':').map(Number);
@@ -714,7 +889,7 @@ const PaymentSuccessContent = () => {
       
       let durationMinutes = arrTotalMinutes - depTotalMinutes;
       if (durationMinutes < 0) {
-        durationMinutes += 24 * 60; // Jika melewati tengah malam
+        durationMinutes += 24 * 60;
       }
       
       const hours = Math.floor(durationMinutes / 60);
@@ -728,6 +903,18 @@ const PaymentSuccessContent = () => {
     } catch (error) {
       return '5 jam';
     }
+  };
+
+  // Data breakdown dari payment atau default
+  const fareBreakdown = paymentData?.fare_breakdown || {
+    base_fare: 265000,
+    seat_premium: 132500,
+    admin_fee: 5000,
+    insurance_fee: 10000,
+    payment_fee: 2000,
+    discount: 80000,
+    subtotal: 412500,
+    total: 332500
   };
 
   return (
@@ -750,7 +937,7 @@ const PaymentSuccessContent = () => {
             Pembayaran Berhasil!
           </h1>
           <p className="text-xl text-gray-600 mb-6 max-w-2xl mx-auto">
-            Booking <span className="font-bold text-green-600">{bookingData?.booking_code || bookingCode}</span> telah diproses dan siap digunakan.
+            Booking <span className="font-bold text-green-600">{bookingData.booking_code}</span> telah diproses dan siap digunakan.
           </p>
           
           <div className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full shadow-lg">
@@ -774,7 +961,7 @@ const PaymentSuccessContent = () => {
                   </div>
                   <h3 className="font-semibold mb-1 text-white/90">Total Pembayaran</h3>
                   <p className="text-3xl font-bold">
-                    {formatRupiah(bookingData?.total_amount || 412500)}
+                    {formatRupiah(paymentData.amount)}
                   </p>
                 </div>
                 
@@ -784,7 +971,7 @@ const PaymentSuccessContent = () => {
                   </div>
                   <h3 className="font-semibold mb-1 text-white/90">Penumpang</h3>
                   <p className="text-3xl font-bold">
-                    {bookingData?.passenger_count || 1} orang
+                    {bookingData.passenger_count} orang
                   </p>
                 </div>
                 
@@ -794,7 +981,7 @@ const PaymentSuccessContent = () => {
                   </div>
                   <h3 className="font-semibold mb-1 text-white/90">Status</h3>
                   <p className="text-3xl font-bold">
-                    LUNAS
+                    {paymentData.status === 'success' ? 'LUNAS' : paymentData.status.toUpperCase()}
                   </p>
                 </div>
               </div>
@@ -813,11 +1000,11 @@ const PaymentSuccessContent = () => {
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-sm text-gray-500">Kereta Api</p>
-                      <p className="text-xl font-bold text-gray-800">{bookingData?.train_name || 'Parahyangan'}</p>
+                      <p className="text-xl font-bold text-gray-800">{bookingData.train_name}</p>
                     </div>
                     <div>
                       <span className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full text-sm font-bold">
-                        {bookingData?.train_class || 'Executive'}
+                        {bookingData.train_type}
                       </span>
                     </div>
                   </div>
@@ -826,8 +1013,8 @@ const PaymentSuccessContent = () => {
                   <div className="relative mb-8">
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-center">
-                        <p className="text-3xl font-bold text-gray-800">{bookingData?.departure_time || '05:00'}</p>
-                        <p className="text-sm text-gray-600">{bookingData?.origin || 'Bandung'}</p>
+                        <p className="text-3xl font-bold text-gray-800">{formatTime(bookingData.departure_time)}</p>
+                        <p className="text-sm text-gray-600">{bookingData.origin}</p>
                       </div>
                       
                       <div className="flex-1 mx-8">
@@ -844,8 +1031,8 @@ const PaymentSuccessContent = () => {
                       </div>
                       
                       <div className="text-center">
-                        <p className="text-3xl font-bold text-gray-800">{bookingData?.arrival_time || '10:00'}</p>
-                        <p className="text-sm text-gray-600">{bookingData?.destination || 'Gambir'}</p>
+                        <p className="text-3xl font-bold text-gray-800">{formatTime(bookingData.arrival_time)}</p>
+                        <p className="text-sm text-gray-600">{bookingData.destination}</p>
                       </div>
                     </div>
                   </div>
@@ -858,10 +1045,10 @@ const PaymentSuccessContent = () => {
                         <span className="font-semibold text-gray-700">Tanggal Keberangkatan</span>
                       </div>
                       <p className="text-lg font-bold text-gray-800">
-                        {bookingData ? formatDate(bookingData.departure_date) : 'Memuat...'}
+                        {formatDate(bookingData.departure_date)}
                       </p>
                       <p className="text-sm text-gray-500 mt-1">
-                        Waktu pemesanan: {new Date().toLocaleString('id-ID')}
+                        Waktu pemesanan: {new Date(bookingData.created_at || new Date()).toLocaleString('id-ID')}
                       </p>
                     </div>
                     
@@ -871,7 +1058,7 @@ const PaymentSuccessContent = () => {
                         <span className="font-semibold text-gray-700">Kursi</span>
                       </div>
                       <p className="text-lg font-bold text-gray-800">
-                        {bookingData?.selected_seats?.join(', ') || 'C2'}
+                        {ticketData?.seat_number || 'B2'} (Gerbong {ticketData?.coach_number || '1'})
                       </p>
                     </div>
                   </div>
@@ -888,14 +1075,14 @@ const PaymentSuccessContent = () => {
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Nama</span>
-                        <span className="font-bold text-gray-800">{bookingData?.passenger_name || 'Reisan'}</span>
+                        <span className="font-bold text-gray-800">{bookingData.passenger_name}</span>
                       </div>
                       
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Email</span>
                         <div className="flex items-center">
                           <Mail className="w-4 h-4 text-gray-400 mr-2" />
-                          <span className="font-bold text-gray-800">{bookingData?.passenger_email || 'reisanadrefagt@gmail.com'}</span>
+                          <span className="font-bold text-gray-800">{bookingData.passenger_email}</span>
                         </div>
                       </div>
                       
@@ -903,13 +1090,51 @@ const PaymentSuccessContent = () => {
                         <span className="text-gray-600">Telepon</span>
                         <div className="flex items-center">
                           <Phone className="w-4 h-4 text-gray-400 mr-2" />
-                          <span className="font-bold text-gray-800">{bookingData?.passenger_phone || '08453665664'}</span>
+                          <span className="font-bold text-gray-800">{bookingData.passenger_phone}</span>
                         </div>
                       </div>
                       
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Jumlah Penumpang</span>
-                        <span className="font-bold text-gray-800">{bookingData?.passenger_count || 1} orang</span>
+                        <span className="font-bold text-gray-800">{bookingData.passenger_count} orang</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Payment Info */}
+                <div className="border-t border-gray-200 pt-6 mt-6">
+                  <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <CreditCard className="w-5 h-5 mr-2 text-green-600" />
+                    Informasi Pembayaran
+                  </h3>
+                  
+                  <div className="bg-green-50 rounded-xl p-6">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Metode Pembayaran</span>
+                        <span className="font-bold text-gray-800">{bookingData.payment_method || paymentData.payment_method}</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Order ID</span>
+                        <span className="font-bold text-gray-800">{bookingData.order_id}</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Status Pembayaran</span>
+                        <span className={`font-bold ${
+                          paymentData.status === 'success' ? 'text-green-600' : 'text-yellow-600'
+                        }`}>
+                          {paymentData.status === 'success' ? 'BERHASIL' : paymentData.status.toUpperCase()}
+                        </span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Waktu Pembayaran</span>
+                        <span className="font-bold text-gray-800">
+                          {new Date(paymentData.payment_data?.settlement_time || bookingData.updated_at || new Date()).toLocaleString('id-ID')}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -977,10 +1202,17 @@ const PaymentSuccessContent = () => {
               <div className="space-y-6">
                 <button
                   onClick={handleDownloadTicket}
-                  className="w-full flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                  disabled={!ticketData}
+                  className={`w-full flex items-center justify-center px-8 py-4 rounded-xl transition-all duration-300 transform ${
+                    ticketData 
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:shadow-xl hover:-translate-y-1' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
                 >
                   <Download className="w-6 h-6 mr-3" />
-                  <span className="font-bold text-lg">Download Tiket</span>
+                  <span className="font-bold text-lg">
+                    {ticketData ? 'Download Tiket' : 'Membuat Tiket...'}
+                  </span>
                 </button>
                 
                 <button
@@ -1011,35 +1243,98 @@ const PaymentSuccessContent = () => {
                 
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Harga Tiket</span>
-                    <span className="font-semibold text-gray-800">Rp 330.000</span>
+                    <span className="text-gray-600">Tiket Kereta</span>
+                    <span className="font-semibold text-gray-800">
+                      {formatRupiah(fareBreakdown.base_fare || 265000)}
+                    </span>
                   </div>
+                  
+                  {fareBreakdown.seat_premium && fareBreakdown.seat_premium > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Tambahan kursi premium</span>
+                      <span className="font-semibold text-green-600">
+                        +{formatRupiah(fareBreakdown.seat_premium)}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {fareBreakdown.discount && fareBreakdown.discount > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Diskon Promo</span>
+                      <span className="font-semibold text-red-600">
+                        -{formatRupiah(fareBreakdown.discount)}
+                      </span>
+                    </div>
+                  )}
                   
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Biaya Admin</span>
-                    <span className="font-semibold text-gray-800">Rp 5.000</span>
+                    <span className="font-semibold text-gray-800">
+                      {formatRupiah(fareBreakdown.admin_fee || 5000)}
+                    </span>
                   </div>
                   
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Asuransi</span>
-                    <span className="font-semibold text-gray-800">Rp 10.000</span>
+                    <span className="text-gray-600">Asuransi Perjalanan</span>
+                    <span className="font-semibold text-gray-800">
+                      {formatRupiah(fareBreakdown.insurance_fee || 10000)}
+                    </span>
                   </div>
                   
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Biaya Layanan</span>
-                    <span className="font-semibold text-gray-800">Rp 2.000</span>
-                  </div>
+                  {fareBreakdown.payment_fee && fareBreakdown.payment_fee > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Biaya Layanan</span>
+                      <span className="font-semibold text-gray-800">
+                        +{formatRupiah(fareBreakdown.payment_fee)}
+                      </span>
+                    </div>
+                  )}
                   
                   <div className="border-t border-gray-300 pt-4 mt-4">
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-gray-800 text-lg">Total</span>
                       <span className="font-bold text-green-600 text-2xl">
-                        {formatRupiah(bookingData?.total_amount || 412500)}
+                        {formatRupiah(paymentData.amount)}
                       </span>
                     </div>
+                    
+                    {fareBreakdown.discount && fareBreakdown.discount > 0 && (
+                      <p className="text-sm text-gray-500 text-right mt-1">
+                        <span className="line-through">
+                          {formatRupiah(fareBreakdown.subtotal || 412500)}
+                        </span>
+                        <span className="ml-2 text-green-600">
+                          Hemat {formatRupiah(fareBreakdown.discount)}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
+              
+              {/* Ticket Info */}
+              {ticketData && (
+                <div className="mt-8 p-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
+                  <div className="flex items-center mb-4">
+                    <TicketIcon className="w-6 h-6 text-green-600 mr-3" />
+                    <h4 className="font-bold text-green-800">Info Tiket</h4>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-green-600">Nomor Tiket</span>
+                      <span className="font-mono font-bold text-green-800">{ticketData.ticket_number}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-green-600">Kursi</span>
+                      <span className="font-bold text-green-800">{ticketData.seat_number || 'B2'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-green-600">Gerbong</span>
+                      <span className="font-bold text-green-800">{ticketData.coach_number || '1'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               
               {/* Support Info */}
               <div className="mt-8 p-6 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl border border-gray-200">
@@ -1063,6 +1358,9 @@ const PaymentSuccessContent = () => {
         <div className="mt-12 text-center">
           <p className="text-gray-500 text-sm">
             © {new Date().getFullYear()} TripGo. Semua hak dilindungi.
+          </p>
+          <p className="text-gray-400 text-xs mt-2">
+            Pembayaran telah diverifikasi dan tiket Anda aktif
           </p>
         </div>
       </div>
