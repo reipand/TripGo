@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -10,22 +9,7 @@ import { ToastProvider } from './contexts/ToastContext';
 import { NetworkErrorBanner } from './components/NetworkErrorBanner';
 import { NetworkDiagnostics } from './components/NetworkDiagnostics';
 import { TripPointsProvider } from '@/app/contexts/TripPointsContext';
-
-// Optimize fonts
-const inter = Inter({ 
-  subsets: ["latin"],
-  display: 'swap',
-  variable: '--font-inter',
-  preload: true,
-});
-
-const poppins = Poppins({
-  weight: ['400', '500', '600', '700'],
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-poppins',
-  preload: true,
-});
+import { inter, poppins } from './lib/fonts'; // Import from shared file
 
 export const metadata: Metadata = {
   title: "TripGo - Pesan Tiket Kereta Api KAI Online",
@@ -53,16 +37,12 @@ interface RootLayoutProps {
   modal?: React.ReactNode;
 }
 
-
 export default function RootLayout({ children, modal }: Readonly<RootLayoutProps>) {
   return (
     <html lang="id" className={`${inter.variable} ${poppins.variable}`}>
       <head>
-        {/* Critical resources */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        
-        {/* Favicon */}
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
@@ -71,16 +51,16 @@ export default function RootLayout({ children, modal }: Readonly<RootLayoutProps
           <LoadingProvider>
             <AuthProvider>
               <TripPointsProvider>
-              <NetworkErrorBanner />
-              <NetworkDiagnostics />
-              <WalletProvider>
-                <Navbar />
-                <main>
-                  {children}
-                </main>
-                <Footer />
-                {modal}
-              </WalletProvider>
+                <NetworkErrorBanner />
+                <NetworkDiagnostics />
+                <WalletProvider>
+                  <Navbar />
+                  <main>
+                    {children}
+                  </main>
+                  <Footer />
+                  {modal}
+                </WalletProvider>
               </TripPointsProvider>
             </AuthProvider>
           </LoadingProvider>

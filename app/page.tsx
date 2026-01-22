@@ -1,12 +1,7 @@
-// app/page.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import debounce from 'lodash/debounce';
-import { svg } from 'leaflet';
-
-// --- Kumpulan Ikon (Diubah ke Path Gambar Lokal) ---
 
 function getIconPath(name: 'plane' | 'train' | 'calendar' | 'user' | 'switch' | 'search' | 'price' | 'complete' | 'support',
   isActive: boolean = false) {
@@ -18,7 +13,7 @@ function getIconPath(name: 'plane' | 'train' | 'calendar' | 'user' | 'switch' | 
 
   // Special handling for utility icons with hover states
   if (name === 'switch') {
-    return `${basePath}/utils/${name}.png`; // Dark version for better visibility
+    return `${basePath}/utils/${name}.png`;
   }
 
   // Regular utility icons
@@ -121,9 +116,8 @@ const SearchWidget = () => {
   const [selectedOrigin, setSelectedOrigin] = useState<any>(null);
   const [selectedDestination, setSelectedDestination] = useState<any>(null);
 
-  // Fetch popular stations - PERBAIKAN: Tambahkan default data lebih awal
+  // Fetch popular stations
   useEffect(() => {
-    // Set default data dulu sebelum fetch
     const defaultStations = [
       { id: '1', code: 'GMR', name: 'Gambir', city: 'Jakarta', type: 'utama' },
       { id: '2', code: 'BD', name: 'Bandung', city: 'Bandung', type: 'utama' },
@@ -136,8 +130,8 @@ const SearchWidget = () => {
     ];
     
     setStations(defaultStations);
-    setSelectedOrigin(defaultStations[1]); // Bandung
-    setSelectedDestination(defaultStations[0]); // Gambir
+    setSelectedOrigin(defaultStations[1]);
+    setSelectedDestination(defaultStations[0]);
     setTrainData(prev => ({
       ...prev,
       origin: `${defaultStations[1].name} (${defaultStations[1].code})`,
@@ -146,7 +140,6 @@ const SearchWidget = () => {
 
     const fetchData = async () => {
       try {
-        console.log('🔄 Fetching popular stations...');
         const response = await fetch('/api/stations/popular');
         
         if (!response.ok) {
@@ -154,7 +147,6 @@ const SearchWidget = () => {
         }
         
         const data = await response.json();
-        console.log('✅ Popular stations fetched:', data);
         
         if (Array.isArray(data) && data.length > 0) {
           const stationsWithId = data.map((station: any, index: number) => ({
@@ -165,7 +157,6 @@ const SearchWidget = () => {
           
           setStations(stationsWithId);
           
-          // Update default jika perlu
           if (data.length >= 2) {
             const originStation = stationsWithId.find((s: any) => 
               s.code === 'BD' || s.name.toLowerCase().includes('bandung')
@@ -186,8 +177,7 @@ const SearchWidget = () => {
           }
         }
       } catch (error) {
-        console.error('❌ Error fetching popular stations:', error);
-        // Tetap gunakan default data yang sudah diset
+        console.error('Error fetching popular stations:', error);
       }
     };
     
@@ -199,14 +189,12 @@ const SearchWidget = () => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       
-      // Check if click is outside origin dropdown
       if (originDropdownRef.current && 
           !originDropdownRef.current.contains(target) &&
           !target.closest('.origin-input-container')) {
         setActiveInputType(prev => prev === 'origin' ? null : prev);
       }
       
-      // Check if click is outside destination dropdown
       if (destinationDropdownRef.current && 
           !destinationDropdownRef.current.contains(target) &&
           !target.closest('.destination-input-container')) {
@@ -246,7 +234,6 @@ const SearchWidget = () => {
       return;
     }
 
-    console.log('🔍 Searching stations for:', query);
     setIsLoadingStations(true);
     
     try {
@@ -257,11 +244,8 @@ const SearchWidget = () => {
       }
       
       const data = await response.json();
-      console.log('✅ Search API response:', data);
       
-      // Validasi data
       if (!Array.isArray(data)) {
-        console.error('❌ Invalid response format, expected array:', data);
         // Fallback ke local search
         const filtered = stations.filter(station => 
           station.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -270,7 +254,6 @@ const SearchWidget = () => {
         );
         setFilteredStations(filtered);
       } else {
-        // Format data untuk konsistensi
         const formattedData = data.map((station: any) => ({
           id: station.id || station.code,
           code: station.code,
@@ -281,7 +264,7 @@ const SearchWidget = () => {
         setFilteredStations(formattedData);
       }
     } catch (error) {
-      console.error('❌ Error searching stations:', error);
+      console.error('Error searching stations:', error);
       // Fallback ke local search
       const filtered = stations.filter(station => 
         station.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -315,18 +298,12 @@ const SearchWidget = () => {
     };
   }, [stationSearchQuery, activeInputType]);
 
-  // Handle select station - SIMPLIFIKASI
+  // Handle select station
   const handleSelectStation = (station: any, type: 'origin' | 'destination') => {
-    console.log('🎯 Selecting station:', station, 'for:', type);
-    
-    if (!station) {
-      console.error('No station provided');
-      return;
-    }
+    if (!station) return;
     
     const displayValue = `${station.name} (${station.code})`;
     
-    // Update state sekaligus
     if (type === 'origin') {
       setSelectedOrigin(station);
       setTrainData(prev => ({ ...prev, origin: displayValue }));
@@ -335,7 +312,6 @@ const SearchWidget = () => {
       setTrainData(prev => ({ ...prev, destination: displayValue }));
     }
     
-    // Reset search state
     setStationSearchQuery('');
     setFilteredStations([]);
     setActiveInputType(null);
@@ -383,13 +359,6 @@ const SearchWidget = () => {
 
   // Handle search submit
   const handleSearchSubmit = async () => {
-    console.log('🔍 Search submit:', {
-      selectedOrigin,
-      selectedDestination,
-      trainData,
-      tripType
-    });
-    
     if (!selectedOrigin || !selectedDestination) {
       alert('Harap pilih stasiun asal dan tujuan.');
       return;
@@ -436,11 +405,10 @@ const SearchWidget = () => {
       queryParams.append('returnDate', trainData.returnDate);
     }
     
-    console.log('🚀 Navigating to:', `/search/trains?${queryParams.toString()}`);
     router.push(`/search/trains?${queryParams.toString()}`);
   };
 
-  // Station Input Component - PERBAIKAN BESAR
+  // Station Input Component - PERBAIKAN: Type safety untuk trainData[type]
   const StationInput = ({ type, label, subLabel }: {
     type: 'origin' | 'destination';
     label: string;
@@ -452,27 +420,26 @@ const SearchWidget = () => {
     const selectedStation = type === 'origin' ? selectedOrigin : selectedDestination;
     const isOpen = activeInputType === type;
     
-    // Display value
+    // Display value - FIX: Type safety issue
     const displayValue = React.useMemo(() => {
       if (selectedStation) {
         return `${selectedStation.name} (${selectedStation.code})`;
       }
-      return trainData[type] || 'Pilih stasiun...';
-    }, [selectedStation, trainData[type], type]);
+      // Akses yang lebih aman
+      return type === 'origin' ? trainData.origin : trainData.destination;
+    }, [selectedStation, trainData, type]);
 
     // Handle container click
     const handleContainerClick = (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
       
-      // Toggle dropdown
       if (isOpen) {
         setActiveInputType(null);
         setStationSearchQuery('');
       } else {
         setActiveInputType(type);
         setStationSearchQuery('');
-        // Fokus ke input setelah dropdown terbuka
         setTimeout(() => {
           inputRef.current?.focus();
         }, 50);
@@ -515,11 +482,9 @@ const SearchWidget = () => {
       if (stationSearchQuery.trim()) {
         return filteredStations;
       } else {
-        // Filter out the other selected station
         const otherSelectedStation = type === 'origin' ? selectedDestination : selectedOrigin;
         return stations
           .filter(station => {
-            // Skip jika station ini sudah dipilih di input lain
             if (otherSelectedStation && station.code === otherSelectedStation.code) {
               return false;
             }
@@ -1127,7 +1092,6 @@ const PromoCard = ({ imageUrl, title, description, discount, validUntil, tag }: 
     </div>
 );
 
-
 // --- Komponen Kartu Destinasi Populer ---
 const DestinationCard = ({ imageUrl, name, price, rating, reviews, delay }: { 
   imageUrl: string; 
@@ -1187,6 +1151,7 @@ const FeatureCard = ({ title, description, iconPath, delay }: {
         <p className="text-sm text-gray-600 leading-relaxed">{description}</p>
     </div>
 );
+
 // Komponen Langkah Pemesanan
 const StepCard = ({ number, title, description, icon }: { 
   number: number; 
@@ -1319,14 +1284,6 @@ const FAQItem = ({ question, answer, isOpen, onClick }: {
     )}
   </div>
 );
-
-// --- Komponen Halaman Utama ---
-
-declare global {
-    interface Window {
-        AOS: any;
-    }
-}
 
 // Ikon Bintang untuk Rating
 const StarIcon = ({ className = "" }: { className?: string }) => (
@@ -1499,10 +1456,10 @@ export default function Home() {
         }
     ];
 
-  // Data untuk Promo
+  // Data untuk Promo - Gunakan placeholder jika gambar tidak ada
     const promos = [
         {
-            imageUrl: "/images/promo-jakarta-bandung.png", 
+            imageUrl: "https://images.unsplash.com/photo-1590077428593-a55bb07c4665?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80", 
             title: "Flash Sale Jakarta-Bandung - Diskon Hingga 50%",
             description: "Raih tiket kereta Jakarta-Bandung dengan harga spesial. Terbatas hanya untuk 100 pembeli pertama!",
             discount: "50% OFF",
@@ -1510,7 +1467,7 @@ export default function Home() {
             tag: "Flash Sale"
         },
         {
-            imageUrl: "/images/promo-kai-cashback.png",
+            imageUrl: "https://images.unsplash.com/photo-1523531294919-4bcd7c65e216?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             title: "Cashback Kereta Api KAI 100%",
             description: "Dapatkan cashback hingga Rp 100.000 untuk perjalanan kereta api KAI di seluruh Indonesia",
             discount: "100% CB",
@@ -1518,7 +1475,7 @@ export default function Home() {
             tag: "Cashback"
         },
         {
-            imageUrl: "/images/promo-whoosh.jpg",
+            imageUrl: "https://images.unsplash.com/photo-1589939705384-5185137a7f0f?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             title: "Whoosh Exclusive - Harga Spesial",
             description: "Nikmati perjalanan super cepat Jakarta-Bandung dengan harga promo khusus member",
             discount: "30% OFF",
@@ -1526,7 +1483,7 @@ export default function Home() {
             tag: "Exclusive"
         },
         {
-            imageUrl: "/images/promo-kai-family.png",
+            imageUrl: "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             title: "Paket Keluarga KAI - Hemat hingga 40%",
             description: "Diskon spesial untuk perjalanan keluarga dengan kereta api KAI. Minimum 3 orang",
             discount: "40% OFF",
@@ -1535,11 +1492,10 @@ export default function Home() {
         }
     ];
 
-
-  // Data untuk Destinasi Populer
+  // Data untuk Destinasi Populer - Gunakan placeholder
     const destinations = [
         {
-            imageUrl: "/images/bandung-dest.png",
+            imageUrl: "https://images.unsplash.com/photo-1535478044878-5c6d3e7d7e7b?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             name: "Bandung",
             price: "Rp 150rb",
             rating: 4.8,
@@ -1547,7 +1503,7 @@ export default function Home() {
             delay: 0
         },
         {
-            imageUrl: "/images/jogja-dest.png",
+            imageUrl: "https://images.unsplash.com/photo-1575408264798-b50b252663e6?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             name: "Yogyakarta",
             price: "Rp 250rb",
             rating: 4.7,
@@ -1555,7 +1511,7 @@ export default function Home() {
             delay: 100
         },
         {
-            imageUrl: "/images/surabaya-dest.png",
+            imageUrl: "https://images.unsplash.com/photo-1534237710431-e2fc698436d0?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             name: "Surabaya",
             price: "Rp 300rb",
             rating: 4.9,
@@ -1563,7 +1519,7 @@ export default function Home() {
             delay: 200
         },
         {
-            imageUrl: "/images/semarang-dest.png",
+            imageUrl: "https://images.unsplash.com/photo-1544551763-46a013bb70d5?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             name: "Semarang",
             price: "Rp 200rb",
             rating: 4.6,
@@ -1571,7 +1527,7 @@ export default function Home() {
             delay: 300
         },
         {
-            imageUrl: "/images/malang-dest.png",
+            imageUrl: "https://images.unsplash.com/photo-1545569341-9eb8b30979d9?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             name: "Malang",
             price: "Rp 350rb",
             rating: 4.8,
@@ -1579,7 +1535,7 @@ export default function Home() {
             delay: 400
         },
         {
-            imageUrl: "/images/solo-dest.png",
+            imageUrl: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
             name: "Solo",
             price: "Rp 180rb",
             rating: 4.7,
@@ -1587,13 +1543,6 @@ export default function Home() {
             delay: 500
         }
     ];
-
-  // Definisikan path gambar placeholder untuk fitur (keunggulan)
-  const featureIconPaths = {
-    price: getIconPath('price'),
-    complete: getIconPath('complete'),
-    support: getIconPath('support')
-  };
 
    const features = [
         {
@@ -1622,14 +1571,12 @@ export default function Home() {
         }
     ];
 
-    
-
     return (
         <div className="font-sans bg-gray-50">
             {/* Hero Section */}
             <section 
                 className="relative flex items-center justify-center h-[70vh] min-h-[600px] bg-cover bg-center text-white" 
-                style={{ backgroundImage: "url('/images/hero-background.jpg')" }} 
+                style={{ backgroundImage: "url('https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?ixlib=rb-4.0.3&auto=format&fit=crop&w=1770&q=80')" }} 
             >
                 <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-black/40"></div>
                 <div className="relative z-10 container mx-auto px-4 flex flex-col items-center text-center">
@@ -1744,7 +1691,6 @@ export default function Home() {
                         ))}
                     </div>
                     
-                    
                     {/* Banner Promo Besar */}
                     <div className="mt-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl p-8 text-white relative overflow-hidden" data-aos="zoom-in">
                         <div className="relative z-10 max-w-2xl">
@@ -1766,7 +1712,10 @@ export default function Home() {
                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-32 translate-x-32"></div>
                         <div className="absolute bottom-0 right-0 w-48 h-48 bg-white/10 rounded-full translate-y-24 translate-x-24"></div>
                     </div>
-                      {/* === SECTION 5: Langkah Pemesanan === */}
+                </div>
+            </section>
+
+            {/* Langkah Pemesanan */}
             <section className="py-16 bg-gradient-to-br from-blue-50 to-indigo-100">
                 <div className="container mx-auto px-4">
                     <div className="text-center mb-12">
@@ -1792,7 +1741,7 @@ export default function Home() {
                 </div>
             </section>
 
-            {/* === SECTION 6: Testimonial & Review === */}
+            {/* Testimonial & Review */}
             <section className="py-16 bg-white">
                 <div className="container mx-auto px-4">
                     <div className="text-center mb-12">
@@ -1831,7 +1780,7 @@ export default function Home() {
                 </div>
             </section>
 
-            {/* === SECTION 7: Blog & Tips Perjalanan === */}
+            {/* Blog & Tips Perjalanan */}
             <section className="py-16 bg-gray-50">
                 <div className="container mx-auto px-4">
                     <div className="flex items-center justify-between mb-8">
@@ -1865,7 +1814,7 @@ export default function Home() {
                 </div>
             </section>
 
-            {/* === SECTION 8: Partner & Maskapai === */}
+            {/* Partner & Maskapai */}
             <section className="py-16 bg-white">
                 <div className="container mx-auto px-4">
                     <div className="text-center mb-12">
@@ -1885,7 +1834,7 @@ export default function Home() {
                 </div>
             </section>
 
-            {/* === SECTION 9: FAQ (Pertanyaan Umum) === */}
+            {/* FAQ (Pertanyaan Umum) */}
             <section className="py-16 bg-gray-50">
                 <div className="container mx-auto px-4">
                     <div className="text-center mb-12">
@@ -1925,81 +1874,6 @@ export default function Home() {
                     </div>
                 </div>
             </section>
-
-            {/* === SECTION 10: Download App === */}
-            {/* <section className="py-16 bg-gradient-to-r from-blue-600 to-blue-800 text-white">
-                <div className="container mx-auto px-4">
-                    <div className="flex flex-col lg:flex-row items-center justify-between max-w-6xl mx-auto">
-                        <div className="lg:w-1/2 mb-8 lg:mb-0 text-center lg:text-left" data-aos="fade-right">
-                            <h2 className="text-3xl font-bold mb-4">Download Aplikasi TripGO</h2>
-                            <p className="text-blue-100 text-lg mb-6 leading-relaxed">
-                                Dapatkan pengalaman booking yang lebih baik dengan fitur eksklusif hanya di aplikasi mobile. Pesan tiket lebih cepat, akses promo spesial, dan nikmati kemudahan dalam genggaman.
-                            </p>
-                            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                                <button className="bg-white text-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-300 flex items-center justify-center">
-                                    <svg className="w-6 h-6 mr-3" viewBox="0 0 24 24">
-                                        <path fill="currentColor" d="M17.924 17.315c-.518.987-1.151 1.893-1.895 2.717-.876.99-1.592 1.67-2.145 2.037-.747.49-1.549.74-2.405.74-.825 0-1.517-.2-2.073-.598-.556-.399-.976-.927-1.26-1.585-.283-.658-.425-1.435-.425-2.33 0-.958.182-1.858.546-2.701.364-.843.86-1.586 1.488-2.23.628-.644 1.34-1.157 2.136-1.539.796-.382 1.62-.573 2.473-.573.825 0 1.488.155 1.988.465.5.31.868.688 1.105 1.135-.99.49-1.767 1.155-2.33 2-.563.845-.844 1.818-.844 2.92 0 .99.251 1.858.752 2.604.287.41.64.758 1.06 1.044.42.287.882.5 1.388.64.405.124.81.186 1.215.186.658 0 1.287-.108 1.888-.326.6-.218 1.13-.517 1.59-.897-.66-.99-1.18-1.94-1.56-2.85-.38-.91-.57-1.82-.57-2.73 0-1.303.38-2.42 1.14-3.35.76-.93 1.71-1.58 2.85-1.95-.99-1.47-2.38-2.24-4.17-2.33-.66-.02-1.45.12-2.37.42-.92.3-1.71.62-2.37.96-.66.34-1.21.66-1.65.96-.44.3-.78.54-1.02.72-.24.18-.44.33-.6.45-.16.12-.28.21-.36.27l-.36-1.08c.12-.08.28-.19.48-.33.2-.14.44-.3.72-.48.28-.18.6-.38.96-.6.36-.22.78-.45 1.26-.69.48-.24 1.02-.47 1.62-.69.6-.22 1.28-.41 2.04-.57.76-.16 1.62-.24 2.58-.24 1.64 0 3.02.31 4.14.93 1.12.62 1.98 1.46 2.58 2.52.6 1.06.9 2.25.9 3.57 0 .94-.16 1.86-.48 2.76-.32.9-.78 1.76-1.38 2.58z"/>
-                                    </svg>
-                                    Download di App Store
-                                </button>
-                                <button className="bg-white text-blue-600 px-6 py-3 rounded-lg font-bold hover:bg-gray-100 transition-colors duration-300 flex items-center justify-center">
-                                    <svg className="w-6 h-6 mr-3" viewBox="0 0 24 24">
-                                        <path fill="currentColor" d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 01-.61-.92V2.734a1 1 0 01.609-.92zm10.89 10.893l2.302 2.302-10.937 10.937a.995.995 0 01-.61-.92V2.734a1 1 0 01.609-.92l10.938 10.937zm-.92-.92L4.734 1.814H19.266l-5.587 5.587z"/>
-                                    </svg>
-                                    Download di Play Store
-                                </button>
-                            </div>
-                        </div>
-                        <div className="lg:w-2/5 relative" data-aos="fade-left">
-                            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-                                <h3 className="font-bold text-xl mb-4">Keuntungan di Aplikasi:</h3>
-                                <ul className="space-y-3 text-blue-100">
-                                    <li className="flex items-center space-x-3">
-                                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                        <span>Promo dan voucher eksklusif</span>
-                                    </li>
-                                    <li className="flex items-center space-x-3">
-                                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                        <span>Notifikasi harga terbaik</span>
-                                    </li>
-                                    <li className="flex items-center space-x-3">
-                                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                        <span>Pemesanan lebih cepat</span>
-                                    </li>
-                                    <li className="flex items-center space-x-3">
-                                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                        <span>Riwayat pemesanan mudah</span>
-                                    </li>
-                                    <li className="flex items-center space-x-3">
-                                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                        <span>Fitur wishlist destinasi</span>
-                                    </li>
-                                    <li className="flex items-center space-x-3">
-                                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                        <span>Offline access untuk tiket</span>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section> */}
-                    
-                    <div className="text-center mt-8 md:hidden">
-                        <button className="bg-blue-600 text-white px-6 py-3 rounded-full font-semibold hover:bg-blue-700 transition-colors duration-300">
-                            Lihat Semua Promo
-                        </button>
-                    </div>
-                </div>
-            </section>
-            
-            
-            {/* Footer */}
-            {/* <footer className="bg-[#0A58CA] text-white p-8 mt-12">
-                <div className="container mx-auto text-center text-sm">
-                    &copy; {new Date().getFullYear()} TripGO. Semua Hak Dilindungi.
-                </div>
-            </footer> */}
         </div>  
     );
 }

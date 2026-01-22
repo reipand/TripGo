@@ -1,4 +1,3 @@
-// app/components/Navbar.tsx
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -6,7 +5,6 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/app/lib/supabaseClient';
 import { User } from '@supabase/supabase-js';
-import LogoutButton from './LogoutButton'; // Import LogoutButton baru
 
 // Icon Components
 const SearchIcon = ({ className = "" }: { className?: string }) => (
@@ -76,6 +74,55 @@ const LogoutIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 );
 
+// Simple Logout Component inline
+const LogoutButton = ({ 
+  onLogout, 
+  children, 
+  className = "",
+  showConfirmation = true 
+}: { 
+  onLogout: () => Promise<void>;
+  children: React.ReactNode;
+  className?: string;
+  showConfirmation?: boolean;
+  variant?: string;
+  size?: string;
+  redirectTo?: string;
+}) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleClick = async () => {
+    if (showConfirmation) {
+      const confirmed = window.confirm('Apakah Anda yakin ingin keluar?');
+      if (!confirmed) return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onLogout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={isLoading}
+      className={`${className} ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      {isLoading ? (
+        <div className="flex items-center">
+          <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent mr-2"></div>
+          <span>Memproses...</span>
+        </div>
+      ) : children}
+    </button>
+  );
+};
+
 const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -85,14 +132,13 @@ const Navbar = () => {
   const [loading, setLoading] = useState(true);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   const router = useRouter();
   const pathname = usePathname();
 
   // Refs for click outside detection
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const mobileMenuRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
 
   // Check auth status and fetch user data
@@ -102,19 +148,34 @@ const Navbar = () => {
         setLoading(true);
         
         // Get current session
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          return;
+        }
         
         if (session?.user) {
           setUser(session.user);
           
           // Fetch user profile from public.users table
-          const { data: profile } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          setUserProfile(profile || { email: session.user.email });
+          try {
+            const { data: profile, error: profileError } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+            
+            if (profileError) {
+              console.warn('Profile fetch error:', profileError);
+              setUserProfile({ email: session.user.email, name: session.user.email?.split('@')[0] });
+            } else {
+              setUserProfile(profile || { email: session.user.email, name: session.user.email?.split('@')[0] });
+            }
+          } catch (error) {
+            console.error('Profile fetch error:', error);
+            setUserProfile({ email: session.user.email, name: session.user.email?.split('@')[0] });
+          }
           
           // Fetch notifications
           fetchNotifications(session.user.id);
@@ -136,26 +197,31 @@ const Navbar = () => {
     checkAuth();
 
     // Subscribe to auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         const currentUser = session.user as User;
         setUser(currentUser);
         
         // Fetch user profile
         try {
-          const { data: profile } = await supabase
+          const { data: profile, error: profileError } = await supabase
             .from('users')
             .select('*')
             .eq('id', currentUser.id)
             .single();
           
-          setUserProfile(profile || { email: currentUser.email });
+          if (profileError) {
+            console.warn('Profile fetch error:', profileError);
+            setUserProfile({ email: currentUser.email, name: currentUser.email?.split('@')[0] });
+          } else {
+            setUserProfile(profile || { email: currentUser.email, name: currentUser.email?.split('@')[0] });
+          }
           
           // Fetch notifications
           fetchNotifications(currentUser.id);
         } catch (error) {
           console.error('Error fetching user profile:', error);
-          setUserProfile({ email: currentUser.email });
+          setUserProfile({ email: currentUser.email, name: currentUser.email?.split('@')[0] });
         }
       } else {
         setUser(null);
@@ -166,13 +232,16 @@ const Navbar = () => {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Listen for custom notification events
   useEffect(() => {
     const handleNotificationUpdate = (event: CustomEvent) => {
-      setNotificationCount(event.detail.count);
+      const count = parseInt(event.detail.count) || 0;
+      setNotificationCount(count);
       
       // Refresh notifications if user is logged in
       if (user?.id) {
@@ -199,7 +268,14 @@ const Navbar = () => {
   useEffect(() => {
     const savedCount = localStorage.getItem('notificationCount');
     if (savedCount) {
-      setNotificationCount(parseInt(savedCount));
+      try {
+        const count = parseInt(savedCount);
+        if (!isNaN(count)) {
+          setNotificationCount(count);
+        }
+      } catch (error) {
+        console.error('Error parsing notification count:', error);
+      }
     }
   }, []);
 
@@ -228,15 +304,20 @@ const Navbar = () => {
       
       // Update local storage and document title
       localStorage.setItem('notificationCount', count.toString());
-      if (count > 0) {
-        document.title = `(${count}) TripGo`;
-      } else {
-        document.title = 'TripGo';
-      }
+      updateDocumentTitle(count);
 
     } catch (error) {
       console.error('Error fetching notifications:', error);
       createSampleNotifications(userId);
+    }
+  };
+
+  // Update document title
+  const updateDocumentTitle = (count: number) => {
+    if (count > 0) {
+      document.title = `(${count}) TripGo`;
+    } else {
+      document.title = 'TripGo';
     }
   };
 
@@ -266,29 +347,26 @@ const Navbar = () => {
     ];
 
     setNotifications(sampleNotifications);
-    setNotificationCount(sampleNotifications.length);
+    const count = sampleNotifications.length;
+    setNotificationCount(count);
     
     // Update local storage
-    localStorage.setItem('notificationCount', sampleNotifications.length.toString());
-    
-    // Create notifications table if needed
-    try {
-      await supabase.from('notifications').upsert(sampleNotifications);
-    } catch (error) {
-      // Table creation failed, that's ok
-    }
+    localStorage.setItem('notificationCount', count.toString());
+    updateDocumentTitle(count);
   };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      
+      if (userMenuRef.current && !userMenuRef.current.contains(target)) {
         setIsUserMenuOpen(false);
       }
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(target)) {
         setIsMobileMenuOpen(false);
       }
-      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+      if (notificationsRef.current && !notificationsRef.current.contains(target)) {
         setIsNotificationsOpen(false);
       }
     };
@@ -336,13 +414,15 @@ const Navbar = () => {
     return 'User';
   };
 
-  // **PERBAIKAN: Handle logout yang lebih baik**
+  // Handle logout
   const handleLogout = async (): Promise<void> => {
     try {
-      setIsLoggingOut(true);
-      
       // Sign out from Supabase
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        throw error;
+      }
       
       // Clear local state
       setUser(null);
@@ -350,6 +430,7 @@ const Navbar = () => {
       setNotifications([]);
       setNotificationCount(0);
       localStorage.removeItem('notificationCount');
+      updateDocumentTitle(0);
       
       // Close menus
       setIsUserMenuOpen(false);
@@ -372,10 +453,7 @@ const Navbar = () => {
       // Redirect to home
       setTimeout(() => {
         router.push('/');
-        router.refresh(); // Refresh to update auth state
-      }, 500);
-      
-      return Promise.resolve();
+      }, 300);
       
     } catch (error: any) {
       console.error('Error logging out:', error);
@@ -388,9 +466,7 @@ const Navbar = () => {
         }
       }));
       
-      throw error; // Re-throw so LogoutButton can catch it
-    } finally {
-      setIsLoggingOut(false);
+      throw error;
     }
   };
 
@@ -403,17 +479,21 @@ const Navbar = () => {
         .update({ is_read: true })
         .eq('id', notificationId);
 
-      if (error && error.code !== '42P01') { // Table doesn't exist error
+      // Check if error is table not exists error
+      if (error && error.message?.includes('does not exist')) {
+        console.warn('Notifications table does not exist');
+      } else if (error) {
         console.warn('Cannot update notification in DB:', error);
       }
 
       // Update local state
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
-      const newCount = notificationCount - 1;
+      const newCount = Math.max(0, notificationCount - 1);
       setNotificationCount(newCount);
       
       // Update local storage and dispatch event
       localStorage.setItem('notificationCount', newCount.toString());
+      updateDocumentTitle(newCount);
       window.dispatchEvent(new CustomEvent('notificationUpdate', { 
         detail: { count: newCount } 
       }));
@@ -434,7 +514,10 @@ const Navbar = () => {
           .eq('user_id', user.id)
           .eq('is_read', false);
 
-        if (error && error.code !== '42P01') {
+        // Check if error is table not exists error
+        if (error && error.message?.includes('does not exist')) {
+          console.warn('Notifications table does not exist');
+        } else if (error) {
           console.warn('Cannot update notifications in DB:', error);
         }
       }
@@ -445,6 +528,7 @@ const Navbar = () => {
       
       // Update local storage and dispatch event
       localStorage.setItem('notificationCount', '0');
+      updateDocumentTitle(0);
       window.dispatchEvent(new CustomEvent('notificationUpdate', { 
         detail: { count: 0 } 
       }));
@@ -533,7 +617,9 @@ const Navbar = () => {
                   <BellIcon />
                   {notificationCount > 0 && (
                     <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center border-2 border-white">
-                      <span className="text-xs text-white font-bold">{notificationCount > 9 ? '9+' : notificationCount}</span>
+                      <span className="text-xs text-white font-bold">
+                        {notificationCount > 9 ? '9+' : notificationCount}
+                      </span>
                     </span>
                   )}
                 </button>
@@ -546,7 +632,7 @@ const Navbar = () => {
                       {notifications.length > 0 && (
                         <button 
                           onClick={handleMarkAllAsRead}
-                          className="text-xs text-blue-600 hover:text-blue-800"
+                          className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           Tandai semua telah dibaca
                         </button>
@@ -564,16 +650,22 @@ const Navbar = () => {
                             <div className="flex items-start">
                               <div className={`w-2 h-2 rounded-full mt-1.5 mr-3 flex-shrink-0 ${getNotificationTypeColor(notification.type)}`}></div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm text-gray-800 font-medium truncate">{notification.title}</p>
-                                <p className="text-xs text-gray-600 mt-1">{notification.message}</p>
-                                <p className="text-xs text-gray-400 mt-1">{formatTimeAgo(notification.created_at)}</p>
+                                <p className="text-sm text-gray-800 font-medium truncate">
+                                  {notification.title || 'Notifikasi'}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {notification.message || 'Pesan notifikasi'}
+                                </p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {formatTimeAgo(notification.created_at || new Date().toISOString())}
+                                </p>
                               </div>
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleMarkAsRead(notification.id);
                                 }}
-                                className="ml-2 text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="ml-2 text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -622,15 +714,18 @@ const Navbar = () => {
                 <>
                   <button
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                    disabled={isLoggingOut}
-                    className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg px-3 py-2 hover:from-blue-100 hover:to-blue-200 transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg px-3 py-2 hover:from-blue-100 hover:to-blue-200 transition-all duration-200 shadow-sm"
                   >
                     <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center shadow-md">
                       <span className="text-white text-sm font-bold">{getUserInitials()}</span>
                     </div>
                     <div className="hidden sm:block text-left max-w-[120px]">
-                      <p className="text-gray-800 text-sm font-semibold truncate">Halo, {getDisplayName().split(' ')[0]}!</p>
-                      <p className="text-gray-500 text-xs truncate">{userProfile?.email || user.email}</p>
+                      <p className="text-gray-800 text-sm font-semibold truncate">
+                        Halo, {getDisplayName().split(' ')[0]}!
+                      </p>
+                      <p className="text-gray-500 text-xs truncate">
+                        {userProfile?.email || user.email || 'User'}
+                      </p>
                     </div>
                     <ChevronDownIcon className={`text-gray-600 transition-transform duration-200 ${isUserMenuOpen ? 'rotate-180' : ''}`} />
                   </button>
@@ -641,7 +736,9 @@ const Navbar = () => {
                       {/* User Info */}
                       <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-xl">
                         <p className="text-sm font-semibold text-gray-800">{getDisplayName()}</p>
-                        <p className="text-xs text-gray-600 truncate">{userProfile?.email || user.email}</p>
+                        <p className="text-xs text-gray-600 truncate">
+                          {userProfile?.email || user.email || 'user@example.com'}
+                        </p>
                         {userProfile?.phone && (
                           <p className="text-xs text-gray-500 mt-1">{userProfile.phone}</p>
                         )}
@@ -703,7 +800,7 @@ const Navbar = () => {
                         <>
                           <div className="border-t border-gray-100 my-2"></div>
                           <Link
-                            href="/admin"
+                            href="/admin/dashboard"
                             className="flex items-center px-4 py-3 text-sm text-purple-600 hover:bg-purple-50 transition-colors"
                             onClick={() => setIsUserMenuOpen(false)}
                           >
@@ -717,15 +814,12 @@ const Navbar = () => {
                       
                       <div className="border-t border-gray-100 my-2"></div>
                       
-                      {/* **PERBAIKAN: Gunakan LogoutButton yang baru ** */}
+                      {/* Logout Button */}
                       <div className="px-1">
                         <LogoutButton
                           onLogout={handleLogout}
-                          variant="text"
-                          size="full"
                           className="w-full flex items-center justify-start px-3 py-2.5 text-red-600 hover:bg-red-50 transition-colors rounded-lg text-sm font-medium"
                           showConfirmation={true}
-                          redirectTo="/"
                         >
                           <LogoutIcon className="w-4 h-4 mr-3" />
                           <span>Keluar</span>
@@ -754,13 +848,14 @@ const Navbar = () => {
             </div>
 
             {/* Mobile Menu Button */}
-            <button
-              ref={mobileMenuRef}
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 text-gray-600 hover:text-blue-600 rounded-lg transition-colors hover:bg-gray-100"
-            >
-              {isMobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
-            </button>
+            <div ref={mobileMenuRef}>
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="lg:hidden p-2 text-gray-600 hover:text-blue-600 rounded-lg transition-colors hover:bg-gray-100"
+              >
+                {isMobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -795,7 +890,9 @@ const Navbar = () => {
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-gray-800">{getDisplayName()}</p>
-                      <p className="text-xs text-gray-600 truncate">{userProfile?.email || user.email}</p>
+                      <p className="text-xs text-gray-600 truncate">
+                        {userProfile?.email || user.email || 'User'}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -849,7 +946,24 @@ const Navbar = () => {
                       </span>
                     )}
                   </Link>
-                  
+                  {/* Bagian Desktop Dropdown - Cari kode: userProfile?.role === 'admin' */}
+                  {['admin', 'super_admin'].includes(userProfile?.role?.toLowerCase()) && (
+                    <>
+                      <div className="border-t border-gray-100 my-2"></div>
+                      <Link
+                        href="/admin/dashboard"
+                        className="flex items-center px-4 py-3 text-sm text-purple-600 hover:bg-purple-50 transition-colors font-semibold"
+                        onClick={() => setIsUserMenuOpen(false)}
+                      >
+                        <div className="w-5 h-5 mr-3 text-purple-500">
+                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          </svg>
+                        </div>
+                        Admin Dashboard
+                      </Link>
+                    </>
+                  )}
                   {userProfile?.role === 'admin' && (
                     <Link
                       href="/admin"
@@ -863,15 +977,12 @@ const Navbar = () => {
                     </Link>
                   )}
                   
-                  {/* **PERBAIKAN: Gunakan LogoutButton untuk mobile juga ** */}
+                  {/* Logout Button for mobile */}
                   <div className="mt-2 pt-2 border-t border-gray-200">
                     <LogoutButton
                       onLogout={handleLogout}
-                      variant="text"
-                      size="full"
                       className="w-full flex items-center justify-start py-3 px-4 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
                       showConfirmation={true}
-                      redirectTo="/"
                     >
                       <LogoutIcon className="w-5 h-5 mr-3" />
                       <span>Keluar</span>
@@ -905,12 +1016,13 @@ const Navbar = () => {
       </div>
 
       {/* Overlay for dropdowns */}
-      {(isUserMenuOpen || isNotificationsOpen) && (
+      {(isUserMenuOpen || isNotificationsOpen || isMobileMenuOpen) && (
         <div 
-          className="fixed inset-0 z-40 bg-black bg-opacity-10" 
+          className="fixed inset-0 z-40 bg-black bg-opacity-10 lg:hidden" 
           onClick={() => {
             setIsUserMenuOpen(false);
             setIsNotificationsOpen(false);
+            setIsMobileMenuOpen(false);
           }}
         />
       )}

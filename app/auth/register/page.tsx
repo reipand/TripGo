@@ -197,74 +197,116 @@ function RegisterContent() {
     return true;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
+const createUserViaAPI = async (email: string, password: string, userData: any) => {
+  try {
+    console.log('Creating user via API:', { email, userData });
+
+    const response = await fetch('/api/auth/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: email.trim(),
+        password: password,
+        user_metadata: {
+          name: userData.name,
+          phone: userData.phone,
+          date_of_birth: userData.date_of_birth,
+          gender: userData.gender,
+          address: userData.address,
+          agreed_to_marketing: userData.metadata?.agreed_to_marketing || false
+        }
+      }),
+    });
+
+    const result = await response.json();
+    console.log('API Response:', { status: response.status, result });
+
+    if (!response.ok) {
+      // Parse error message
+      let errorMessage = result.error || 'Failed to create user';
+      
+      if (errorMessage.includes('already registered') || errorMessage.includes('already exists')) {
+        errorMessage = 'Email sudah terdaftar. Silakan gunakan email lain atau login.';
+      } else if (errorMessage.includes('password')) {
+        errorMessage = 'Password tidak memenuhi persyaratan keamanan.';
+      } else if (errorMessage.includes('Database error')) {
+        errorMessage = 'Terjadi kesalahan sistem. Silakan coba lagi.';
+      }
+      
+      throw new Error(errorMessage);
     }
 
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
+    // Coba login otomatis
     try {
-      // Format data sesuai dengan struktur tabel users
-      const userData = {
-        // Nama lengkap digabungkan dari firstName dan lastName
-        name: `${formData.firstName} ${formData.lastName}`.trim(),
-        phone: formData.phone || null,
-        date_of_birth: formData.dateOfBirth || null,
-        gender: formData.gender || null,
-        address: formData.address || null,
-        // Default values sesuai schema
-        role: 'user' as const,
-        email_verified: false,
-        phone_verified: false,
-        is_active: true,
-        metadata: {
-          registration_date: new Date().toISOString(),
-          agreed_to_marketing: formData.agreeToMarketing,
-          registration_method: 'email_password'
-        }
-      };
-
-      const result = await signUp(
-        formData.email, 
-        formData.password, 
-        userData
-      );
+      const { signIn } = useAuth();
+      const loginResult = await signIn(email, password);
       
-      if (result.error) {
-        // Handle error spesifik dari Supabase
-        const errorMsg = result.error.message.toLowerCase();
-        
-        if (errorMsg.includes('already registered') || 
-            errorMsg.includes('already exists') ||
-            errorMsg.includes('user already registered')) {
-          setError('Email sudah terdaftar. Silakan gunakan email lain atau login.');
-        } else if (errorMsg.includes('password')) {
-          setError('Password tidak memenuhi persyaratan keamanan');
-        } else if (errorMsg.includes('invalid')) {
-          setError('Data yang dimasukkan tidak valid');
-        } else if (errorMsg.includes('rate limit')) {
-          setError('Terlalu banyak percobaan. Silakan coba lagi nanti.');
-        } else {
-          setError(result.error.message || 'Terjadi kesalahan saat mendaftar');
-        }
-      } else if (result.needsVerification) {
-        // Redirect to verification page with email and redirect parameters
-        const verifyUrl = `/auth/verify-email?email=${encodeURIComponent(formData.email)}`;
-        const finalUrl = redirectUrl ? `${verifyUrl}&redirect=${encodeURIComponent(redirectUrl)}` : verifyUrl;
-        setSuccess('Registrasi berhasil! Mengarahkan ke halaman verifikasi...');
-        
-        // Tunggu 2 detik sebelum redirect
+      if (loginResult.error) {
+        console.warn('Auto-login failed, user can login manually:', loginResult.error);
+        // Return success anyway, user can login manually
+        return { success: true, data: result, needsManualLogin: true };
+      }
+      
+      return { success: true, data: result, needsManualLogin: false };
+    } catch (loginError) {
+      console.warn('Login exception:', loginError);
+      return { success: true, data: result, needsManualLogin: true };
+    }
+    
+  } catch (error: any) {
+    console.error('API create user error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Terjadi kesalahan sistem' 
+    };
+  }
+};
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  if (!validateForm()) {
+    return;
+  }
+
+  setLoading(true);
+  setError('');
+  setSuccess('');
+
+  try {
+    // Format data sederhana
+    const userData = {
+      name: `${formData.firstName} ${formData.lastName}`.trim(),
+      phone: formData.phone || '',
+      date_of_birth: formData.dateOfBirth || null,
+      gender: formData.gender || null,
+      address: formData.address || null,
+      metadata: {
+        agreed_to_marketing: formData.agreeToMarketing
+      }
+    };
+
+    console.log('Submitting registration:', { email: formData.email, userData });
+
+    // Gunakan API endpoint untuk create user
+    const result = await createUserViaAPI(
+      formData.email, 
+      formData.password, 
+      userData
+    );
+    
+    if (!result.success) {
+      setError(result.error || 'Terjadi kesalahan saat mendaftar');
+    } else {
+      if (result.needsManualLogin) {
+        setSuccess('Registrasi berhasil! Silakan login dengan email dan password Anda.');
         setTimeout(() => {
-          router.push(finalUrl);
-        }, 2000);
+          router.push('/auth/login');
+        }, 3000);
       } else {
         setSuccess('Registrasi berhasil! Mengarahkan ke dashboard...');
-        // Tunggu sebentar sebelum redirect
         setTimeout(() => {
           if (redirectUrl) {
             router.push(decodeURIComponent(redirectUrl));
@@ -273,13 +315,15 @@ function RegisterContent() {
           }
         }, 2000);
       }
-    } catch (err: any) {
-      console.error('Registration error:', err);
-      setError(err.message || 'Terjadi kesalahan sistem saat mendaftar. Silakan coba lagi.');
-    } finally {
-      setLoading(false);
     }
-  };
+  } catch (err: any) {
+    console.error('Registration error:', err);
+    setError('Terjadi kesalahan sistem: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleGoogleSignUp = async () => {
   setGoogleLoading(true);
@@ -287,7 +331,7 @@ function RegisterContent() {
   setSuccess('');
 
   try {
-    // Simpan redirect URL ke localStorage sebelum OAuth redirect
+    // Simpan redirect URL dengan key yang konsisten
     if (redirectUrl) {
       localStorage.setItem('oauth_redirect', redirectUrl);
     }
@@ -295,48 +339,40 @@ function RegisterContent() {
     // Panggil signInWithGoogle tanpa parameter
     const result = await signInWithGoogle();
     
-    // Jika ada error dari OAuth
     if (result?.error) {
       const errorMsg = result.error.message?.toLowerCase() || '';
       
-      // Handle error OAuth spesifik
-      if (errorMsg.includes('access_denied')) {
-        setError('Akses ditolak. Pastikan Anda memberikan izin akses ke akun Google.');
-      } else if (errorMsg.includes('popup')) {
+      // Clean localStorage on error
+      localStorage.removeItem('oauth_redirect');
+      
+      if (errorMsg.includes('popup_closed_by_user')) {
         setError('Pop-up login ditutup. Silakan coba lagi.');
-      } else if (errorMsg.includes('already registered') || 
-                 errorMsg.includes('already exists') ||
-                 errorMsg.includes('user already registered')) {
-        setError('Email sudah terdaftar dengan metode lain. Silakan login dengan email dan password.');
+      } else if (errorMsg.includes('oauth_callback')) {
+        // This might be expected - OAuth flow has started
+        setSuccess('Mengarahkan ke Google untuk autentikasi...');
+        return;
       } else {
         setError(result.error.message || 'Terjadi kesalahan saat login dengan Google');
       }
     } else {
-      // OAuth berjalan, Supabase akan handle redirect via callback
+      // OAuth flow initiated successfully
       setSuccess('Mengarahkan ke Google untuk autentikasi...');
     }
     
   } catch (err: any) {
     console.error('Google sign up error:', err);
+    localStorage.removeItem('oauth_redirect');
     
     const errorMsg = err.message?.toLowerCase() || '';
-    if (errorMsg.includes('already registered')) {
-      setError('Akun Google sudah terdaftar. Silakan login dengan Google atau gunakan email lain.');
-    } else if (errorMsg.includes('popup') || errorMsg.includes('cancelled')) {
+    if (errorMsg.includes('popup')) {
       setError('Login dengan Google dibatalkan. Silakan coba lagi.');
-    } else if (errorMsg.includes('access_denied')) {
-      setError('Akses ditolak. Pastikan Anda memberikan izin yang diperlukan.');
-    } else if (errorMsg.includes('network') || errorMsg.includes('failed to fetch')) {
-      setError('Koneksi internet bermasalah. Silakan cek koneksi Anda.');
     } else {
       setError('Terjadi kesalahan saat mendaftar dengan Google. Silakan coba lagi.');
     }
   } finally {
-    // Jangan set googleLoading false terlalu cepat karena redirect akan terjadi
-    // Biarkan loading selama beberapa detik
     setTimeout(() => {
       setGoogleLoading(false);
-    }, 3000);
+    }, 2000);
   }
 };
 

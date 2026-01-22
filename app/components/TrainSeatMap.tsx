@@ -409,37 +409,37 @@ export const TrainSeatMap: React.FC<TrainSeatMapProps> = ({
             <div className="w-12 h-12 bg-green-500 border-2 border-green-600 rounded-lg flex items-center justify-center text-white font-bold">
               A1
             </div>
-            <span className="text-center">Terpilih</span>
+            <span className="text-center text-gray-700">Terpilih</span>
           </div>
           <div className="flex flex-col items-center space-y-1">
             <div className="w-12 h-12 bg-gray-300 border-2 border-gray-400 rounded-lg flex items-center justify-center text-gray-500 font-bold">
               A2
             </div>
-            <span className="text-center">Tidak Tersedia</span>
+            <span className="text-center text-gray-700">Tidak Tersedia</span>
           </div>
           <div className="flex flex-col items-center space-y-1">
             <div className="w-12 h-12 bg-blue-100 border-2 border-blue-300 rounded-lg flex items-center justify-center text-blue-700 font-bold">
               A3
             </div>
-            <span className="text-center">Kursi Jendela</span>
+            <span className="text-center text-gray-700">Kursi Jendela</span>
           </div>
           <div className="flex flex-col items-center space-y-1">
             <div className="w-12 h-12 bg-blue-50 border-2 border-blue-200 rounded-lg flex items-center justify-center text-blue-600 font-bold">
               B1
             </div>
-            <span className="text-center">Kursi Lorong</span>
+            <span className="text-center text-gray-700">Kursi Lorong</span>
           </div>
           <div className="flex flex-col items-center space-y-1">
             <div className="w-12 h-12 bg-purple-100 border-2 border-purple-300 rounded-lg flex items-center justify-center text-purple-700 font-bold">
               C1
             </div>
-            <span className="text-center">Kelas Bisnis</span>
+            <span className="text-center text-gray-700">Kelas Bisnis</span>
           </div>
           <div className="flex flex-col items-center space-y-1">
             <div className="w-12 h-12 bg-gray-100 border-2 border-gray-300 rounded-lg flex items-center justify-center text-gray-700 font-bold">
               D1
             </div>
-            <span className="text-center">Kelas Ekonomi</span>
+            <span className="text-center text-gray-700">Kelas Ekonomi</span>
           </div>
         </div>
         

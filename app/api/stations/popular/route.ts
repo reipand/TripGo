@@ -1,17 +1,20 @@
 // app/api/stations/popular/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabaseClient';
+import { createClient } from '@/app/lib/supabaseServer'; // Ganti impor ini
 
 export async function GET(request: NextRequest) {
   try {
     console.log('📡 Fetching popular stations from database...');
+    
+    // Gunakan createClient dari supabaseServer
+    const supabase = createClient(); // <-- Ini yang penting!
     
     // Query ke tabel stasiun dengan kolom yang benar sesuai database
     const { data: stasiunData, error: stasiunError } = await supabase
       .from('stasiun')
       .select('id, kode_stasiun, nama_stasiun, city, tipe')
       .eq('is_active', true)
-      .order('kode_stasiun')  // Urutkan berdasarkan kode
+      .order('kode_stasiun')
       .limit(8);
 
     if (stasiunError) {
@@ -141,7 +144,7 @@ function getRegionFromCity(city: string): string {
 function getFallbackStations() {
   return [
     {
-      id: 'stasiun-bd',
+      id: 'bd',
       code: 'BD',
       name: 'Stasiun Bandung',
       city: 'Bandung',
@@ -150,7 +153,7 @@ function getFallbackStations() {
       popularity: 95
     },
     {
-      id: 'stasiun-gmr',
+      id: 'gmr',
       code: 'GMR',
       name: 'Stasiun Gambir',
       city: 'Jakarta',
@@ -159,7 +162,7 @@ function getFallbackStations() {
       popularity: 98
     },
     {
-      id: 'stasiun-sby',
+      id: 'sby',
       code: 'SBY',
       name: 'Stasiun Surabaya Gubeng',
       city: 'Surabaya',
@@ -168,7 +171,7 @@ function getFallbackStations() {
       popularity: 92
     },
     {
-      id: 'stasiun-yk',
+      id: 'yk',
       code: 'YK',
       name: 'Stasiun Yogyakarta',
       city: 'Yogyakarta',
@@ -177,7 +180,7 @@ function getFallbackStations() {
       popularity: 90
     },
     {
-      id: 'stasiun-slo',
+      id: 'slo',
       code: 'SLO',
       name: 'Stasiun Solo Balapan',
       city: 'Solo',
@@ -186,7 +189,7 @@ function getFallbackStations() {
       popularity: 85
     },
     {
-      id: 'stasiun-smg',
+      id: 'smg',
       code: 'SMG',
       name: 'Stasiun Semarang Tawang',
       city: 'Semarang',
@@ -195,7 +198,7 @@ function getFallbackStations() {
       popularity: 88
     },
     {
-      id: 'stasiun-mlg',
+      id: 'mlg',
       code: 'MLG',
       name: 'Stasiun Malang',
       city: 'Malang',
@@ -204,7 +207,7 @@ function getFallbackStations() {
       popularity: 82
     },
     {
-      id: 'stasiun-crb',
+      id: 'crb',
       code: 'CRB',
       name: 'Stasiun Cirebon',
       city: 'Cirebon',

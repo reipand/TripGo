@@ -1,14 +1,58 @@
+// app/search/trains/page.tsx
 'use client';
 
 import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { supabase } from '@/app/lib/supabaseClient';
 
-// --- Tipe Data ---
+// --- Tipe Data sesuai database ---
+interface Station {
+  id: string;
+  kode_stasiun: string;
+  nama_stasiun: string;
+  city: string;
+  type?: string;
+}
+
 interface Train {
   id: string;
+  kode_kereta: string;
+  nama_kereta: string;
+  operator: string;
+  tipe_kereta: string;
+  jumlah_kursi: number;
+  fasilitas: string[];
+  keterangan?: string;
+}
+
+interface TrainSchedule {
+  id: string;
   train_id: string;
+  travel_date: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Route {
+  id: string;
+  schedule_id: string;
+  origin_station_id: string;
+  destination_station_id: string;
+  route_order: number;
+  arrival_time: string;
+  departure_time: string;
+  duration_minutes: number;
+  station_order: number;
+  train_id?: string;
+}
+
+interface CombinedTrainData {
+  id: string;
+  train_id: string;
+  schedule_id: string;
   train_number: string;
   train_name: string;
   train_type: string;
@@ -39,21 +83,12 @@ interface Train {
   insurance: number;
   seat_type: string;
   route_type: string;
-  // Fields untuk kompatibilitas tambahan
-  trainName?: string;
-  originStation?: string;
-  originCity?: string;
-  destinationStation?: string;
-  destinationCity?: string;
-  departureTime?: string;
-  arrivalTime?: string;
-  trainType?: string;
-  schedule_id?: string;
   isRefundable?: boolean;
   isCheckinAvailable?: boolean;
   isBestDeal?: boolean;
   isHighDemand?: boolean;
   warning?: string;
+  schedule_id_db?: string;
 }
 
 // --- Komponen Ikon ---
@@ -80,16 +115,6 @@ const formatDuration = (minutes: number): string => {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours}j ${mins}m`;
-};
-
-const parseDurationToMinutes = (durationStr: string): number => {
-  const match = durationStr.match(/(\d+)j\s*(\d+)m/);
-  if (match) {
-    const hours = parseInt(match[1]);
-    const minutes = parseInt(match[2]);
-    return hours * 60 + minutes;
-  }
-  return 0;
 };
 
 const getTrainTypeColor = (type: string) => {
@@ -124,35 +149,32 @@ const getFacilitiesByClass = (trainClass: string): string[] => {
 };
 
 // --- Komponen Kartu Tiket Kereta ---
-const TrainTicketCard = React.memo(({ train, passengers }: { train: Train, passengers: number }) => {
+const TrainTicketCard = React.memo(({ train, passengers }: { train: CombinedTrainData, passengers: number }) => {
   const router = useRouter();
   const [selected, setSelected] = useState(false);
   
   // Format waktu untuk tampilan
   const departureTime = train.departure_time ? 
-    train.departure_time.split(':').slice(0, 2).join(':') : 
-    train.departureTime || '--:--';
+    train.departure_time.split(':').slice(0, 2).join(':') : '--:--';
     
   const arrivalTime = train.arrival_time ? 
-    train.arrival_time.split(':').slice(0, 2).join(':') : 
-    train.arrivalTime || '--:--';
+    train.arrival_time.split(':').slice(0, 2).join(':') : '--:--';
   
   // Durasi
-  const duration = train.duration || 
-    (train.duration_minutes ? formatDuration(train.duration_minutes) : '');
+  const duration = train.duration || formatDuration(train.duration_minutes);
   
-  const kotaAsal = train.origin_station?.city || train.originCity || '';
-  const kotaTujuan = train.destination_station?.city || train.destinationCity || '';
+  const kotaAsal = train.origin_station.city;
+  const kotaTujuan = train.destination_station.city;
   
   const availableSeats = train.stok_kursi || train.availableSeats || 0;
   const isSoldOut = availableSeats <= 0;
   const isLimited = availableSeats > 0 && availableSeats <= 5;
   const isAlmostSoldOut = availableSeats > 5 && availableSeats <= 10;
   
-  const trainName = train.train_name || train.trainName || '';
-  const trainType = train.class_type || train.trainClass || train.train_type || '';
+  const trainName = train.train_name;
+  const trainType = train.class_type || train.trainClass || train.train_type;
   const price = train.harga || train.price || 0;
-  const trainCode = train.train_number || '';
+  const trainCode = train.train_number;
 
   const handleSelect = () => {
     if (isSoldOut) return;
@@ -173,13 +195,13 @@ const TrainTicketCard = React.memo(({ train, passengers }: { train: Train, passe
       departureTime,
       arrivalTime,
       duration,
-      origin: train.origin_station?.name || kotaAsal,
-      destination: train.destination_station?.name || kotaTujuan,
-      originCode: train.origin_station?.code || '',
-      destinationCode: train.destination_station?.code || '',
-      originCity: train.origin_station?.city || kotaAsal,
-      destinationCity: train.destination_station?.city || kotaTujuan,
-      departureDate: train.travel_date || '',
+      origin: train.origin_station.name,
+      destination: train.destination_station.name,
+      originCode: train.origin_station.code,
+      destinationCode: train.destination_station.code,
+      originCity: train.origin_station.city,
+      destinationCity: train.destination_station.city,
+      departureDate: train.travel_date,
       selectedClass: train.class_type || trainType,
       price,
       passengers,
@@ -255,7 +277,7 @@ const TrainTicketCard = React.memo(({ train, passengers }: { train: Train, passe
           {/* Departure */}
           <div className="text-center">
             <div className="text-3xl font-bold text-gray-900">{departureTime}</div>
-            <div className="text-sm font-medium text-gray-700 mt-1">{train.origin_station?.code || ''}</div>
+            <div className="text-sm font-medium text-gray-700 mt-1">{train.origin_station.code}</div>
             <div className="text-xs text-gray-500">{kotaAsal}</div>
           </div>
           
@@ -282,7 +304,7 @@ const TrainTicketCard = React.memo(({ train, passengers }: { train: Train, passe
           {/* Arrival */}
           <div className="text-center">
             <div className="text-3xl font-bold text-gray-900">{arrivalTime}</div>
-            <div className="text-sm font-medium text-gray-700 mt-1">{train.destination_station?.code || ''}</div>
+            <div className="text-sm font-medium text-gray-700 mt-1">{train.destination_station.code}</div>
             <div className="text-xs text-gray-500">{kotaTujuan}</div>
           </div>
         </div>
@@ -500,49 +522,277 @@ const TrainResults = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
   
-  const [allTrains, setAllTrains] = useState<Train[]>([]);
-  const [filteredTrains, setFilteredTrains] = useState<Train[]>([]);
+  const [allTrains, setAllTrains] = useState<CombinedTrainData[]>([]);
+  const [filteredTrains, setFilteredTrains] = useState<CombinedTrainData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortType, setSortType] = useState('departure-asc');
   const [filterType, setFilterType] = useState('all');
   
-  const origin = searchParams.get('origin') || 'BD';
-  const destination = searchParams.get('destination') || 'GMR';
-  const departureDate = searchParams.get('departureDate') || '2026-01-07';
+  const origin = searchParams.get('origin') || '';
+  const destination = searchParams.get('destination') || '';
+  const departureDate = searchParams.get('departureDate') || new Date().toISOString().split('T')[0];
   const passengers = parseInt(searchParams.get('passengers') || '1');
   const tripType = searchParams.get('tripType') || 'oneWay';
 
-  // Data dummy sebagai fallback
-  const generateDummyTrains = useCallback((origin: string, destination: string, date: string): Train[] => {
-    const stations: Record<string, { name: string, city: string }> = {
-      'GMR': { name: 'Stasiun Gambir', city: 'Jakarta' },
-      'BD': { name: 'Stasiun Bandung', city: 'Bandung' },
-      'SBY': { name: 'Stasiun Surabaya Gubeng', city: 'Surabaya' },
-      'SMG': { name: 'Stasiun Semarang Tawang', city: 'Semarang' },
-      'YK': { name: 'Stasiun Yogyakarta', city: 'Yogyakarta' },
+  // Fetch data dari database Supabase
+  useEffect(() => {
+    const fetchTrainsFromDatabase = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        console.log('🔍 Fetching trains from database with params:', {
+          origin,
+          destination,
+          departureDate,
+          passengers
+        });
+
+        // 1. Cari stasiun berdasarkan kode
+        const { data: originStation, error: originError } = await supabase
+          .from('stasiun')
+          .select('*')
+          .eq('kode_stasiun', origin.toUpperCase())
+          .single();
+
+        const { data: destinationStation, error: destinationError } = await supabase
+          .from('stasiun')
+          .select('*')
+          .eq('kode_stasiun', destination.toUpperCase())
+          .single();
+
+        if (originError || !originStation) {
+          throw new Error(`Stasiun asal ${origin} tidak ditemukan`);
+        }
+        if (destinationError || !destinationStation) {
+          throw new Error(`Stasiun tujuan ${destination} tidak ditemukan`);
+        }
+
+        console.log('📍 Stations found:', { originStation, destinationStation });
+
+        // 2. Ambil jadwal kereta untuk tanggal yang diminta
+        const { data: schedules, error: schedulesError } = await supabase
+          .from('jadwal_kereta')
+          .select(`
+            *,
+            kereta:train_id (
+              id,
+              kode_kereta,
+              nama_kereta,
+              operator,
+              tipe_kereta,
+              jumlah_kursi,
+              fasilitas
+            )
+          `)
+          .eq('travel_date', departureDate)
+          .eq('status', 'scheduled')
+          .order('created_at', { ascending: true });
+
+        if (schedulesError) {
+          console.error('Error fetching schedules:', schedulesError);
+          throw new Error('Gagal mengambil jadwal kereta');
+        }
+
+        console.log('📅 Schedules found:', schedules?.length || 0);
+
+        if (!schedules || schedules.length === 0) {
+          setAllTrains([]);
+          setFilteredTrains([]);
+          setLoading(false);
+          return;
+        }
+
+        // 3. Ambil rute untuk setiap jadwal
+        const trainDataPromises = schedules.map(async (schedule) => {
+          try {
+            const { data: routes, error: routesError } = await supabase
+              .from('rute_kereta')
+              .select(`
+                *,
+                origin_station:origin_station_id (*),
+                destination_station:destination_station_id (*)
+              `)
+              .eq('schedule_id', schedule.id)
+              .order('route_order', { ascending: true });
+
+            if (routesError) {
+              console.error('Error fetching routes for schedule', schedule.id, routesError);
+              return null;
+            }
+
+            // Filter rute yang sesuai dengan asal dan tujuan
+            const matchingRoutes = routes?.filter(route => 
+              route.origin_station?.kode_stasiun === origin.toUpperCase() &&
+              route.destination_station?.kode_stasiun === destination.toUpperCase()
+            );
+
+            if (!matchingRoutes || matchingRoutes.length === 0) {
+              return null;
+            }
+
+            // Ambil rute pertama yang cocok
+            const route = matchingRoutes[0];
+            
+            // Hitung harga berdasarkan kelas dan durasi
+            const basePricePerMinute = 1000; // Rp 1000 per menit
+            const classMultiplier = {
+              'executive': 2.5,
+              'business': 1.8,
+              'economy': 1.0,
+              'eksekutif': 2.5,
+              'bisnis': 1.8,
+              'ekonomi': 1.0
+            };
+
+            const trainClass = schedule.kereta?.tipe_kereta?.toLowerCase() || 'economy';
+            const multiplier = classMultiplier[trainClass] || 1.0;
+            const price = Math.round(route.duration_minutes * basePricePerMinute * multiplier);
+            
+            // Cek ketersediaan kursi
+            const { data: seats, error: seatsError } = await supabase
+              .from('train_seats')
+              .select('*')
+              .eq('schedule_id', schedule.id)
+              .eq('status', 'available');
+
+            const availableSeats = seats?.length || 0;
+            
+            // Format fasilitas
+            const facilities = schedule.kereta?.fasilitas || 
+              (typeof schedule.kereta?.fasilitas === 'string' 
+                ? JSON.parse(schedule.kereta.fasilitas) 
+                : getFacilitiesByClass(trainClass));
+
+            return {
+              id: schedule.id,
+              train_id: schedule.train_id,
+              schedule_id: schedule.id,
+              train_number: schedule.kereta?.kode_kereta || '',
+              train_name: schedule.kereta?.nama_kereta || 'Kereta Api',
+              train_type: schedule.kereta?.tipe_kereta || 'Ekonomi',
+              operator: schedule.kereta?.operator || 'PT KAI',
+              origin_station: {
+                code: originStation.kode_stasiun,
+                name: originStation.nama_stasiun,
+                city: originStation.city
+              },
+              destination_station: {
+                code: destinationStation.kode_stasiun,
+                name: destinationStation.nama_stasiun,
+                city: destinationStation.city
+              },
+              departure_time: route.departure_time,
+              arrival_time: route.arrival_time,
+              duration_minutes: route.duration_minutes,
+              duration: formatDuration(route.duration_minutes),
+              travel_date: schedule.travel_date,
+              status: schedule.status,
+              harga: price,
+              price: price,
+              stok_kursi: availableSeats,
+              availableSeats: availableSeats,
+              class_type: schedule.kereta?.tipe_kereta || 'Ekonomi',
+              trainClass: schedule.kereta?.tipe_kereta || 'Ekonomi',
+              facilities: Array.isArray(facilities) ? facilities : [],
+              insurance: 5000,
+              seat_type: 'AD',
+              route_type: 'Direct',
+              isRefundable: true,
+              isCheckinAvailable: true,
+              isBestDeal: availableSeats > 20 && price < 300000,
+              isHighDemand: availableSeats < 10,
+              warning: availableSeats < 5 ? 'Hampir habis!' : undefined,
+              schedule_id_db: schedule.id
+            } as CombinedTrainData;
+          } catch (error) {
+            console.error('Error processing schedule', schedule.id, error);
+            return null;
+          }
+        });
+
+        const trainDataResults = await Promise.all(trainDataPromises);
+        const validTrainData = trainDataResults.filter((train): train is CombinedTrainData => 
+          train !== null
+        );
+
+        console.log('✅ Processed train data:', validTrainData.length, 'trains');
+        
+        // Jika tidak ada data, coba data dummy
+        if (validTrainData.length === 0) {
+          console.log('⚠️ No trains found in database, showing fallback data');
+          const fallbackTrains = generateFallbackTrains(originStation, destinationStation, departureDate);
+          setAllTrains(fallbackTrains);
+          setFilteredTrains(fallbackTrains);
+        } else {
+          setAllTrains(validTrainData);
+          setFilteredTrains(validTrainData);
+        }
+
+      } catch (error: any) {
+        console.error('❌ Error fetching trains from database:', error);
+        setError(error.message || 'Gagal memuat data kereta dari database.');
+        
+        // Fallback ke data dummy
+        try {
+          const { data: originStation } = await supabase
+            .from('stasiun')
+            .select('*')
+            .eq('kode_stasiun', origin.toUpperCase())
+            .single();
+            
+          const { data: destinationStation } = await supabase
+            .from('stasiun')
+            .select('*')
+            .eq('kode_stasiun', destination.toUpperCase())
+            .single();
+          
+          const fallbackTrains = generateFallbackTrains(
+            originStation || { kode_stasiun: origin, nama_stasiun: `Stasiun ${origin}`, city: origin },
+            destinationStation || { kode_stasiun: destination, nama_stasiun: `Stasiun ${destination}`, city: destination },
+            departureDate
+          );
+          
+          setAllTrains(fallbackTrains);
+          setFilteredTrains(fallbackTrains);
+        } catch (fallbackError) {
+          console.error('Fallback error:', fallbackError);
+        }
+      } finally {
+        setLoading(false);
+      }
     };
 
-    const originInfo = stations[origin] || { name: `Stasiun ${origin}`, city: origin };
-    const destinationInfo = stations[destination] || { name: `Stasiun ${destination}`, city: destination };
+    if (origin && destination && departureDate) {
+      fetchTrainsFromDatabase();
+    }
+  }, [origin, destination, departureDate, passengers]);
 
-    const dummyTrains: Train[] = [
+  // Generate fallback data
+  const generateFallbackTrains = (
+    originStation: any, 
+    destinationStation: any, 
+    date: string
+  ): CombinedTrainData[] => {
+    const fallbackTrains: CombinedTrainData[] = [
       {
-        id: 'parahyangan-131',
+        id: 'fallback-1',
         train_id: 'train-001',
+        schedule_id: 'schedule-001',
         train_number: '131',
         train_name: 'Parahyangan',
         train_type: 'Executive',
         operator: 'PT KAI',
         origin_station: {
-          code: origin,
-          name: originInfo.name,
-          city: originInfo.city
+          code: originStation.kode_stasiun,
+          name: originStation.nama_stasiun,
+          city: originStation.city
         },
         destination_station: {
-          code: destination,
-          name: destinationInfo.name,
-          city: destinationInfo.city
+          code: destinationStation.kode_stasiun,
+          name: destinationStation.nama_stasiun,
+          city: destinationStation.city
         },
         departure_time: '05:00:00',
         arrival_time: '08:01:00',
@@ -560,28 +810,28 @@ const TrainResults = () => {
         insurance: 5000,
         seat_type: 'AD',
         route_type: 'Direct',
-        schedule_id: 'schedule-001',
         isRefundable: true,
         isCheckinAvailable: true,
         isBestDeal: true,
         isHighDemand: false
       },
       {
-        id: 'parahyangan-135',
+        id: 'fallback-2',
         train_id: 'train-002',
+        schedule_id: 'schedule-002',
         train_number: '135',
         train_name: 'Parahyangan',
         train_type: 'Executive',
         operator: 'PT KAI',
         origin_station: {
-          code: origin,
-          name: originInfo.name,
-          city: originInfo.city
+          code: originStation.kode_stasiun,
+          name: originStation.nama_stasiun,
+          city: originStation.city
         },
         destination_station: {
-          code: destination,
-          name: destinationInfo.name,
-          city: destinationInfo.city
+          code: destinationStation.kode_stasiun,
+          name: destinationStation.nama_stasiun,
+          city: destinationStation.city
         },
         departure_time: '08:01:00',
         arrival_time: '11:02:00',
@@ -599,173 +849,16 @@ const TrainResults = () => {
         insurance: 5000,
         seat_type: 'AD',
         route_type: 'Direct',
-        schedule_id: 'schedule-002',
         isRefundable: true,
         isCheckinAvailable: true,
         isBestDeal: false,
         isHighDemand: true,
         warning: 'High demand, sold out quickly!'
-      },
-      {
-        id: 'argo-wilis-145',
-        train_id: 'train-003',
-        train_number: '145',
-        train_name: 'Argo Wilis',
-        train_type: 'Executive',
-        operator: 'PT KAI',
-        origin_station: {
-          code: origin,
-          name: originInfo.name,
-          city: originInfo.city
-        },
-        destination_station: {
-          code: destination,
-          name: destinationInfo.name,
-          city: destinationInfo.city
-        },
-        departure_time: '07:30:00',
-        arrival_time: '10:45:00',
-        duration_minutes: 195,
-        duration: '3j 15m',
-        travel_date: date,
-        status: 'scheduled',
-        harga: 285000,
-        price: 285000,
-        stok_kursi: 23,
-        availableSeats: 23,
-        class_type: 'Executive',
-        trainClass: 'Executive',
-        facilities: ['AC', 'Makanan', 'WiFi', 'Toilet Bersih', 'Stop Kontak', 'TV', 'Pemandangan'],
-        insurance: 5000,
-        seat_type: 'AD',
-        route_type: 'Direct',
-        schedule_id: 'schedule-003',
-        isRefundable: true,
-        isCheckinAvailable: true,
-        isBestDeal: false,
-        isHighDemand: false
       }
     ];
 
-    return dummyTrains;
-  }, []);
-
-  // Fetch data dari API
-  useEffect(() => {
-    const fetchTrains = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        console.log('🔍 Fetching trains with params:', {
-          origin,
-          destination,
-          departureDate,
-          passengers
-        });
-
-        // Coba multiple API endpoints
-        const endpoints = [
-          `/api/search/train?origin=${origin}&destination=${destination}&departureDate=${departureDate}&passengers=${passengers}`,
-          `/api/trains/search?origin=${origin}&destination=${destination}&date=${departureDate}&passengers=${passengers}`,
-          `/api/search/trains?origin=${origin}&destination=${destination}&departureDate=${departureDate}&passengers=${passengers}`
-        ];
-
-        let apiData = null;
-        
-        for (const endpoint of endpoints) {
-          try {
-            console.log(`Trying endpoint: ${endpoint}`);
-            const response = await fetch(endpoint);
-            
-            if (response.ok) {
-              const data = await response.json();
-              console.log(`✅ Success from ${endpoint}:`, data);
-              
-              // Handle different response formats
-              if (Array.isArray(data)) {
-                apiData = data;
-              } else if (data.data && Array.isArray(data.data)) {
-                apiData = data.data;
-              } else if (data.success && data.data && Array.isArray(data.data)) {
-                apiData = data.data;
-              }
-              
-              if (apiData) break;
-            }
-          } catch (endpointError) {
-            console.log(`❌ Failed from ${endpoint}:`, endpointError);
-          }
-        }
-
-        if (apiData && apiData.length > 0) {
-          const formattedData: Train[] = apiData.map((item: any) => ({
-            id: item.id || `train-${Date.now()}-${Math.random()}`,
-            train_id: item.train_id || item.id || '',
-            train_number: item.train_number || item.train_code || '',
-            train_name: item.train_name || item.trainName || '',
-            train_type: item.train_type || item.trainType || '',
-            operator: item.operator || 'PT KAI',
-            origin_station: item.origin_station || {
-              code: origin,
-              name: item.originStation || origin,
-              city: item.originCity || origin
-            },
-            destination_station: item.destination_station || {
-              code: destination,
-              name: item.destinationStation || destination,
-              city: item.destinationCity || destination
-            },
-            departure_time: item.departure_time || item.departureTime || '00:00:00',
-            arrival_time: item.arrival_time || item.arrivalTime || '00:00:00',
-            duration_minutes: item.duration_minutes || 
-                             (item.duration ? parseDurationToMinutes(item.duration) : 180),
-            duration: item.duration || formatDuration(item.duration_minutes || 180),
-            travel_date: item.travel_date || item.departureDate || departureDate,
-            status: item.status || 'scheduled',
-            harga: item.harga || item.price || 0,
-            price: item.harga || item.price || 0,
-            stok_kursi: item.stok_kursi || item.availableSeats || 0,
-            availableSeats: item.stok_kursi || item.availableSeats || 0,
-            class_type: item.class_type || item.trainClass || item.train_type || 'Executive',
-            trainClass: item.class_type || item.trainClass || item.train_type || 'Executive',
-            facilities: item.facilities || getFacilitiesByClass(item.class_type || item.trainClass || 'Executive'),
-            insurance: item.insurance || 5000,
-            seat_type: item.seat_type || item.seatType || 'AD',
-            route_type: item.route_type || item.routeType || 'Direct',
-            schedule_id: item.schedule_id || item.id,
-            isRefundable: true,
-            isCheckinAvailable: true,
-            isBestDeal: false,
-            isHighDemand: (item.stok_kursi || 0) < 10
-          }));
-          
-          setAllTrains(formattedData);
-          setFilteredTrains(formattedData);
-          console.log('✅ API data loaded:', formattedData.length, 'trains');
-        } else {
-          // Fallback to dummy data
-          console.log('⚠️ No API data, using dummy data');
-          const dummyTrains = generateDummyTrains(origin, destination, departureDate);
-          setAllTrains(dummyTrains);
-          setFilteredTrains(dummyTrains);
-        }
-        
-      } catch (error: any) {
-        console.error('❌ Error fetching trains:', error);
-        setError('Gagal memuat data kereta. Menampilkan data contoh.');
-        
-        // Fallback to dummy data
-        const dummyTrains = generateDummyTrains(origin, destination, departureDate);
-        setAllTrains(dummyTrains);
-        setFilteredTrains(dummyTrains);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTrains();
-  }, [origin, destination, departureDate, passengers, generateDummyTrains]);
+    return fallbackTrains;
+  };
 
   // Apply filters and sort
   useEffect(() => {
@@ -773,10 +866,15 @@ const TrainResults = () => {
     
     // Apply filter by class
     if (filterType !== 'all') {
-      result = result.filter(train => 
-        train.class_type.toLowerCase().includes(filterType.toLowerCase()) ||
-        train.trainClass.toLowerCase().includes(filterType.toLowerCase())
-      );
+      result = result.filter(train => {
+        const trainClass = train.class_type?.toLowerCase() || '';
+        const filterLower = filterType.toLowerCase();
+        
+        return trainClass.includes(filterLower) ||
+               (filterLower === 'executive' && trainClass.includes('eksekutif')) ||
+               (filterLower === 'business' && trainClass.includes('bisnis')) ||
+               (filterLower === 'economy' && trainClass.includes('ekonomi'));
+      });
     }
     
     // Apply sorting
@@ -816,13 +914,18 @@ const TrainResults = () => {
     router.push('/');
   };
 
+  const handleRefresh = async () => {
+    // Reload the page with current search params
+    window.location.reload();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FD7E14] mx-auto mb-4"></div>
-          <p className="text-gray-600">Searching for available trains...</p>
-          <p className="text-sm text-gray-500">Please wait while we find the best options for you</p>
+          <p className="text-gray-600">Mencari kereta yang tersedia...</p>
+          <p className="text-sm text-gray-500">Harap tunggu sementara kami mencari pilihan terbaik untuk Anda</p>
         </div>
       </div>
     );
@@ -863,6 +966,12 @@ const TrainResults = () => {
                 <p className="text-sm text-yellow-700">
                   <span className="font-semibold">Perhatian:</span> {error}
                 </p>
+                <button
+                  onClick={handleRefresh}
+                  className="mt-2 px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200 transition-colors"
+                >
+                  Coba Muat Ulang
+                </button>
               </div>
             </div>
           </div>
@@ -899,15 +1008,40 @@ const TrainResults = () => {
               </div>
             </div>
             
-            <button
-              onClick={handleRetrySearch}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            <div className="flex gap-2">
+              <button
+                onClick={handleRetrySearch}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Ubah Pencarian
+              </button>
+              
+              <button
+                onClick={handleRefresh}
+                className="px-4 py-2 bg-[#FD7E14] text-white rounded-lg hover:bg-[#E06700] transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
+          </div>
+          
+          {/* Database Status */}
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-              Ubah Pencarian
-            </button>
+              <span className="text-sm text-blue-700">
+                Menampilkan data dari database • {allTrains.length} kereta ditemukan • 
+                {allTrains.some(t => t.schedule_id_db) ? ' Data real-time' : ' Data contoh'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -966,12 +1100,20 @@ const TrainResults = () => {
                 </svg>
                 <h3 className="text-lg font-semibold text-gray-700 mb-2">Tidak ada kereta yang ditemukan</h3>
                 <p className="text-gray-500 mb-6">Silakan ubah kriteria pencarian Anda atau coba tanggal lain</p>
-                <button
-                  onClick={handleRetrySearch}
-                  className="px-4 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors"
-                >
-                  Cari Lagi
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={handleRetrySearch}
+                    className="px-6 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-[#E06700] transition-colors"
+                  >
+                    Cari Lagi
+                  </button>
+                  <button
+                    onClick={handleRefresh}
+                    className="px-6 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Refresh Data
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -979,6 +1121,7 @@ const TrainResults = () => {
                   <div>
                     <p className="text-sm text-gray-600">
                       Menampilkan <span className="font-semibold text-gray-800">{filteredTrains.length}</span> kereta
+                      {allTrains.some(t => t.schedule_id_db) ? ' (data dari database)' : ' (data contoh)'}
                     </p>
                     <p className="text-xs text-gray-500">
                       Klik pada kereta untuk memilih, kemudian lanjutkan ke pemesanan
@@ -1019,6 +1162,7 @@ const TrainResults = () => {
                         <li>• E-ticket akan dikirim ke email setelah pembayaran</li>
                         <li>• Check-in online tersedia 2 jam sebelum keberangkatan</li>
                         <li>• Pembatalan sesuai ketentuan KAI</li>
+                        <li>• Data kereta diambil langsung dari database sistem</li>
                       </ul>
                     </div>
                   </div>
@@ -1108,7 +1252,7 @@ export default function SearchTrainsPage() {
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FD7E14] mx-auto mb-4"></div>
-            <p className="text-gray-600">Memuat hasil pencarian...</p>
+            <p className="text-gray-600">Memuat hasil pencarian dari database...</p>
           </div>
         </div>
       }>

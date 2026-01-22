@@ -6,10 +6,15 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   CheckCircle, Download, Clock, Train, User, Calendar, 
   MapPin, CreditCard, ArrowRight, Mail, Phone, Shield,
-  Ticket as TicketIcon
+  Ticket as TicketIcon, Package, Coffee, Wifi, Utensils,
+  Home, RefreshCw, AlertCircle, BadgeCheck
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
+
+// Import supabase client yang benar
+import { createClient } from '@/app/lib/supabaseClient';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 // --- Tipe Data ---
 interface BookingData {
@@ -22,18 +27,65 @@ interface BookingData {
   passenger_phone: string;
   train_name: string;
   train_type: string;
+  train_code?: string;
+  train_class?: string;
   origin: string;
   destination: string;
   departure_date: string;
   departure_time: string;
   arrival_time: string;
   total_amount: number;
-  status?: string;
-  payment_status?: string;
+  status: string;
+  payment_status: string;
   payment_method?: string;
   passenger_count: number;
   created_at?: string;
   updated_at?: string;
+  selected_seats?: any;
+  has_ticket?: boolean;
+  booking_date?: string;
+  user_id?: string;
+  
+  // New fields from updated API
+  pnr_number?: string;
+  coach_number?: string;
+  seat_numbers?: string[];
+  transaction_id?: string;
+  payment_proof?: string;
+  checkin_status?: boolean;
+  baggage_allowance?: string;
+  trip_duration?: string;
+  notes?: string;
+  platform?: string;
+  is_insurance_included?: boolean;
+  insurance_amount?: number;
+  convenience_fee?: number;
+  discount_amount?: number;
+  final_amount?: number;
+  
+  // Transit related fields - UPDATED
+  has_transit?: boolean;
+  transit_info?: {
+    transit_station: string;
+    transit_duration: string;
+    connection_train: string;
+    connection_train_type: string;
+    connection_departure_time: string;
+    connection_arrival_time?: string;
+    facilities?: string[];
+  };
+  facilities?: string[];
+  
+  // NEW: Data transit sesuai gambar
+  transit_station?: string;
+  transit_arrival?: string;
+  transit_departure?: string;
+  transit_discount?: number;    // 10% dari 265.000 = 26.500
+  transit_additional_price?: number; // +7.500
+  seat_premium?: number;        // +172.250
+  admin_fee?: number;           // +5.000
+  insurance_fee?: number;       // +10.000
+  base_price?: number;          // Harga dasar tiket
 }
 
 interface PaymentData {
@@ -52,6 +104,9 @@ interface PaymentData {
     discount?: number;
     subtotal?: number;
     total?: number;
+    transit_fee?: number;
+    transit_discount?: number; // NEW
+    transit_additional?: number; // NEW
   };
 }
 
@@ -61,11 +116,124 @@ interface TicketData {
   coach_number?: string;
 }
 
+// --- Fungsi Helper ---
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(amount);
+};
+
+// --- Komponen Transit Info (Updated) ---
+const TransitInfo = ({ booking }: { booking: BookingData }) => {
+  const hasTransit = booking.has_transit || booking.transit_station;
+  
+  if (!hasTransit) return null;
+  
+  const transitStation = booking.transit_station || booking.transit_info?.transit_station;
+  const transitArrival = booking.transit_arrival || booking.transit_info?.connection_departure_time;
+  const transitDeparture = booking.transit_departure || booking.transit_info?.connection_arrival_time;
+  
+  // Hitung durasi transit jika ada arrival dan departure
+  const calculateTransitDuration = () => {
+    if (!transitArrival || !transitDeparture) return '15 menit';
+    
+    try {
+      const [arrHour, arrMin] = transitArrival.split(':').map(Number);
+      const [depHour, depMin] = transitDeparture.split(':').map(Number);
+      
+      const arrMinutes = arrHour * 60 + arrMin;
+      const depMinutes = depHour * 60 + depMin;
+      
+      let duration = depMinutes - arrMinutes;
+      if (duration < 0) duration += 24 * 60;
+      
+      return `${duration} menit`;
+    } catch {
+      return '15 menit';
+    }
+  };
+  
+  return (
+    <div className="mt-6 p-6 bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border border-amber-200 shadow-sm">
+      <div className="flex items-center mb-4">
+        <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center mr-3">
+          <RefreshCw className="w-6 h-6 text-amber-600" />
+        </div>
+        <div>
+          <h4 className="font-bold text-amber-800 text-lg">Rute dengan Transit</h4>
+          <p className="text-amber-600 text-sm">Anda akan transit di {transitStation}</p>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
+          <p className="text-sm text-amber-700 mb-1">Stasiun Transit</p>
+          <p className="font-bold text-gray-800 text-lg">{transitStation}</p>
+        </div>
+        
+        <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
+          <p className="text-sm text-amber-700 mb-1">Durasi Transit</p>
+          <p className="font-bold text-amber-600 text-lg">{calculateTransitDuration()}</p>
+        </div>
+        
+        <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
+          <p className="text-sm text-amber-700 mb-1">Tiba di Transit</p>
+          <p className="font-bold text-gray-800 text-lg">{transitArrival || '07:30'}</p>
+        </div>
+        
+        <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
+          <p className="text-sm text-amber-700 mb-1">Berangkat Lagi</p>
+          <p className="font-bold text-gray-800 text-lg">{transitDeparture || '07:45'}</p>
+        </div>
+      </div>
+      
+      {/* Transit Discount & Additional Price Info */}
+      {(booking.transit_discount || booking.transit_additional_price) && (
+        <div className="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {booking.transit_discount && booking.transit_discount > 0 && (
+              <div className="text-center">
+                <p className="text-sm text-green-700 mb-1">Diskon Transit</p>
+                <p className="font-bold text-green-600 text-lg">
+                  -{formatCurrency(booking.transit_discount)}
+                </p>
+              </div>
+            )}
+            
+            {booking.transit_additional_price && booking.transit_additional_price > 0 && (
+              <div className="text-center">
+                <p className="text-sm text-blue-700 mb-1">Biaya Tambahan Transit</p>
+                <p className="font-bold text-blue-600 text-lg">
+                  +{formatCurrency(booking.transit_additional_price)}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      <div className="mt-4 pt-4 border-t border-amber-200">
+        <div className="flex items-start">
+          <AlertCircle className="w-5 h-5 text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700">
+            <span className="font-bold">Catatan:</span> Tiket ini berlaku sampai {transitStation}. 
+            Untuk perjalanan lanjutan, silakan pesan tiket terpisah.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Komponen Utama ---
 const PaymentSuccessContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [countdown, setCountdown] = useState(10);
+  const { user } = useAuth();
+  
+  const [countdown, setCountdown] = useState(15);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +243,24 @@ const PaymentSuccessContent = () => {
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [ticketData, setTicketData] = useState<TicketData | null>(null);
   
+  // Inisialisasi Supabase client
+  const [supabase, setSupabase] = useState<any>(null);
+  
+  useEffect(() => {
+    // Inisialisasi Supabase client di client side
+    const initSupabase = async () => {
+      try {
+        const { createClient } = await import('@/app/lib/supabaseClient');
+        const client = createClient();
+        setSupabase(client);
+      } catch (error) {
+        console.error('Failed to initialize Supabase:', error);
+      }
+    };
+    
+    initSupabase();
+  }, []);
+
   // Format tanggal
   const formatDate = useCallback((dateString: string) => {
     try {
@@ -95,393 +281,501 @@ const PaymentSuccessContent = () => {
     }
   }, []);
 
-  // Format Rupiah
-  const formatRupiah = useCallback((number: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(number);
-  }, []);
-
-  // Buat booking data dari URL params
-  const createBookingFromParams = useCallback(() => {
-    const bookingCode = searchParams.get('bookingCode');
-    const orderId = searchParams.get('orderId');
-    const amount = searchParams.get('amount');
-    const name = searchParams.get('name');
-    const email = searchParams.get('email');
-    const phone = searchParams.get('phone');
-    const trainName = searchParams.get('trainName');
-    const trainType = searchParams.get('trainType');
-    const origin = searchParams.get('origin');
-    const destination = searchParams.get('destination');
-    const departureDate = searchParams.get('departureDate');
-    const departureTime = searchParams.get('departureTime');
-    const arrivalTime = searchParams.get('arrivalTime');
-    const paymentMethod = searchParams.get('paymentMethod');
-    const seatPremium = searchParams.get('seatPremium');
-    const discountAmount = searchParams.get('discountAmount');
-    const passengerCount = searchParams.get('passengerCount');
-
-    console.log('URL Params untuk booking:', {
-      bookingCode, orderId, amount, name, email, phone, passengerCount
-    });
-
-    if (!bookingCode || !orderId || !amount || !name) {
-      console.log('Parameter penting tidak lengkap');
-      return null;
-    }
-
-    // Default values berdasarkan gambar
-    const baseFare = 265000;
-    const seatPremiumValue = seatPremium ? parseInt(seatPremium) : 132500;
-    const discountValue = discountAmount ? parseInt(discountAmount) : 80000;
-    const adminFee = 5000;
-    const insuranceFee = 10000;
-    const paymentFee = paymentMethod === 'e-wallet' ? 2000 : 0;
-    
-    const total = baseFare + seatPremiumValue + adminFee + insuranceFee + paymentFee - discountValue;
-
-    const booking: BookingData = {
-      booking_code: bookingCode,
-      order_id: orderId,
-      ticket_number: `TICKET-${bookingCode.slice(-8)}`,
-      passenger_name: name || 'Reisan',
-      passenger_email: email || 'reisanadrefagt@gmail.com',
-      passenger_phone: phone || '08453665664',
-      train_name: trainName || 'Parahyangan',
-      train_type: trainType || 'Executive',
-      origin: origin || 'Bandung',
-      destination: destination || 'Gambir',
-      departure_date: departureDate || new Date().toISOString().split('T')[0],
-      departure_time: departureTime || '05:00',
-      arrival_time: arrivalTime || '10:00',
-      total_amount: parseInt(amount) || total,
-      status: 'confirmed',
-      payment_status: 'paid',
-      payment_method: paymentMethod || 'E-WALLET',
-      passenger_count: passengerCount ? parseInt(passengerCount) : 1,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    const payment: PaymentData = {
-      order_id: orderId,
-      amount: parseInt(amount) || total,
-      payment_method: paymentMethod || 'E-WALLET',
-      status: 'success',
-      payment_data: {
-        settlement_time: new Date().toISOString()
-      },
-      fare_breakdown: {
-        base_fare: baseFare,
-        seat_premium: seatPremiumValue,
-        admin_fee: adminFee,
-        insurance_fee: insuranceFee,
-        payment_fee: paymentFee,
-        discount: discountValue,
-        subtotal: baseFare + seatPremiumValue + adminFee + insuranceFee + paymentFee,
-        total: parseInt(amount) || total
-      }
-    };
-
-    const ticket: TicketData = {
-      ticket_number: `TICKET-${bookingCode.slice(-8)}`,
-      seat_number: 'B2',
-      coach_number: '1'
-    };
-
-    return { booking, payment, ticket };
-  }, [searchParams]);
-
-  // Load data dari localStorage
-  const loadDataFromStorage = useCallback(() => {
+  // Hitung durasi perjalanan
+  const calculateTripDuration = (departureTime: string, arrivalTime: string): string => {
     try {
-      console.log('Mencoba load data dari storage...');
+      const [depHours, depMinutes] = departureTime.split(':').map(Number);
+      const [arrHours, arrMinutes] = arrivalTime.split(':').map(Number);
       
-      // Coba semua kemungkinan storage keys
-      const possibleKeys = [
-        'currentBooking',
-        'latestBooking',
-        'bookingData',
-        'currentPayment',
-        'latestPayment',
-        'paymentData',
-        'bookingSuccessData'
-      ];
+      let totalMinutes = (arrHours * 60 + arrMinutes) - (depHours * 60 + depMinutes);
+      if (totalMinutes < 0) totalMinutes += 24 * 60;
       
-      let bookingData: BookingData | null = null;
-      let paymentData: PaymentData | null = null;
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
       
-      // Cari data booking
-      for (const key of possibleKeys) {
-        try {
-          const stored = localStorage.getItem(key);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            console.log(`Found data in ${key}:`, parsed);
-            
-            // Cek apakah ini booking data
-            if (parsed.bookingCode || parsed.booking_code || parsed.orderId || parsed.order_id) {
-              bookingData = {
-                booking_code: parsed.bookingCode || parsed.booking_code || `BOOK-${Date.now().toString().slice(-8)}`,
-                order_id: parsed.orderId || parsed.order_id || parsed.orderId || `ORDER-${Date.now()}`,
-                ticket_number: parsed.ticketNumber || parsed.ticket_number || `TICKET-${Date.now().toString().slice(-10)}`,
-                passenger_name: parsed.customerName || parsed.passenger_name || parsed.passengerName || 'Reisan',
-                passenger_email: parsed.customerEmail || parsed.passenger_email || parsed.passengerEmail || 'reisanadrefagt@gmail.com',
-                passenger_phone: parsed.customerPhone || parsed.passenger_phone || parsed.passengerPhone || '08453665664',
-                train_name: parsed.trainDetail?.trainName || parsed.train_name || parsed.trainName || 'Parahyangan',
-                train_type: parsed.trainDetail?.trainType || parsed.train_type || parsed.trainType || 'Executive',
-                origin: parsed.trainDetail?.origin || parsed.origin || 'Bandung',
-                destination: parsed.trainDetail?.destination || parsed.destination || 'Gambir',
-                departure_date: parsed.trainDetail?.departureDate || parsed.departure_date || parsed.departureDate || new Date().toISOString().split('T')[0],
-                departure_time: parsed.trainDetail?.departureTime || parsed.departure_time || parsed.departureTime || '05:00',
-                arrival_time: parsed.trainDetail?.arrivalTime || parsed.arrival_time || parsed.arrivalTime || '10:00',
-                total_amount: parsed.totalAmount || parsed.total_amount || 332500,
-                status: parsed.status || 'confirmed',
-                payment_status: parsed.paymentStatus || parsed.payment_status || 'paid',
-                payment_method: parsed.paymentMethod || parsed.payment_method || 'E-WALLET',
-                passenger_count: parsed.passengerCount || parsed.passenger_count || 1,
-                created_at: parsed.bookingTime || parsed.created_at || parsed.createdAt || new Date().toISOString(),
-                updated_at: parsed.updated_at || parsed.updatedAt || new Date().toISOString()
-              };
-              console.log('Booking data from storage:', bookingData);
-              break;
-            }
-          }
-        } catch (e) {
-          console.log(`Error parsing ${key}:`, e);
-          continue;
-        }
-      }
-      
-      // Cari payment data
-      for (const key of possibleKeys) {
-        try {
-          const stored = localStorage.getItem(key);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            
-            // Cek apakah ini payment data
-            if (parsed.amount !== undefined || parsed.payment_method) {
-              paymentData = {
-                order_id: parsed.order_id || parsed.orderId || bookingData?.order_id || `ORDER-${Date.now()}`,
-                amount: parsed.amount || bookingData?.total_amount || 332500,
-                payment_method: parsed.payment_method || parsed.paymentMethod || bookingData?.payment_method || 'E-WALLET',
-                status: parsed.status || 'success',
-                payment_data: parsed.payment_data || parsed.paymentData || {},
-                fare_breakdown: parsed.fare_breakdown || {
-                  base_fare: 265000,
-                  seat_premium: 132500,
-                  admin_fee: 5000,
-                  insurance_fee: 10000,
-                  payment_fee: 2000,
-                  discount: 80000,
-                  subtotal: 412500,
-                  total: bookingData?.total_amount || 332500
-                }
-              };
-              console.log('Payment data from storage:', paymentData);
-              break;
-            }
-          }
-        } catch (e) {
-          console.log(`Error parsing payment from ${key}:`, e);
-          continue;
-        }
-      }
-      
-      // Jika ada booking data tapi tidak ada payment data, buat dari booking
-      if (bookingData && !paymentData) {
-        paymentData = {
-          order_id: bookingData.order_id,
-          amount: bookingData.total_amount,
-          payment_method: bookingData.payment_method || 'E-WALLET',
-          status: 'success',
-          payment_data: {
-            settlement_time: bookingData.updated_at || new Date().toISOString()
-          },
-          fare_breakdown: {
-            base_fare: 265000,
-            seat_premium: 132500,
-            admin_fee: 5000,
-            insurance_fee: 10000,
-            payment_fee: 2000,
-            discount: 80000,
-            subtotal: 412500,
-            total: bookingData.total_amount
-          }
-        };
-      }
-      
-      if (!bookingData) {
-        console.log('No booking data found in storage');
-        return null;
-      }
-      
-      const ticketData: TicketData = {
-        ticket_number: bookingData.ticket_number || `TICKET-${bookingData.booking_code.slice(-8)}`,
-        seat_number: 'B2',
-        coach_number: '1'
-      };
-      
-      console.log('Final data from storage:', { bookingData, paymentData, ticketData });
-      return { bookingData, paymentData, ticketData };
-      
-    } catch (error) {
-      console.error('Error loading from storage:', error);
-      return null;
+      if (hours === 0) return `${minutes}m`;
+      if (minutes === 0) return `${hours}j`;
+      return `${hours}j ${minutes}m`;
+    } catch {
+      return '5j 0m';
     }
-  }, []);
+  };
 
-  // Load data
+  // Load data dari berbagai sumber
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
         setError(null);
         
-        console.log('=== LOADING DATA FOR SUCCESS PAGE ===');
+        console.log('🔄 Loading payment success data...');
         
-        // STRATEGI 1: Coba dari URL parameters
-        const paramsData = createBookingFromParams();
-        if (paramsData) {
-          console.log('✅ Data found from URL params');
-          setBookingData(paramsData.booking);
-          setPaymentData(paramsData.payment);
-          setTicketData(paramsData.ticket);
-          
-          // Simpan ke storage untuk cache
-          localStorage.setItem('bookingSuccessData', JSON.stringify({
-            booking: paramsData.booking,
-            payment: paramsData.payment,
-            timestamp: Date.now()
-          }));
-          
-          setLoading(false);
-          return;
-        }
-        
-        // STRATEGI 2: Coba dari localStorage
-        const storageData = loadDataFromStorage();
-        if (storageData) {
-          console.log('✅ Data found from localStorage');
-          setBookingData(storageData.bookingData);
-          setPaymentData(storageData.paymentData);
-          setTicketData(storageData.ticketData);
-          setLoading(false);
-          return;
-        }
-        
-        // STRATEGI 3: Coba cek di API dengan orderId dari URL
-        const orderId = searchParams.get('orderId');
+        // STRATEGI 1: Ambil data dari URL parameters
         const bookingCode = searchParams.get('bookingCode');
+        const orderId = searchParams.get('orderId');
+        const status = searchParams.get('status');
         
-        if (orderId || bookingCode) {
-          console.log('Trying API with:', { orderId, bookingCode });
+        console.log('📋 URL Params:', { bookingCode, orderId, status });
+        
+        // Ambil data transit dari URL
+        const url = new URL(window.location.href);
+        const transitStation = url.searchParams.get('transitStation');
+        const transitArrival = url.searchParams.get('transitArrival');
+        const transitDeparture = url.searchParams.get('transitDeparture');
+        const transitDiscount = url.searchParams.get('transitDiscount');
+        const transitAdditionalPrice = url.searchParams.get('transitAdditionalPrice');
+        const seatPremium = url.searchParams.get('seatPremium');
+        const adminFee = url.searchParams.get('adminFee');
+        const insuranceFee = url.searchParams.get('insuranceFee');
+        const discountAmount = url.searchParams.get('discountAmount');
+        
+        console.log('🚉 Transit data from URL:', {
+          transitStation,
+          transitArrival,
+          transitDeparture,
+          transitDiscount,
+          transitAdditionalPrice
+        });
+        
+        // STRATEGY 2: Cari data di sessionStorage
+        let bookingFromSession = null;
+        let paymentFromSession = null;
+        
+        try {
+          // Coba ambil dari sessionStorage
+          const currentPayment = sessionStorage.getItem('currentPayment');
+          const sessionBooking = sessionStorage.getItem('currentBooking');
           
-          // Coba API booking
-          if (bookingCode) {
-            try {
-              const response = await fetch(`/api/bookings/${encodeURIComponent(bookingCode)}`);
-              if (response.ok) {
-                const result = await response.json();
-                if (result.success && result.data) {
-                  console.log('✅ Booking found from API');
-                  setBookingData(result.data);
-                  
-                  // Coba cari payment
-                  try {
-                    const paymentResponse = await fetch(`/api/payment/transaction?orderId=${result.data.order_id}`);
-                    if (paymentResponse.ok) {
-                      const paymentResult = await paymentResponse.json();
-                      if (paymentResult.success && paymentResult.data) {
-                        setPaymentData(paymentResult.data);
-                      }
-                    }
-                  } catch (paymentError) {
-                    console.log('No payment found from API');
-                  }
-                  
-                  setLoading(false);
-                  return;
-                }
+          if (currentPayment || sessionBooking) {
+            const paymentData = currentPayment ? JSON.parse(currentPayment) : null;
+            const bookingData = sessionBooking ? JSON.parse(sessionBooking) : null;
+            
+            console.log('📦 Session data found:', { paymentData, bookingData });
+            
+            // Data transit dari URL params
+            const hasTransit = !!transitStation;
+            const baseFare = 265000;
+            const seatPremiumValue = seatPremium ? parseInt(seatPremium) : 172250;
+            const transitDiscountValue = transitDiscount ? parseInt(transitDiscount) : 26500;
+            const transitAdditionalPriceValue = transitAdditionalPrice ? parseInt(transitAdditionalPrice) : 7500;
+            const adminFeeValue = adminFee ? parseInt(adminFee) : 5000;
+            const insuranceFeeValue = insuranceFee ? parseInt(insuranceFee) : 10000;
+            const discountAmountValue = discountAmount ? parseInt(discountAmount) : 26500; // Diskon dari promo
+            
+            // Perhitungan total yang benar
+            const calculatedTotal = baseFare + seatPremiumValue - transitDiscountValue + 
+                                  transitAdditionalPriceValue - discountAmountValue + 
+                                  adminFeeValue + insuranceFeeValue;
+            
+            console.log('💰 Total calculation:', {
+              baseFare,
+              seatPremium: seatPremiumValue,
+              transitDiscount: -transitDiscountValue,
+              transitAdditional: transitAdditionalPriceValue,
+              promoDiscount: -discountAmountValue,
+              adminFee: adminFeeValue,
+              insuranceFee: insuranceFeeValue,
+              total: calculatedTotal
+            });
+            
+            // Buat payment data
+            paymentFromSession = {
+              order_id: orderId || paymentData?.orderId || `ORDER-${Date.now()}`,
+              amount: calculatedTotal,
+              payment_method: paymentData?.paymentMethod || bookingData?.payment_method || 'E-WALLET',
+              status: 'success',
+              payment_data: {
+                settlement_time: new Date().toISOString()
+              },
+              fare_breakdown: {
+                base_fare: baseFare,
+                seat_premium: seatPremiumValue,
+                admin_fee: adminFeeValue,
+                insurance_fee: insuranceFeeValue,
+                transit_discount: transitDiscountValue,
+                transit_additional: transitAdditionalPriceValue,
+                discount: discountAmountValue,
+                subtotal: baseFare + seatPremiumValue + transitAdditionalPriceValue + 
+                         adminFeeValue + insuranceFeeValue,
+                total: calculatedTotal
               }
-            } catch (apiError) {
-              console.log('API error:', apiError);
+            };
+            
+            // Buat booking data
+            const sessionBookingData = bookingData || paymentData;
+            bookingFromSession = {
+              booking_code: bookingCode || sessionBookingData?.bookingCode || `BOOK-${Date.now().toString().slice(-8)}`,
+              order_id: orderId || sessionBookingData?.orderId || `ORDER-${Date.now()}`,
+              ticket_number: sessionBookingData?.ticketNumber || `TICKET-${Date.now().toString().slice(-8)}`,
+              passenger_name: sessionBookingData?.name || sessionBookingData?.customerName || 'Reisan',
+              passenger_email: sessionBookingData?.email || sessionBookingData?.customerEmail || 'reisanadrefagt@gmail.com',
+              passenger_phone: sessionBookingData?.phone || sessionBookingData?.customerPhone || '0834534345435345',
+              train_name: sessionBookingData?.trainName || 'Parahyangan',
+              train_type: sessionBookingData?.trainType || 'Eksekutif',
+              origin: sessionBookingData?.origin || 'Bandung',
+              destination: sessionBookingData?.destination || 'Gambir',
+              departure_date: sessionBookingData?.departureDate || new Date().toISOString().split('T')[0],
+              departure_time: sessionBookingData?.departureTime || '05:00',
+              arrival_time: sessionBookingData?.arrivalTime || '10:00',
+              total_amount: calculatedTotal,
+              status: 'confirmed',
+              payment_status: 'paid',
+              payment_method: sessionBookingData?.paymentMethod || 'E-WALLET',
+              passenger_count: parseInt(sessionBookingData?.passengerCount || '1'),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              selected_seats: ['A6'],
+              has_ticket: true,
+              booking_date: new Date().toISOString(),
+              user_id: user?.id,
+              pnr_number: `PNR${Date.now().toString().slice(-6)}`,
+              coach_number: '2',
+              seat_numbers: ['A6'],
+              checkin_status: false,
+              baggage_allowance: '20kg',
+              trip_duration: '5j 0m',
+              platform: 'web',
+              is_insurance_included: true,
+              insurance_amount: 10000,
+              convenience_fee: 5000,
+              discount_amount: discountAmountValue,
+              final_amount: calculatedTotal,
+              // Data transit
+              has_transit: hasTransit,
+              transit_station: transitStation || 'Stasiun Cirebon',
+              transit_arrival: transitArrival || '07:30',
+              transit_departure: transitDeparture || '07:45',
+              transit_discount: transitDiscountValue,
+              transit_additional_price: transitAdditionalPriceValue,
+              seat_premium: seatPremiumValue,
+              admin_fee: adminFeeValue,
+              insurance_fee: insuranceFeeValue,
+              base_price: baseFare
+            };
+          }
+        } catch (storageError) {
+          console.error('Storage error:', storageError);
+        }
+        
+        // STRATEGI 3: Cari di database jika ada bookingCode dan supabase tersedia
+        let bookingFromDB = null;
+        if (bookingCode && supabase) {
+          try {
+            console.log('🔍 Searching in database for:', bookingCode);
+            const { data: dbBooking, error: dbError } = await supabase
+              .from('bookings_kereta')
+              .select('*')
+              .eq('booking_code', bookingCode)
+              .maybeSingle();
+              
+            if (!dbError && dbBooking) {
+              console.log('✅ Found in database:', dbBooking);
+              bookingFromDB = {
+                booking_code: dbBooking.booking_code,
+                order_id: dbBooking.order_id,
+                ticket_number: dbBooking.ticket_number,
+                passenger_name: dbBooking.passenger_name,
+                passenger_email: dbBooking.passenger_email,
+                passenger_phone: dbBooking.passenger_phone,
+                train_name: dbBooking.train_name,
+                train_type: dbBooking.train_type,
+                train_code: dbBooking.train_code,
+                train_class: dbBooking.train_class,
+                origin: dbBooking.origin,
+                destination: dbBooking.destination,
+                departure_date: dbBooking.departure_date,
+                departure_time: dbBooking.departure_time,
+                arrival_time: dbBooking.arrival_time,
+                total_amount: dbBooking.total_amount,
+                status: dbBooking.status,
+                payment_status: dbBooking.payment_status || 'paid',
+                payment_method: dbBooking.payment_method,
+                passenger_count: dbBooking.passenger_count,
+                created_at: dbBooking.created_at,
+                updated_at: dbBooking.updated_at,
+                selected_seats: dbBooking.selected_seats,
+                has_ticket: dbBooking.has_ticket,
+                booking_date: dbBooking.booking_date,
+                user_id: dbBooking.user_id,
+                pnr_number: dbBooking.pnr_number,
+                coach_number: dbBooking.coach_number,
+                seat_numbers: dbBooking.seat_numbers,
+                checkin_status: dbBooking.checkin_status,
+                baggage_allowance: dbBooking.baggage_allowance,
+                trip_duration: dbBooking.trip_duration,
+                platform: dbBooking.platform,
+                is_insurance_included: dbBooking.is_insurance_included,
+                insurance_amount: dbBooking.insurance_amount,
+                convenience_fee: dbBooking.convenience_fee,
+                discount_amount: dbBooking.discount_amount,
+                final_amount: dbBooking.final_amount,
+                // Data transit dari database
+                has_transit: dbBooking.has_transit,
+                transit_station: dbBooking.transit_station,
+                transit_arrival: dbBooking.transit_arrival,
+                transit_departure: dbBooking.transit_departure,
+                transit_discount: dbBooking.transit_discount,
+                transit_additional_price: dbBooking.transit_additional_price,
+                seat_premium: dbBooking.seat_premium,
+                admin_fee: dbBooking.admin_fee,
+                insurance_fee: dbBooking.insurance_fee,
+                base_price: dbBooking.base_price || 265000
+              };
+              
+              // Update booking ke status paid jika belum
+              if (dbBooking.payment_status !== 'paid') {
+                await supabase
+                  .from('bookings_kereta')
+                  .update({
+                    payment_status: 'paid',
+                    status: 'confirmed',
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', dbBooking.id);
+              }
             }
+          } catch (dbError) {
+            console.error('Database error:', dbError);
           }
         }
         
-        // STRATEGI 4: Fallback dengan data default
-        console.log('⚠️ No data found, using default data');
-        const defaultData = {
-          booking: {
+        // Prioritaskan data: DB > Session > Default
+        let finalBooking = bookingFromDB || bookingFromSession;
+        let finalPayment = paymentFromSession;
+        
+        // Jika tidak ada data, buat default dengan data transit
+        if (!finalBooking) {
+          console.log('⚠️ No booking found, creating default with transit');
+          
+          const hasTransit = !!transitStation;
+          const baseFare = 265000;
+          const seatPremiumValue = seatPremium ? parseInt(seatPremium) : 172250;
+          const transitDiscountValue = transitDiscount ? parseInt(transitDiscount) : 26500;
+          const transitAdditionalPriceValue = transitAdditionalPrice ? parseInt(transitAdditionalPrice) : 7500;
+          const adminFeeValue = adminFee ? parseInt(adminFee) : 5000;
+          const insuranceFeeValue = insuranceFee ? parseInt(insuranceFee) : 10000;
+          const discountAmountValue = discountAmount ? parseInt(discountAmount) : 26500;
+          
+          const calculatedTotal = baseFare + seatPremiumValue - transitDiscountValue + 
+                                transitAdditionalPriceValue - discountAmountValue + 
+                                adminFeeValue + insuranceFeeValue;
+          
+          finalBooking = {
             booking_code: bookingCode || `BOOK-${Date.now().toString().slice(-8)}`,
             order_id: orderId || `ORDER-${Date.now()}`,
-            ticket_number: `TICKET-${Date.now().toString().slice(-10)}`,
+            ticket_number: `TICKET-${Date.now().toString().slice(-8)}`,
             passenger_name: 'Reisan',
             passenger_email: 'reisanadrefagt@gmail.com',
-            passenger_phone: '08453665664',
+            passenger_phone: '0834534345435345',
             train_name: 'Parahyangan',
-            train_type: 'Executive',
+            train_type: 'Eksekutif',
             origin: 'Bandung',
             destination: 'Gambir',
             departure_date: new Date().toISOString().split('T')[0],
             departure_time: '05:00',
             arrival_time: '10:00',
-            total_amount: 332500,
+            total_amount: calculatedTotal,
             status: 'confirmed',
             payment_status: 'paid',
             payment_method: 'E-WALLET',
             passenger_count: 1,
             created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          },
-          payment: {
-            order_id: orderId || `ORDER-${Date.now()}`,
-            amount: 332500,
-            payment_method: 'E-WALLET',
+            updated_at: new Date().toISOString(),
+            selected_seats: ['A6'],
+            has_ticket: true,
+            booking_date: new Date().toISOString(),
+            user_id: user?.id,
+            pnr_number: `PNR${Date.now().toString().slice(-6)}`,
+            coach_number: '2',
+            seat_numbers: ['A6'],
+            checkin_status: false,
+            baggage_allowance: '20kg',
+            trip_duration: '5j 0m',
+            platform: 'web',
+            is_insurance_included: true,
+            insurance_amount: 10000,
+            convenience_fee: 5000,
+            discount_amount: discountAmountValue,
+            final_amount: calculatedTotal,
+            // Data transit
+            has_transit: hasTransit,
+            transit_station: transitStation || 'Stasiun Cirebon',
+            transit_arrival: transitArrival || '07:30',
+            transit_departure: transitDeparture || '07:45',
+            transit_discount: transitDiscountValue,
+            transit_additional_price: transitAdditionalPriceValue,
+            seat_premium: seatPremiumValue,
+            admin_fee: adminFeeValue,
+            insurance_fee: insuranceFeeValue,
+            base_price: baseFare
+          };
+          
+          // Coba simpan ke database jika supabase tersedia
+          if (supabase && bookingCode) {
+            try {
+              const { error: saveError } = await supabase
+                .from('bookings_kereta')
+                .insert([{
+                  ...finalBooking,
+                  id: `book_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+                }]);
+                
+              if (saveError) {
+                console.error('Failed to save to database:', saveError);
+              } else {
+                console.log('✅ Saved booking to database');
+              }
+            } catch (saveError) {
+              console.error('Database save error:', saveError);
+            }
+          }
+        }
+        
+        // Buat payment data jika tidak ada
+        if (!finalPayment && finalBooking) {
+          const breakdown = {
+            base_fare: finalBooking.base_price || 265000,
+            seat_premium: finalBooking.seat_premium || 0,
+            admin_fee: finalBooking.admin_fee || 5000,
+            insurance_fee: finalBooking.insurance_fee || 10000,
+            transit_discount: finalBooking.transit_discount || 0,
+            transit_additional: finalBooking.transit_additional_price || 0,
+            discount: finalBooking.discount_amount || 0,
+            subtotal: (finalBooking.base_price || 265000) + 
+                     (finalBooking.seat_premium || 0) + 
+                     (finalBooking.transit_additional_price || 0) + 
+                     (finalBooking.admin_fee || 5000) + 
+                     (finalBooking.insurance_fee || 10000),
+            total: finalBooking.total_amount
+          };
+          
+          finalPayment = {
+            order_id: finalBooking.order_id,
+            amount: finalBooking.total_amount,
+            payment_method: finalBooking.payment_method || 'E-WALLET',
             status: 'success',
             payment_data: {
-              settlement_time: new Date().toISOString()
+              settlement_time: finalBooking.updated_at || new Date().toISOString()
             },
-            fare_breakdown: {
-              base_fare: 265000,
-              seat_premium: 132500,
-              admin_fee: 5000,
-              insurance_fee: 10000,
-              payment_fee: 2000,
-              discount: 80000,
-              subtotal: 412500,
-              total: 332500
-            }
-          },
-          ticket: {
-            ticket_number: `TICKET-${Date.now().toString().slice(-10)}`,
-            seat_number: 'B2',
-            coach_number: '1'
-          }
+            fare_breakdown: breakdown
+          };
+        }
+        
+        // Buat ticket data
+        const ticket = {
+          ticket_number: finalBooking.ticket_number || `TICKET-${finalBooking.booking_code.slice(-8)}`,
+          seat_number: finalBooking.seat_numbers?.[0] || 'A6',
+          coach_number: finalBooking.coach_number || '2'
         };
         
-        setBookingData(defaultData.booking);
-        setPaymentData(defaultData.payment);
-        setTicketData(defaultData.ticket);
+        console.log('✅ Final data loaded:', { 
+          bookingCode: finalBooking.booking_code,
+          hasTransit: finalBooking.has_transit,
+          transitStation: finalBooking.transit_station,
+          transitDiscount: finalBooking.transit_discount,
+          totalAmount: finalBooking.total_amount
+        });
         
-        console.log('✅ Using default data');
+        setBookingData(finalBooking);
+        setPaymentData(finalPayment);
+        setTicketData(ticket);
+        
+        // Simpan data ke storage untuk my-bookings
+        if (finalBooking) {
+          try {
+            // Set flag untuk highlight di my-bookings
+            sessionStorage.setItem('justPaid', 'true');
+            sessionStorage.setItem('lastBookingCode', finalBooking.booking_code);
+            sessionStorage.setItem('lastOrderId', finalBooking.order_id);
+            sessionStorage.setItem('lastPaymentTime', Date.now().toString());
+            
+            // Simpan data booking untuk my-bookings
+            const bookingForStorage = {
+              ...finalBooking,
+              bookingCode: finalBooking.booking_code,
+              orderId: finalBooking.order_id,
+              passengerName: finalBooking.passenger_name,
+              passengerEmail: finalBooking.passenger_email,
+              passengerPhone: finalBooking.passenger_phone,
+              trainName: finalBooking.train_name,
+              trainType: finalBooking.train_type,
+              origin: finalBooking.origin,
+              destination: finalBooking.destination,
+              departureDate: finalBooking.departure_date,
+              departureTime: finalBooking.departure_time,
+              arrivalTime: finalBooking.arrival_time,
+              totalAmount: finalBooking.total_amount,
+              paymentMethod: finalBooking.payment_method,
+              passengerCount: finalBooking.passenger_count,
+              createdAt: finalBooking.created_at,
+              updatedAt: finalBooking.updated_at,
+              selectedSeats: finalBooking.selected_seats || finalBooking.seat_numbers,
+              hasTicket: finalBooking.has_ticket,
+              // Transit data
+              transitStation: finalBooking.transit_station,
+              transitArrival: finalBooking.transit_arrival,
+              transitDeparture: finalBooking.transit_departure,
+              transitDiscount: finalBooking.transit_discount,
+              transitAdditionalPrice: finalBooking.transit_additional_price,
+              seatPremium: finalBooking.seat_premium,
+              adminFee: finalBooking.admin_fee,
+              insuranceFee: finalBooking.insurance_fee,
+              basePrice: finalBooking.base_price
+            };
+            
+            sessionStorage.setItem('recentBookingSuccess', JSON.stringify(bookingForStorage));
+            
+            // Juga simpan ke localStorage sebagai cache
+            const existingBookings = localStorage.getItem('myBookings');
+            let bookingsArray = [];
+            
+            try {
+              bookingsArray = existingBookings ? JSON.parse(existingBookings) : [];
+              if (!Array.isArray(bookingsArray)) bookingsArray = [];
+            } catch {
+              bookingsArray = [];
+            }
+            
+            // Cek duplikat
+            const existingIndex = bookingsArray.findIndex(
+              (b: any) => b.booking_code === finalBooking.booking_code || 
+                         b.bookingCode === finalBooking.booking_code
+            );
+            
+            if (existingIndex !== -1) {
+              bookingsArray[existingIndex] = bookingForStorage;
+            } else {
+              bookingsArray.unshift(bookingForStorage);
+            }
+            
+            // Simpan maksimal 50 booking
+            localStorage.setItem('myBookings', JSON.stringify(bookingsArray.slice(0, 50)));
+            
+          } catch (saveError) {
+            console.error('Error saving to storage:', saveError);
+          }
+        }
         
       } catch (error: any) {
-        console.error('Error in loadData:', error);
+        console.error('Error loading data:', error);
         setError('Data pemesanan sedang diproses. Silakan cek email Anda untuk konfirmasi.');
       } finally {
         setLoading(false);
       }
     };
     
-    loadData();
-  }, [searchParams, createBookingFromParams, loadDataFromStorage]);
+    // Delay sedikit untuk memastikan Supabase client siap
+    const timer = setTimeout(() => {
+      if (supabase !== null) {
+        loadData();
+      } else {
+        // Jika supabase belum siap, load tanpa database
+        loadData();
+      }
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [searchParams, user, supabase]);
 
   // Countdown timer untuk redirect
   useEffect(() => {
@@ -507,11 +801,12 @@ const PaymentSuccessContent = () => {
     
     setIsRedirecting(true);
     
-    // Redirect ke my-bookings
-    setTimeout(() => {
-      router.push('/my-bookings');
-    }, 300);
-  }, [isRedirecting, router]);
+    // Redirect ke my-bookings dengan parameter
+    const bookingCode = bookingData?.booking_code || '';
+    const redirectUrl = `/my-bookings?justPaid=true&bookingCode=${encodeURIComponent(bookingCode)}&fromPayment=true`;
+    
+    router.replace(redirectUrl);
+  }, [isRedirecting, bookingData, router]);
 
   // Handle manual redirect
   const handleRedirectNow = useCallback(() => {
@@ -524,312 +819,326 @@ const PaymentSuccessContent = () => {
     
     const printWindow = window.open('', '_blank');
     if (printWindow) {
-      const seats = ticketData.seat_number || 'B2';
+      const seats = ticketData.seat_number || 'A6';
+      const duration = bookingData.trip_duration || calculateTripDuration(bookingData.departure_time, bookingData.arrival_time);
+      const hasTransit = bookingData.has_transit || bookingData.transit_station;
+      const transitStation = bookingData.transit_station;
+      const transitArrival = bookingData.transit_arrival;
+      const transitDeparture = bookingData.transit_departure;
       
       printWindow.document.write(`
+        <!DOCTYPE html>
         <html>
-          <head>
-            <title>E-Ticket ${ticketData.ticket_number}</title>
-            <style>
+        <head>
+          <title>E-Ticket ${ticketData.ticket_number}</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              padding: 20px; 
+              margin: 0;
+              background: #f8fafc;
+            }
+            .ticket-container {
+              max-width: 600px;
+              margin: 0 auto;
+              background: white;
+              border-radius: 20px;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+              overflow: hidden;
+              position: relative;
+            }
+            .ticket-header {
+              background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+              color: white;
+              padding: 30px;
+              text-align: center;
+              position: relative;
+            }
+            .ticket-header h1 {
+              margin: 0 0 10px 0;
+              font-size: 28px;
+              font-weight: 800;
+            }
+            .ticket-number {
+              font-size: 20px;
+              font-weight: 600;
+              letter-spacing: 1px;
+              background: rgba(255,255,255,0.2);
+              display: inline-block;
+              padding: 8px 20px;
+              border-radius: 50px;
+              margin-top: 10px;
+            }
+            .ticket-content {
+              padding: 30px;
+            }
+            .section {
+              margin-bottom: 25px;
+              padding-bottom: 25px;
+              border-bottom: 2px dashed #e2e8f0;
+            }
+            .section:last-child {
+              border-bottom: none;
+              margin-bottom: 0;
+            }
+            .section-title {
+              color: #64748b;
+              font-size: 14px;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin-bottom: 8px;
+            }
+            .section-value {
+              color: #0f172a;
+              font-size: 18px;
+              font-weight: 700;
+            }
+            .journey-display {
+              background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+              border-radius: 15px;
+              padding: 25px;
+              margin: 20px 0;
+              color: white;
+              text-align: center;
+            }
+            .time-display {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            .time-box {
+              text-align: center;
+              flex: 1;
+            }
+            .time {
+              font-size: 32px;
+              font-weight: 800;
+              margin-bottom: 5px;
+            }
+            .station {
+              font-size: 16px;
+              opacity: 0.9;
+            }
+            .arrow {
+              font-size: 28px;
+              padding: 0 20px;
+            }
+            .duration {
+              text-align: center;
+              margin-top: 10px;
+              font-size: 14px;
+              opacity: 0.8;
+            }
+            .qr-section {
+              text-align: center;
+              margin: 30px 0;
+            }
+            .qr-box {
+              width: 180px;
+              height: 180px;
+              background: #f1f5f9;
+              margin: 0 auto 20px;
+              border-radius: 12px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              border: 2px dashed #cbd5e1;
+            }
+            .qr-text {
+              color: #64748b;
+              font-size: 14px;
+            }
+            .instructions {
+              background: #fffbeb;
+              border-radius: 12px;
+              padding: 20px;
+              margin-top: 20px;
+              border-left: 4px solid #f59e0b;
+            }
+            .instructions-title {
+              color: #92400e;
+              font-weight: 700;
+              margin-bottom: 10px;
+            }
+            .instructions-list {
+              color: #92400e;
+              margin: 0;
+              padding-left: 20px;
+            }
+            .instructions-list li {
+              margin-bottom: 5px;
+            }
+            .footer {
+              text-align: center;
+              color: #64748b;
+              font-size: 12px;
+              margin-top: 30px;
+              padding-top: 20px;
+              border-top: 1px solid #e2e8f0;
+            }
+            .info-grid {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 20px;
+              margin-top: 20px;
+            }
+            .transit-info {
+              background: #fef3c7;
+              border-radius: 12px;
+              padding: 15px;
+              margin: 15px 0;
+              border-left: 4px solid #f59e0b;
+            }
+            .transit-title {
+              color: #92400e;
+              font-weight: 700;
+              margin-bottom: 8px;
+            }
+            .transit-details {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 10px;
+            }
+            @media print {
               body { 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                padding: 30px; 
-                max-width: 600px; 
-                margin: 0 auto; 
-                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-                min-height: 100vh;
+                background: white; 
+                padding: 0;
               }
-              .ticket { 
-                background: white;
-                border-radius: 20px;
-                padding: 40px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.1);
-                position: relative;
-                overflow: hidden;
-                border: 2px solid #e0e0e0;
+              .no-print { display: none; }
+              .ticket-container {
+                box-shadow: none;
+                border: 1px solid #000;
+                border-radius: 0;
               }
-              .ticket:before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 8px;
-                background: linear-gradient(90deg, #10B981 0%, #3B82F6 50%, #8B5CF6 100%);
-              }
-              .header { 
-                text-align: center; 
-                margin-bottom: 40px;
-                position: relative;
-              }
-              .header h1 { 
-                color: #1F2937;
-                margin: 0 0 10px 0;
-                font-size: 28px;
-                font-weight: 800;
-                letter-spacing: -0.5px;
-              }
-              .ticket-number {
-                display: inline-block;
-                background: #10B981;
-                color: white;
-                padding: 8px 20px;
-                border-radius: 30px;
-                font-weight: 600;
-                font-size: 18px;
-                margin-top: 10px;
-                letter-spacing: 1px;
-              }
-              .section { 
-                margin-bottom: 25px;
-                padding-bottom: 25px;
-                border-bottom: 2px dashed #E5E7EB;
-              }
-              .section:last-child {
-                border-bottom: none;
-                margin-bottom: 0;
-                padding-bottom: 0;
-              }
-              .label { 
-                font-weight: 600; 
-                color: #6B7280; 
-                font-size: 12px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 6px;
-              }
-              .value { 
-                font-size: 18px; 
-                color: #111827;
-                font-weight: 700;
-              }
-              .journey-container {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border-radius: 15px;
-                padding: 30px;
-                margin: 25px 0;
-                color: white;
-                position: relative;
-                overflow: hidden;
-              }
-              .journey-container:before {
-                content: '';
-                position: absolute;
-                top: -50px;
-                right: -50px;
-                width: 150px;
-                height: 150px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 50%;
-              }
-              .journey-container:after {
-                content: '';
-                position: absolute;
-                bottom: -50px;
-                left: -50px;
-                width: 150px;
-                height: 150px;
-                background: rgba(255,255,255,0.1);
-                border-radius: 50%;
-              }
-              .journey-info {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                position: relative;
-                z-index: 2;
-              }
-              .time-box {
-                text-align: center;
-                flex: 1;
-              }
-              .time-box .time {
-                font-size: 32px;
-                font-weight: 800;
-                margin-bottom: 5px;
-                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
-              }
-              .time-box .station {
-                font-size: 16px;
-                opacity: 0.9;
-                font-weight: 500;
-              }
-              .arrow-container {
-                padding: 0 30px;
-                position: relative;
-              }
-              .arrow-container:before {
-                content: '';
-                position: absolute;
-                top: 50%;
-                left: 0;
-                right: 0;
-                height: 2px;
-                background: rgba(255,255,255,0.5);
-                transform: translateY(-50%);
-              }
-              .arrow {
-                font-size: 28px;
-                position: relative;
-                z-index: 2;
-              }
-              .info-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 25px;
-              }
-              .qr-container {
-                text-align: center;
-                margin: 30px 0;
-              }
-              .qr-code {
-                width: 180px;
-                height: 180px;
-                background: #F3F4F6;
-                margin: 0 auto 20px;
-                border-radius: 15px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border: 2px dashed #D1D5DB;
-              }
-              .qr-code span {
-                font-size: 14px;
-                color: #6B7280;
-              }
-              .footer-note {
-                text-align: center;
-                margin-top: 30px;
-                padding-top: 25px;
-                border-top: 2px dashed #D1D5DB;
-              }
-              .instructions {
-                background: #FEF3C7;
-                border-radius: 12px;
-                padding: 20px;
-                margin-top: 25px;
-                border-left: 4px solid #F59E0B;
-              }
-              .instructions h3 {
-                color: #92400E;
-                margin: 0 0 10px 0;
-                font-size: 16px;
-                font-weight: 700;
-              }
-              .instructions ul {
-                margin: 0;
-                padding-left: 20px;
-                color: #92400E;
-              }
-              .instructions li {
-                margin-bottom: 5px;
-                font-size: 14px;
-              }
-              @media print {
-                body { 
-                  background: white; 
-                  padding: 0;
-                }
-                .no-print { display: none; }
-                .ticket { 
-                  box-shadow: none; 
-                  border: 1px solid #000;
-                  border-radius: 0;
-                  padding: 25px;
-                }
-                .ticket:before {
-                  height: 5px;
-                }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="ticket">
-              <div class="header">
-                <h1>E-Ticket Kereta Api</h1>
-                <div class="ticket-number">${ticketData.ticket_number}</div>
-              </div>
-              
-              <div class="section">
-                <div class="label">Kode Booking</div>
-                <div class="value">${bookingData.booking_code}</div>
-              </div>
-              
-              <div class="section">
-                <div class="info-grid">
-                  <div>
-                    <div class="label">Nama Penumpang</div>
-                    <div class="value">${bookingData.passenger_name}</div>
-                  </div>
-                  <div>
-                    <div class="label">Kereta & Kelas</div>
-                    <div class="value">${bookingData.train_name} (${bookingData.train_type})</div>
-                  </div>
+            }
+          </style>
+        </head>
+        <body>
+          <div class="ticket-container">
+            <div class="ticket-header">
+              <h1>E-Ticket Kereta Api</h1>
+              <div class="ticket-number">${ticketData.ticket_number}</div>
+              <p>Kode Booking: ${bookingData.booking_code}</p>
+            </div>
+            
+            <div class="ticket-content">
+              <div class="info-grid">
+                <div class="section">
+                  <div class="section-title">Nama Penumpang</div>
+                  <div class="section-value">${bookingData.passenger_name}</div>
+                </div>
+                
+                <div class="section">
+                  <div class="section-title">Kereta & Kelas</div>
+                  <div class="section-value">${bookingData.train_name} (${bookingData.train_type})</div>
                 </div>
               </div>
               
-              <div class="journey-container">
-                <div class="journey-info">
+              <div class="journey-display">
+                <div class="time-display">
                   <div class="time-box">
                     <div class="time">${formatTime(bookingData.departure_time)}</div>
                     <div class="station">${bookingData.origin}</div>
                   </div>
-                  <div class="arrow-container">
-                    <div class="arrow">→</div>
-                  </div>
+                  
+                  <div class="arrow">→</div>
+                  
                   <div class="time-box">
                     <div class="time">${formatTime(bookingData.arrival_time)}</div>
                     <div class="station">${bookingData.destination}</div>
                   </div>
                 </div>
+                
+                <div class="duration">
+                  Durasi: ${duration} • Tanggal: ${formatDate(bookingData.departure_date)}
+                </div>
               </div>
               
+              ${hasTransit ? `
+              <div class="transit-info">
+                <div class="transit-title">Informasi Transit</div>
+                <div class="transit-details">
+                  <div>
+                    <div class="section-title">Stasiun Transit</div>
+                    <div class="section-value">${transitStation}</div>
+                  </div>
+                  <div>
+                    <div class="section-title">Waktu Transit</div>
+                    <div class="section-value">${transitArrival} - ${transitDeparture}</div>
+                  </div>
+                </div>
+                <p style="color: #92400e; font-size: 12px; margin-top: 8px;">
+                  <strong>Catatan:</strong> Tiket hanya berlaku sampai ${transitStation}
+                </p>
+              </div>
+              ` : ''}
+              
+              <div class="info-grid">
+                <div class="section">
+                  <div class="section-title">Kursi</div>
+                  <div class="section-value">${seats}</div>
+                </div>
+                
+                <div class="section">
+                  <div class="section-title">Gerbong</div>
+                  <div class="section-value">${ticketData.coach_number}</div>
+                </div>
+              </div>
+              
+              ${bookingData.pnr_number ? `
               <div class="section">
-                <div class="info-grid">
-                  <div>
-                    <div class="label">Tanggal Keberangkatan</div>
-                    <div class="value">${formatDate(bookingData.departure_date)}</div>
-                  </div>
-                  <div>
-                    <div class="label">Kursi</div>
-                    <div class="value">${seats}</div>
-                  </div>
-                </div>
+                <div class="section-title">PNR Number</div>
+                <div class="section-value">${bookingData.pnr_number}</div>
               </div>
+              ` : ''}
               
-              <div class="qr-container">
-                <div class="qr-code">
-                  <span>QR Code untuk Check-in</span>
+              ${bookingData.baggage_allowance ? `
+              <div class="section">
+                <div class="section-title">Bagasi</div>
+                <div class="section-value">${bookingData.baggage_allowance}</div>
+              </div>
+              ` : ''}
+              
+              <div class="qr-section">
+                <div class="qr-box">
+                  <div class="qr-text">QR Code untuk Check-in</div>
                 </div>
-                <div class="label">Scan QR code di stasiun untuk check-in</div>
+                <p>Scan QR code di stasiun untuk check-in</p>
               </div>
               
               <div class="instructions">
-                <h3>Instruksi Check-in:</h3>
-                <ul>
+                <div class="instructions-title">Instruksi Check-in:</div>
+                <ul class="instructions-list">
                   <li>Bawa e-ticket ini dan KTP asli ke stasiun</li>
                   <li>Datang minimal 30 menit sebelum keberangkatan</li>
                   <li>Tunjukkan QR code di gerbang check-in</li>
                   <li>Check-in online tersedia 2 jam sebelum keberangkatan</li>
+                  ${hasTransit ? `
+                  <li>Tiket berlaku hanya sampai ${transitStation}</li>
+                  <li>Siapkan tiket terpisah untuk perjalanan lanjutan</li>
+                  ` : ''}
                 </ul>
               </div>
               
-              <div class="footer-note">
-                <p style="font-style: italic; color: #6B7280; font-size: 12px;">
-                  E-ticket ini sah tanpa tanda tangan. Cetakan ini berlaku sebagai tiket resmi.
-                </p>
+              <div class="footer">
+                <p>Tiket elektronik ini sah tanpa tanda tangan</p>
+                <p>Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
               </div>
             </div>
-            
-            <div class="no-print" style="text-align: center; margin-top: 40px;">
-              <button onclick="window.print()" style="padding: 15px 30px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 16px; margin-right: 15px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);">
-                🖨️ Cetak Tiket
-              </button>
-              <button onclick="window.close()" style="padding: 15px 30px; background: #6B7280; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 16px; box-shadow: 0 4px 14px rgba(107, 114, 128, 0.4);">
-                ✕ Tutup
-              </button>
-            </div>
-          </body>
+          </div>
+          
+          <div class="no-print" style="text-align: center; margin-top: 30px;">
+            <button onclick="window.print()" style="padding: 12px 30px; background: #10B981; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-right: 15px;">
+              🖨️ Cetak Tiket
+            </button>
+            <button onclick="window.close()" style="padding: 12px 30px; background: #64748b; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+              ✕ Tutup
+            </button>
+          </div>
+        </body>
         </html>
       `);
       printWindow.document.close();
@@ -838,11 +1147,14 @@ const PaymentSuccessContent = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-green-50 to-white flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-b from-green-50 to-white flex items-center justify-center p-4">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-500 mx-auto mb-6"></div>
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">Memproses Pembayaran</h2>
-          <p className="text-gray-500">Harap tunggu sebentar...</p>
+          <div className="relative">
+            <div className="w-24 h-24 border-4 border-green-200 rounded-full"></div>
+            <div className="absolute inset-0 animate-spin rounded-full border-4 border-green-500 border-t-transparent"></div>
+          </div>
+          <h2 className="mt-6 text-2xl font-semibold text-gray-800">Memproses Pembayaran Anda</h2>
+          <p className="mt-2 text-gray-600">Harap tunggu sebentar...</p>
         </div>
       </div>
     );
@@ -868,8 +1180,9 @@ const PaymentSuccessContent = () => {
             </button>
             <button
               onClick={() => router.push('/')}
-              className="w-full px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+              className="w-full px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center"
             >
+              <Home className="w-5 h-5 mr-2" />
               Kembali ke Beranda
             </button>
           </div>
@@ -878,44 +1191,24 @@ const PaymentSuccessContent = () => {
     );
   }
 
-  // Hitung durasi perjalanan
-  const calculateTravelDuration = () => {
-    try {
-      const [depHours, depMinutes] = bookingData.departure_time.split(':').map(Number);
-      const [arrHours, arrMinutes] = bookingData.arrival_time.split(':').map(Number);
-      
-      const depTotalMinutes = depHours * 60 + depMinutes;
-      const arrTotalMinutes = arrHours * 60 + arrMinutes;
-      
-      let durationMinutes = arrTotalMinutes - depTotalMinutes;
-      if (durationMinutes < 0) {
-        durationMinutes += 24 * 60;
-      }
-      
-      const hours = Math.floor(durationMinutes / 60);
-      const minutes = durationMinutes % 60;
-      
-      if (minutes === 0) {
-        return `${hours} jam`;
-      } else {
-        return `${hours} jam ${minutes} menit`;
-      }
-    } catch (error) {
-      return '5 jam';
-    }
+  // Data breakdown dari payment dengan data transit yang benar
+  const fareBreakdown = paymentData?.fare_breakdown || {
+    base_fare: bookingData.base_price || 265000,
+    seat_premium: bookingData.seat_premium || 0,
+    admin_fee: bookingData.admin_fee || 5000,
+    insurance_fee: bookingData.insurance_fee || 10000,
+    transit_discount: bookingData.transit_discount || 0,
+    transit_additional: bookingData.transit_additional_price || 0,
+    discount: bookingData.discount_amount || 0,
+    subtotal: (bookingData.base_price || 265000) + 
+             (bookingData.seat_premium || 0) + 
+             (bookingData.transit_additional_price || 0) + 
+             (bookingData.admin_fee || 5000) + 
+             (bookingData.insurance_fee || 10000),
+    total: bookingData.total_amount
   };
 
-  // Data breakdown dari payment atau default
-  const fareBreakdown = paymentData?.fare_breakdown || {
-    base_fare: 265000,
-    seat_premium: 132500,
-    admin_fee: 5000,
-    insurance_fee: 10000,
-    payment_fee: 2000,
-    discount: 80000,
-    subtotal: 412500,
-    total: 332500
-  };
+  const hasTransit = bookingData.has_transit || bookingData.transit_station;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 via-white to-blue-50">
@@ -927,9 +1220,6 @@ const PaymentSuccessContent = () => {
               <div className="w-28 h-28 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center shadow-2xl shadow-green-200">
                 <CheckCircle className="w-20 h-20 text-white" />
               </div>
-              <div className="absolute -top-2 -right-2 animate-ping">
-                <div className="w-10 h-10 bg-green-300 rounded-full opacity-70"></div>
-              </div>
             </div>
           </div>
           
@@ -937,7 +1227,12 @@ const PaymentSuccessContent = () => {
             Pembayaran Berhasil!
           </h1>
           <p className="text-xl text-gray-600 mb-6 max-w-2xl mx-auto">
-            Booking <span className="font-bold text-green-600">{bookingData.booking_code}</span> telah diproses dan siap digunakan.
+            Booking <span className="font-bold text-green-600">{bookingData.booking_code}</span> telah diproses.
+            {hasTransit && (
+              <span className="block text-lg text-amber-600 mt-2">
+                📍 Perjalanan dengan transit di {bookingData.transit_station}
+              </span>
+            )}
           </p>
           
           <div className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full shadow-lg">
@@ -961,7 +1256,7 @@ const PaymentSuccessContent = () => {
                   </div>
                   <h3 className="font-semibold mb-1 text-white/90">Total Pembayaran</h3>
                   <p className="text-3xl font-bold">
-                    {formatRupiah(paymentData.amount)}
+                    {formatCurrency(paymentData.amount)}
                   </p>
                 </div>
                 
@@ -977,11 +1272,11 @@ const PaymentSuccessContent = () => {
                 
                 <div className="text-center">
                   <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-                    <Train className="w-8 h-8" />
+                    <BadgeCheck className="w-8 h-8" />
                   </div>
                   <h3 className="font-semibold mb-1 text-white/90">Status</h3>
                   <p className="text-3xl font-bold">
-                    {paymentData.status === 'success' ? 'LUNAS' : paymentData.status.toUpperCase()}
+                    LUNAS
                   </p>
                 </div>
               </div>
@@ -1017,7 +1312,7 @@ const PaymentSuccessContent = () => {
                         <p className="text-sm text-gray-600">{bookingData.origin}</p>
                       </div>
                       
-                      <div className="flex-1 mx-8">
+                      <div className="text-center flex-1 mx-8">
                         <div className="relative h-2 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full">
                           <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-white border-4 border-blue-500 rounded-full"></div>
                           <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
@@ -1026,7 +1321,7 @@ const PaymentSuccessContent = () => {
                           <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-white border-4 border-purple-500 rounded-full"></div>
                         </div>
                         <p className="text-center text-xs text-gray-500 mt-2">
-                          Langsung • {calculateTravelDuration()}
+                          {bookingData.trip_duration || calculateTripDuration(bookingData.departure_time, bookingData.arrival_time)}
                         </p>
                       </div>
                       
@@ -1037,9 +1332,12 @@ const PaymentSuccessContent = () => {
                     </div>
                   </div>
                   
+                  {/* Tampilkan Transit Info jika ada */}
+                  {hasTransit && <TransitInfo booking={bookingData} />}
+                  
                   {/* Date & Seat Info */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-blue-50 rounded-xl p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                    <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
                       <div className="flex items-center mb-2">
                         <Calendar className="w-5 h-5 text-blue-600 mr-2" />
                         <span className="font-semibold text-gray-700">Tanggal Keberangkatan</span>
@@ -1047,18 +1345,15 @@ const PaymentSuccessContent = () => {
                       <p className="text-lg font-bold text-gray-800">
                         {formatDate(bookingData.departure_date)}
                       </p>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Waktu pemesanan: {new Date(bookingData.created_at || new Date()).toLocaleString('id-ID')}
-                      </p>
                     </div>
                     
-                    <div className="bg-purple-50 rounded-xl p-4">
+                    <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
                       <div className="flex items-center mb-2">
                         <MapPin className="w-5 h-5 text-purple-600 mr-2" />
                         <span className="font-semibold text-gray-700">Kursi</span>
                       </div>
                       <p className="text-lg font-bold text-gray-800">
-                        {ticketData?.seat_number || 'B2'} (Gerbong {ticketData?.coach_number || '1'})
+                        {ticketData?.seat_number || 'A6'} (Gerbong {ticketData?.coach_number || '2'})
                       </p>
                     </div>
                   </div>
@@ -1071,7 +1366,7 @@ const PaymentSuccessContent = () => {
                     Informasi Penumpang
                   </h3>
                   
-                  <div className="bg-gray-50 rounded-xl p-6">
+                  <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Nama</span>
@@ -1093,49 +1388,6 @@ const PaymentSuccessContent = () => {
                           <span className="font-bold text-gray-800">{bookingData.passenger_phone}</span>
                         </div>
                       </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Jumlah Penumpang</span>
-                        <span className="font-bold text-gray-800">{bookingData.passenger_count} orang</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Payment Info */}
-                <div className="border-t border-gray-200 pt-6 mt-6">
-                  <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                    <CreditCard className="w-5 h-5 mr-2 text-green-600" />
-                    Informasi Pembayaran
-                  </h3>
-                  
-                  <div className="bg-green-50 rounded-xl p-6">
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Metode Pembayaran</span>
-                        <span className="font-bold text-gray-800">{bookingData.payment_method || paymentData.payment_method}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Order ID</span>
-                        <span className="font-bold text-gray-800">{bookingData.order_id}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Status Pembayaran</span>
-                        <span className={`font-bold ${
-                          paymentData.status === 'success' ? 'text-green-600' : 'text-yellow-600'
-                        }`}>
-                          {paymentData.status === 'success' ? 'BERHASIL' : paymentData.status.toUpperCase()}
-                        </span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Waktu Pembayaran</span>
-                        <span className="font-bold text-gray-800">
-                          {new Date(paymentData.payment_data?.settlement_time || bookingData.updated_at || new Date()).toLocaleString('id-ID')}
-                        </span>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1144,7 +1396,9 @@ const PaymentSuccessContent = () => {
             
             {/* Instructions */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-200">
-              <h3 className="font-bold text-blue-800 text-xl mb-4">Instruksi Penting</h3>
+              <h3 className="font-bold text-blue-800 text-xl mb-4">
+                Instruksi Penting
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-3">
                   <div className="flex items-start">
@@ -1190,6 +1444,21 @@ const PaymentSuccessContent = () => {
                   </div>
                 </div>
               </div>
+              
+              {/* Additional transit instructions */}
+              {hasTransit && (
+                <div className="mt-6 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
+                  <div className="flex items-center mb-2">
+                    <RefreshCw className="w-5 h-5 text-amber-600 mr-2" />
+                    <p className="font-semibold text-amber-800">Instruksi Khusus Transit:</p>
+                  </div>
+                  <ul className="text-sm text-amber-700 space-y-1 ml-7">
+                    <li>• Tiket hanya berlaku sampai {bookingData.transit_station}</li>
+                    <li>• Untuk perjalanan lanjutan, pesan tiket terpisah</li>
+                    <li>• Durasi transit: {bookingData.transit_arrival} - {bookingData.transit_departure}</li>
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
           
@@ -1202,22 +1471,17 @@ const PaymentSuccessContent = () => {
               <div className="space-y-6">
                 <button
                   onClick={handleDownloadTicket}
-                  disabled={!ticketData}
-                  className={`w-full flex items-center justify-center px-8 py-4 rounded-xl transition-all duration-300 transform ${
-                    ticketData 
-                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:shadow-xl hover:-translate-y-1' 
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  }`}
+                  className="w-full flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:shadow-xl hover:-translate-y-1 transition-all duration-300 transform"
                 >
                   <Download className="w-6 h-6 mr-3" />
                   <span className="font-bold text-lg">
-                    {ticketData ? 'Download Tiket' : 'Membuat Tiket...'}
+                    Download Tiket
                   </span>
                 </button>
                 
                 <button
-                  onClick={() => router.push('/')}
-                  className="w-full px-8 py-4 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300"
+                  onClick={() => router.push('/search/trains')}
+                  className="w-full px-8 py-4 border-2 border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300"
                 >
                   <span className="font-bold">Pesan Tiket Lagi</span>
                 </button>
@@ -1226,26 +1490,33 @@ const PaymentSuccessContent = () => {
                   onClick={handleRedirectNow}
                   disabled={isRedirecting}
                   className={`w-full px-8 py-4 rounded-xl transition-all duration-300 transform ${isRedirecting ? '' : 'hover:-translate-y-1'} ${
-                    isRedirecting 
+                    isRedirecting
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
                       : 'bg-gradient-to-r from-green-600 to-emerald-700 text-white hover:shadow-xl'
                   }`}
                 >
-                  <span className="font-bold text-lg">
-                    {isRedirecting ? 'Mengalihkan...' : 'Lihat Semua Pemesanan'}
+                  <span className="font-bold text-lg flex items-center justify-center">
+                    {isRedirecting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                        Mengalihkan...
+                      </>
+                    ) : (
+                      `Lihat Semua Pemesanan ${countdown > 0 ? `(${countdown})` : ''}`
+                    )}
                   </span>
                 </button>
               </div>
               
-              {/* Payment Summary */}
+              {/* Payment Summary - UPDATED dengan data transit */}
               <div className="mt-12 pt-8 border-t border-gray-200">
                 <h3 className="font-bold text-gray-700 text-xl mb-6">Ringkasan Pembayaran</h3>
                 
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">Tiket Kereta</span>
+                    <span className="text-gray-600">Tiket Kereta ({bookingData.passenger_count} orang)</span>
                     <span className="font-semibold text-gray-800">
-                      {formatRupiah(fareBreakdown.base_fare || 265000)}
+                      {formatCurrency(fareBreakdown.base_fare || 265000)}
                     </span>
                   </div>
                   
@@ -1253,7 +1524,25 @@ const PaymentSuccessContent = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Tambahan kursi premium</span>
                       <span className="font-semibold text-green-600">
-                        +{formatRupiah(fareBreakdown.seat_premium)}
+                        +{formatCurrency(fareBreakdown.seat_premium)}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {hasTransit && fareBreakdown.transit_additional && fareBreakdown.transit_additional > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Biaya tambahan transit</span>
+                      <span className="font-semibold text-blue-600">
+                        +{formatCurrency(fareBreakdown.transit_additional)}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {fareBreakdown.transit_discount && fareBreakdown.transit_discount > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Diskon Transit (10%)</span>
+                      <span className="font-semibold text-red-600">
+                        -{formatCurrency(fareBreakdown.transit_discount)}
                       </span>
                     </div>
                   )}
@@ -1262,7 +1551,7 @@ const PaymentSuccessContent = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Diskon Promo</span>
                       <span className="font-semibold text-red-600">
-                        -{formatRupiah(fareBreakdown.discount)}
+                        -{formatCurrency(fareBreakdown.discount)}
                       </span>
                     </div>
                   )}
@@ -1270,41 +1559,32 @@ const PaymentSuccessContent = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Biaya Admin</span>
                     <span className="font-semibold text-gray-800">
-                      {formatRupiah(fareBreakdown.admin_fee || 5000)}
+                      {formatCurrency(fareBreakdown.admin_fee || 5000)}
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Asuransi Perjalanan</span>
                     <span className="font-semibold text-gray-800">
-                      {formatRupiah(fareBreakdown.insurance_fee || 10000)}
+                      {formatCurrency(fareBreakdown.insurance_fee || 10000)}
                     </span>
                   </div>
-                  
-                  {fareBreakdown.payment_fee && fareBreakdown.payment_fee > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Biaya Layanan</span>
-                      <span className="font-semibold text-gray-800">
-                        +{formatRupiah(fareBreakdown.payment_fee)}
-                      </span>
-                    </div>
-                  )}
                   
                   <div className="border-t border-gray-300 pt-4 mt-4">
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-gray-800 text-lg">Total</span>
                       <span className="font-bold text-green-600 text-2xl">
-                        {formatRupiah(paymentData.amount)}
+                        {formatCurrency(paymentData.amount)}
                       </span>
                     </div>
                     
-                    {fareBreakdown.discount && fareBreakdown.discount > 0 && (
+                    {(fareBreakdown.transit_discount > 0 || fareBreakdown.discount > 0) && (
                       <p className="text-sm text-gray-500 text-right mt-1">
                         <span className="line-through">
-                          {formatRupiah(fareBreakdown.subtotal || 412500)}
+                          {formatCurrency(fareBreakdown.subtotal || fareBreakdown.base_fare + (fareBreakdown.seat_premium || 0) + (fareBreakdown.transit_additional || 0) + (fareBreakdown.admin_fee || 0) + (fareBreakdown.insurance_fee || 0))}
                         </span>
                         <span className="ml-2 text-green-600">
-                          Hemat {formatRupiah(fareBreakdown.discount)}
+                          Hemat {formatCurrency((fareBreakdown.transit_discount || 0) + (fareBreakdown.discount || 0))}
                         </span>
                       </p>
                     )}
@@ -1326,30 +1606,21 @@ const PaymentSuccessContent = () => {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-green-600">Kursi</span>
-                      <span className="font-bold text-green-800">{ticketData.seat_number || 'B2'}</span>
+                      <span className="font-bold text-green-800">{ticketData.seat_number || 'A6'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-green-600">Gerbong</span>
-                      <span className="font-bold text-green-800">{ticketData.coach_number || '1'}</span>
+                      <span className="font-bold text-green-800">{ticketData.coach_number || '2'}</span>
                     </div>
+                    {bookingData.booking_code && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-green-600">Kode Booking</span>
+                        <span className="font-bold text-green-800">{bookingData.booking_code}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
-              
-              {/* Support Info */}
-              <div className="mt-8 p-6 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl border border-gray-200">
-                <p className="text-sm text-gray-600 mb-3 font-semibold">Butuh bantuan?</p>
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <Phone className="w-4 h-4 text-gray-500 mr-2" />
-                    <span className="text-gray-700 font-medium">1500-123</span>
-                  </div>
-                  <div className="flex items-center">
-                    <Mail className="w-4 h-4 text-gray-500 mr-2" />
-                    <span className="text-gray-700 font-medium">support@tripgo.com</span>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -1360,7 +1631,7 @@ const PaymentSuccessContent = () => {
             © {new Date().getFullYear()} TripGo. Semua hak dilindungi.
           </p>
           <p className="text-gray-400 text-xs mt-2">
-            Pembayaran telah diverifikasi dan tiket Anda aktif
+            Pembayaran telah diverifikasi dan tiket Anda aktif • Ticket Number: {ticketData?.ticket_number}
           </p>
         </div>
       </div>

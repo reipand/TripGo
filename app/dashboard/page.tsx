@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { supabase } from '@/app/lib/supabaseClient';
 
-// --- Icon Components (Updated with better accessibility) ---
+// --- Icon Components ---
 const UserIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -36,12 +36,6 @@ const SettingsIcon = () => (
 const LogoutIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-  </svg>
-);
-
-const StarIcon = () => (
-  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
   </svg>
 );
 
@@ -111,13 +105,132 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
+// --- Interfaces ---
+interface Booking {
+  id: string;
+  booking_code: string;
+  booking_date: string;
+  total_amount: number;
+  status: 'pending' | 'paid' | 'cancelled' | 'expired' | 'confirmed' | 'waiting_payment' | 'active';
+  passenger_count: number;
+  order_id?: string;
+  passenger_name?: string;
+  passenger_email?: string;
+  passenger_phone?: string;
+  train_name?: string;
+  train_type?: string;
+  origin?: string;
+  destination?: string;
+  departure_date?: string;
+  departure_time?: string;
+  arrival_time?: string;
+  payment_status?: string;
+  payment_method?: string;
+  payment_date?: string;
+}
+
+interface TripCoinTransaction {
+  id: string;
+  user_id: string;
+  booking_id: string;
+  booking_code: string;
+  amount: number;
+  description: string;
+  transaction_type: 'earn' | 'redeem' | 'bonus';
+  created_at: string;
+}
+
+interface QuickActionCardProps {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+  onClick: () => void;
+  buttonText?: string;
+  disabled?: boolean;
+}
+
+interface BookingCardProps {
+  booking: Booking;
+  showActions?: boolean;
+  compact?: boolean;
+}
+
 // --- Helper Functions ---
+const safeJsonParse = <T,>(jsonString: string | null, fallback: T): T => {
+  if (!jsonString || jsonString.trim() === '') return fallback;
+  
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    console.warn('JSON parsing error:', error);
+    return fallback;
+  }
+};
+
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      console.warn('localStorage get error:', error);
+      return null;
+    }
+  },
+  
+  setItem: (key: string, value: string): boolean => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.warn('localStorage set error:', error);
+      return false;
+    }
+  },
+  
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch (error) {
+      console.warn('localStorage remove error:', error);
+    }
+  }
+};
+
+const safeSessionStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return sessionStorage.getItem(key);
+    } catch (error) {
+      console.warn('sessionStorage get error:', error);
+      return null;
+    }
+  },
+  
+  setItem: (key: string, value: string): boolean => {
+    try {
+      sessionStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.warn('sessionStorage set error:', error);
+      return false;
+    }
+  },
+  
+  removeItem: (key: string): void => {
+    try {
+      sessionStorage.removeItem(key);
+    } catch (error) {
+      console.warn('sessionStorage remove error:', error);
+    }
+  }
+};
+
 const generateAvatarUrl = (firstName: string, lastName: string) => {
   const name = `${firstName}+${lastName}`.replace(/\s+/g, '+');
   return `https://ui-avatars.com/api/?name=${name}&background=0D8ABC&color=fff&size=150`;
 };
 
-// Format date helper
 const formatDate = (dateString: string | undefined): string => {
   if (!dateString) return 'Tanggal tidak tersedia';
   
@@ -137,7 +250,6 @@ const formatDate = (dateString: string | undefined): string => {
   }
 };
 
-// Format time helper
 const formatTime = (timeString: string | undefined): string => {
   if (!timeString) return '--:--';
   
@@ -161,7 +273,6 @@ const formatTime = (timeString: string | undefined): string => {
   }
 };
 
-// Format currency helper
 const formatCurrency = (amount: number | undefined): string => {
   if (amount === undefined || amount === null) return 'Rp0';
   return new Intl.NumberFormat('id-ID', {
@@ -171,12 +282,10 @@ const formatCurrency = (amount: number | undefined): string => {
   }).format(amount);
 };
 
-// Format coin helper
 const formatCoin = (coins: number): string => {
   return coins.toLocaleString('id-ID');
 };
 
-// Booking status mapping
 const getBookingStatusConfig = (status: string) => {
   const statusLower = status?.toLowerCase() || '';
   
@@ -224,52 +333,14 @@ const getBookingStatusConfig = (status: string) => {
   }
 };
 
-// --- Interface untuk Booking ---
-interface Booking {
-  id: string;
-  booking_code: string;
-  booking_date: string;
-  total_amount: number;
-  status: 'pending' | 'paid' | 'cancelled' | 'expired' | 'confirmed' | 'waiting_payment' | 'active';
-  passenger_count: number;
-  order_id?: string;
-  passenger_name?: string;
-  passenger_email?: string;
-  passenger_phone?: string;
-  train_name?: string;
-  train_type?: string;
-  origin?: string;
-  destination?: string;
-  departure_date?: string;
-  departure_time?: string;
-  arrival_time?: string;
-  payment_status?: string;
-  payment_method?: string;
-  payment_date?: string;
-}
-
-// --- Interface untuk Trip Coin ---
-interface TripCoinTransaction {
-  id: string;
-  user_id: string;
-  booking_id: string;
-  booking_code: string;
-  amount: number;
-  description: string;
-  transaction_type: 'earn' | 'redeem' | 'bonus';
-  created_at: string;
-}
-
 // --- Simple Components ---
-interface AvatarProps {
+const Avatar: React.FC<{
   firstName: string;
   lastName: string;
   avatarUrl?: string;
   size?: number;
   className?: string;
-}
-
-const Avatar: React.FC<AvatarProps> = ({ 
+}> = React.memo(({ 
   firstName, 
   lastName, 
   avatarUrl, 
@@ -288,7 +359,6 @@ const Avatar: React.FC<AvatarProps> = ({
         className="rounded-full border-2 border-blue-500 object-cover"
         loading="lazy"
         onError={(e) => {
-          // Fallback ke placeholder jika gambar gagal load
           const target = e.target as HTMLImageElement;
           const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
           target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&background=0D8ABC&color=fff&size=${size}`;
@@ -296,10 +366,10 @@ const Avatar: React.FC<AvatarProps> = ({
       />
     </div>
   );
-};
+});
+Avatar.displayName = 'Avatar';
 
-// Skeleton Loading Component
-const SkeletonCard: React.FC = () => (
+const SkeletonCard: React.FC = React.memo(() => (
   <div className="bg-white rounded-xl border border-gray-200 p-4 animate-pulse">
     <div className="flex justify-between items-start mb-4">
       <div className="flex-1">
@@ -315,14 +385,14 @@ const SkeletonCard: React.FC = () => (
       <div className="h-8 bg-gray-200 rounded w-1/4"></div>
     </div>
   </div>
-);
+));
+SkeletonCard.displayName = 'SkeletonCard';
 
-// Error Display Component
 const ErrorDisplay: React.FC<{ 
   message: string; 
   onRetry?: () => void;
   title?: string;
-}> = ({ message, onRetry, title = 'Gagal Memuat' }) => (
+}> = React.memo(({ message, onRetry, title = 'Gagal Memuat' }) => (
   <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-6 text-center">
     <div className="w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
       <svg className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -340,9 +410,9 @@ const ErrorDisplay: React.FC<{
       </button>
     )}
   </div>
-);
+));
+ErrorDisplay.displayName = 'ErrorDisplay';
 
-// Empty State Component
 const EmptyState: React.FC<{
   icon: React.ReactNode;
   title: string;
@@ -352,7 +422,7 @@ const EmptyState: React.FC<{
     onClick: () => void;
     icon?: React.ReactNode;
   };
-}> = ({ icon, title, description, action }) => (
+}> = React.memo(({ icon, title, description, action }) => (
   <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 text-center">
     <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
       {icon}
@@ -369,10 +439,10 @@ const EmptyState: React.FC<{
       </button>
     )}
   </div>
-);
+));
+EmptyState.displayName = 'EmptyState';
 
-// Animated Coin Counter Component
-const CoinCounter: React.FC<{ coins: number; showAnimation?: boolean }> = ({ coins, showAnimation = false }) => (
+const CoinCounter: React.FC<{ coins: number; showAnimation?: boolean }> = React.memo(({ coins, showAnimation = false }) => (
   <div className="relative inline-flex items-center">
     <div className={`flex items-center space-x-2 ${showAnimation ? 'animate-bounce' : ''}`}>
       <div className="w-8 h-8 sm:w-10 sm:h-10 bg-yellow-100 rounded-full flex items-center justify-center">
@@ -391,9 +461,10 @@ const CoinCounter: React.FC<{ coins: number; showAnimation?: boolean }> = ({ coi
       </div>
     )}
   </div>
-);
+));
+CoinCounter.displayName = 'CoinCounter';
 
-// --- Dashboard Page (Optimized) ---
+// --- Main Dashboard Component ---
 export default function DashboardPage() {
   const router = useRouter();
   const { user, userProfile, signOut, loading: authLoading } = useAuth();
@@ -407,11 +478,55 @@ export default function DashboardPage() {
   const [coinAnimation, setCoinAnimation] = useState<boolean>(false);
   const [coinTransactions, setCoinTransactions] = useState<TripCoinTransaction[]>([]);
   
-  const notifications = useRef<number>(3);
+  // Refs untuk cleanup
   const isMounted = useRef<boolean>(true);
-  const refreshTimeoutRef = useRef<NodeJS.Timeout>();
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Fungsi untuk menghitung Trip Coins dari bookings
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    isMounted.current = false;
+    
+    // Clear all timeouts
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = null;
+    }
+    
+    if (pendingRefreshIntervalRef.current) {
+      clearInterval(pendingRefreshIntervalRef.current);
+      pendingRefreshIntervalRef.current = null;
+    }
+    
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+      animationTimeoutRef.current = null;
+    }
+    
+    // Abort fetch requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
+
+  // Initial load effect
+  useEffect(() => {
+    if (user && !loading && bookings.length === 0 && isMounted.current) {
+      fetchBookings();
+    }
+  }, [user, loading, bookings.length]);
+
+  // Memoized calculations
   const calculateTripCoins = useCallback((bookingsData: Booking[]): number => {
     if (!user || !bookingsData || bookingsData.length === 0) return 0;
     
@@ -419,26 +534,20 @@ export default function DashboardPage() {
       ['paid', 'confirmed', 'completed'].includes(booking.status)
     );
     
-    // Hitung coin: 1 coin per Rp 10,000 total_amount (bulatkan ke bawah)
     let totalCoins = 0;
     validBookings.forEach(booking => {
-      const coinsFromBooking = Math.floor((booking.total_amount || 0) / 10000);
-      totalCoins += coinsFromBooking;
+      totalCoins += Math.floor((booking.total_amount || 0) / 10000);
     });
     
-    // Bonus 100 coins untuk first booking
     if (validBookings.length > 0) {
       totalCoins += 100;
     }
     
-    // Bonus 50 coins untuk setiap 5 booking
-    const bookingMultiplierBonus = Math.floor(validBookings.length / 5) * 50;
-    totalCoins += bookingMultiplierBonus;
+    totalCoins += Math.floor(validBookings.length / 5) * 50;
     
     return totalCoins;
   }, [user]);
 
-  // Fungsi untuk generate transaksi coin dari bookings
   const generateCoinTransactions = useCallback((bookingsData: Booking[]): TripCoinTransaction[] => {
     if (!user || !bookingsData || bookingsData.length === 0) return [];
     
@@ -447,14 +556,12 @@ export default function DashboardPage() {
       ['paid', 'confirmed', 'completed'].includes(booking.status)
     );
     
-    // Generate transaction untuk setiap booking
     validBookings.forEach((booking, index) => {
       const coinsEarned = Math.floor((booking.total_amount || 0) / 10000);
       
-      // Transaksi untuk booking
       if (coinsEarned > 0) {
         transactions.push({
-          id: `transaction-${booking.id}`,
+          id: `transaction-${booking.id}-${Date.now()}-${index}`,
           user_id: user.id,
           booking_id: booking.id,
           booking_code: booking.booking_code,
@@ -465,10 +572,9 @@ export default function DashboardPage() {
         });
       }
       
-      // Bonus first booking
       if (index === 0) {
         transactions.push({
-          id: `bonus-first-${booking.id}`,
+          id: `bonus-first-${booking.id}-${Date.now()}`,
           user_id: user.id,
           booking_id: booking.id,
           booking_code: booking.booking_code,
@@ -479,10 +585,9 @@ export default function DashboardPage() {
         });
       }
       
-      // Bonus setiap 5 booking
       if ((index + 1) % 5 === 0) {
         transactions.push({
-          id: `bonus-multiplier-${booking.id}`,
+          id: `bonus-multiplier-${booking.id}-${Date.now()}`,
           user_id: user.id,
           booking_id: booking.id,
           booking_code: booking.booking_code,
@@ -494,85 +599,88 @@ export default function DashboardPage() {
       }
     });
     
-    // Sort by date descending
     return transactions.sort((a, b) => 
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
   }, [user]);
 
-  // Cleanup on unmount
+  // Update Trip Coins
   useEffect(() => {
-    return () => {
-      isMounted.current = false;
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Initial load effect
-  useEffect(() => {
-    if (user && !loading && bookings.length === 0) {
-      fetchBookings();
-    }
-  }, [user, loading, bookings.length]);
-
-  // Update Trip Coins ketika bookings berubah
-  useEffect(() => {
-    if (user && bookings.length > 0) {
+    if (user && bookings.length > 0 && isMounted.current) {
       const newCoins = calculateTripCoins(bookings);
       const oldCoins = tripCoins;
       
       if (newCoins > oldCoins) {
-        // Trigger coin animation jika coins bertambah
         setCoinAnimation(true);
-        setTimeout(() => setCoinAnimation(false), 1000);
+        animationTimeoutRef.current = setTimeout(() => {
+          if (isMounted.current) {
+            setCoinAnimation(false);
+          }
+        }, 1000);
       }
       
       setTripCoins(newCoins);
       setCoinTransactions(generateCoinTransactions(bookings));
-    } else if (!user) {
-      // Reset untuk guest
+    } else if (!user && isMounted.current) {
       setTripCoins(0);
       setCoinTransactions([]);
     }
-  }, [bookings, user, calculateTripCoins, generateCoinTransactions]);
+    
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+        animationTimeoutRef.current = null;
+      }
+    };
+  }, [bookings, user, calculateTripCoins, generateCoinTransactions, tripCoins]);
 
-  // Optimized fetch bookings
-  const fetchBookings = useCallback(async (forceRefresh = false) => {
-    if (!user || !isMounted.current) {
+ // Fetch bookings dengan abort controller
+const fetchBookings = useCallback(async (forceRefresh = false) => {
+  if (!user || !isMounted.current) {
+    if (isMounted.current) {
       setBookings([]);
       setLoading(false);
-      return;
     }
+    return;
+  }
+  
+  // Prevent multiple simultaneous requests
+  if (loading && !forceRefresh) {
+    console.log('Fetch already in progress, skipping...');
+    return;
+  }
+  
+  // Abort previous request
+  if (abortControllerRef.current) {
+    abortControllerRef.current.abort('New request started');
+  }
+  
+  // Create new abort controller
+  abortControllerRef.current = new AbortController();
+  const signal = abortControllerRef.current.signal;
+  
+  try {
+    setLoading(true);
+    setBookingsError(null);
     
-    // Skip jika sudah loading
-    if (loading && !forceRefresh) return;
+    let allBookings: Booking[] = [];
     
-    try {
-      setLoading(true);
-      setBookingsError(null);
-      
-      console.log('🔄 Fetching bookings for dashboard:', user.email || user.id);
-      
-      let allBookings: Booking[] = [];
-      
-      // Check sessionStorage for new bookings from payment
+    // Check sessionStorage for new bookings from payment
+    const paymentSuccess = safeSessionStorage.getItem('paymentSuccess');
+    const newBookingData = safeSessionStorage.getItem('newBookingData');
+    
+    if (paymentSuccess === 'true' && newBookingData) {
       try {
-        const paymentSuccess = sessionStorage.getItem('paymentSuccess');
-        const newBookingData = sessionStorage.getItem('newBookingData');
+        const parsedData = safeJsonParse<any>(newBookingData, {});
         
-        if (paymentSuccess === 'true' && newBookingData) {
-          console.log('🎯 Found new booking from payment success');
-          const parsedData = JSON.parse(newBookingData);
-          
+        if (parsedData && typeof parsedData === 'object') {
           const newBooking: Booking = {
             id: `temp-${Date.now()}`,
             booking_code: parsedData.bookingCode || `BOOK-${Date.now()}`,
             booking_date: parsedData.paymentDate || new Date().toISOString(),
             total_amount: parsedData.totalAmount || 0,
             status: 'paid',
-            passenger_count: 1,
+            passenger_count: parsedData.passengerCount || 1,
             order_id: parsedData.orderId,
             passenger_name: parsedData.passengerName,
             passenger_email: parsedData.passengerEmail,
@@ -590,272 +698,395 @@ export default function DashboardPage() {
           
           allBookings.push(newBooking);
           
-          // Clear sessionStorage
-          sessionStorage.removeItem('paymentSuccess');
-          sessionStorage.removeItem('newBookingData');
-          sessionStorage.removeItem('newBookingCode');
+          // Clear session storage
+          safeSessionStorage.removeItem('paymentSuccess');
+          safeSessionStorage.removeItem('newBookingData');
+          safeSessionStorage.removeItem('newBookingCode');
         }
-      } catch (sessionError) {
-        console.warn('⚠️ Session storage error:', sessionError);
-      }
-      
-      // Try database fetch if forceRefresh or no cache
-      const shouldFetchFromDB = forceRefresh || allBookings.length === 0;
-      
-      if (shouldFetchFromDB) {
-        console.log('📡 Querying Supabase for bookings...');
-        
-        try {
-          const email = user.email;
-          let dbBookings: any[] = [];
-          
-          // Query by email
-          if (email) {
-            const { data: bookingsByEmail, error: emailError } = await supabase
-              .from('bookings_kereta')
-              .select('*')
-              .eq('passenger_email', email)
-              .order('created_at', { ascending: false })
-              .limit(20);
-              
-            if (emailError) {
-              console.warn('⚠️ Error fetching by email:', emailError);
-            } else if (bookingsByEmail) {
-              console.log(`✅ Found ${bookingsByEmail.length} bookings by email`);
-              dbBookings = [...dbBookings, ...bookingsByEmail];
-            }
-          }
-          
-          // Query by user_id
-          const { data: bookingsByUserId, error: userIdError } = await supabase
-            .from('bookings_kereta')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(20);
-            
-          if (userIdError) {
-            console.warn('⚠️ Error fetching by user_id:', userIdError);
-          } else if (bookingsByUserId) {
-            console.log(`✅ Found ${bookingsByUserId.length} bookings by user_id`);
-            dbBookings = [...dbBookings, ...bookingsByUserId];
-          }
-          
-          // Remove duplicates
-          const uniqueDbBookings = Array.from(
-            new Map(dbBookings.map(item => [item.booking_code, item])).values()
-          );
-          
-          console.log(`📊 Total unique DB bookings: ${uniqueDbBookings.length}`);
-          
-          const processedDbBookings = uniqueDbBookings.map((booking): Booking => ({
-            id: booking.id || `db-${booking.booking_code}`,
-            booking_code: booking.booking_code,
-            booking_date: booking.created_at || booking.booking_date || new Date().toISOString(),
-            total_amount: booking.total_amount || 0,
-            status: (booking.status || 'pending').toLowerCase() as Booking['status'],
-            passenger_count: booking.passenger_count || 1,
-            order_id: booking.order_id,
-            passenger_name: booking.passenger_name,
-            passenger_email: booking.passenger_email,
-            passenger_phone: booking.passenger_phone,
-            train_name: booking.train_name,
-            train_type: booking.train_type,
-            origin: booking.origin,
-            destination: booking.destination,
-            departure_date: booking.departure_date,
-            departure_time: booking.departure_time,
-            arrival_time: booking.arrival_time,
-            payment_status: booking.payment_status,
-            payment_method: booking.payment_method,
-            payment_date: booking.payment_date
-          }));
-          
-          const existingCodes = allBookings.map(b => b.booking_code);
-          const uniqueDbBookingsFiltered = processedDbBookings.filter(b => 
-            !existingCodes.includes(b.booking_code)
-          );
-          
-          allBookings = [...allBookings, ...uniqueDbBookingsFiltered];
-        } catch (dbError: any) {
-          console.error('❌ Database query failed:', dbError);
-        }
-      } else {
-        // Load from localStorage cache
-        try {
-          const savedBookings = localStorage.getItem('myBookings');
-          if (savedBookings) {
-            const parsedBookings = JSON.parse(savedBookings);
-            if (Array.isArray(parsedBookings) && parsedBookings.length > 0) {
-              console.log('📂 Loaded from localStorage:', parsedBookings.length);
-              
-              const existingCodes = allBookings.map(b => b.booking_code);
-              const uniqueBookingsFromLocal = parsedBookings.filter((b: Booking) => 
-                !existingCodes.includes(b.booking_code)
-              );
-              
-              allBookings = [...allBookings, ...uniqueBookingsFromLocal];
-            }
-          }
-        } catch (localStorageError) {
-          console.warn('⚠️ localStorage error:', localStorageError);
-        }
-      }
-      
-      // Filter out placeholder bookings
-      const validBookings = allBookings.filter(booking => {
-        if (booking.id?.startsWith('manual-') && booking.status === 'pending' && booking.total_amount === 0) {
-          return false;
-        }
-        return true;
-      });
-      
-      // Remove duplicates and sort by date
-      const uniqueBookings = Array.from(
-        new Map(validBookings.map(item => [item.booking_code, item])).values()
-      ).sort((a, b) => 
-        new Date(b.booking_date).getTime() - new Date(a.booking_date).getTime()
-      );
-      
-      console.log(`🎉 Total valid bookings: ${uniqueBookings.length}`);
-      
-      if (isMounted.current) {
-        setBookings(uniqueBookings);
-        
-        // Cache to localStorage
-        try {
-          localStorage.setItem('myBookings', JSON.stringify(uniqueBookings));
-          console.log('💾 Saved to localStorage');
-        } catch (storageError) {
-          console.warn('⚠️ Failed to save to localStorage:', storageError);
-        }
-      }
-      
-    } catch (mainError: any) {
-      console.error('❌ Error loading bookings:', mainError);
-      
-      if (isMounted.current) {
-        let errorMessage = 'Gagal memuat data pesanan';
-        if (mainError?.code === '42P01') {
-          errorMessage = 'Sistem pesanan sedang dalam maintenance';
-        } else if (mainError?.message?.includes('network') || mainError?.message?.includes('fetch')) {
-          errorMessage = 'Koneksi internet bermasalah';
-        } else {
-          errorMessage = mainError?.message || 'Terjadi kesalahan tidak terduga';
-        }
-        
-        setBookingsError(errorMessage);
-        
-        // Fallback to localStorage
-        try {
-          const savedBookings = localStorage.getItem('myBookings');
-          if (savedBookings) {
-            const parsedBookings = JSON.parse(savedBookings);
-            if (Array.isArray(parsedBookings) && parsedBookings.length > 0) {
-              setBookings(parsedBookings);
-              setBookingsError(null); // Clear error jika fallback berhasil
-            }
-          }
-        } catch (fallbackError) {
-          console.error('❌ Fallback also failed:', fallbackError);
-        }
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
+      } catch (error) {
+        console.warn('Error processing session storage data:', error);
       }
     }
-  }, [user, loading]);
+    
+    // Check if we should fetch from database
+    const shouldFetchFromDB = forceRefresh || allBookings.length === 0;
+    
+    // Helper function for retry logic
+    const fetchWithRetry = async (queryFn: () => Promise<any>, maxRetries = 2): Promise<any> => {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          // Add exponential backoff delay for retries
+          if (attempt > 0) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            console.log(`Retry attempt ${attempt} after ${delay}ms`);
+          }
+          
+          return await queryFn();
+        } catch (error: any) {
+          if (error.name === 'AbortError' || attempt === maxRetries) {
+            throw error;
+          }
+          console.warn(`Query attempt ${attempt + 1} failed:`, error.message);
+        }
+      }
+      throw new Error('All retry attempts failed');
+    };
+    
+    if (shouldFetchFromDB && isMounted.current) {
+      try {
+        // Check if signal is already aborted
+        if (signal.aborted) {
+          console.log('Request was aborted before query execution');
+          return;
+        }
+        
+        const email = user.email;
+        
+        // Create a single optimized query with proper error handling
+        const executeQuery = async () => {
+          // Set a longer timeout for the query itself
+          const queryTimeout = 20000; // 20 seconds for database query
+          
+          const queryPromise = (async () => {
+            try {
+              // Build base query
+              let query = supabase
+                .from('bookings_kereta')
+                .select('id, booking_code, created_at, total_amount, status, passenger_count, passenger_name, train_name, origin, destination')
+                .order('created_at', { ascending: false })
+                .limit(8); // Reduced limit for faster response
+              
+              // Add filters
+              if (email) {
+                // Use OR for both conditions
+                query = query.or(`passenger_email.eq.${email},user_id.eq.${user.id}`);
+              } else {
+                query = query.eq('user_id', user.id);
+              }
+              
+              const { data, error } = await query;
+              
+              if (error) {
+                throw error;
+              }
+              
+              return data || [];
+            } catch (error: any) {
+              console.error('Supabase query error:', error);
+              throw error;
+            }
+          })();
+          
+          // Race between query and timeout
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Database query timeout')), queryTimeout);
+          });
+          
+          return Promise.race([queryPromise, timeoutPromise]) as Promise<any[]>;
+        };
+        
+        // Execute query with retry logic
+        const dbBookings = await fetchWithRetry(executeQuery);
+        
+        if (!Array.isArray(dbBookings)) {
+          console.error('Invalid response from database:', dbBookings);
+          throw new Error('Invalid response format from database');
+        }
+        
+        // Process and deduplicate bookings
+        const uniqueDbBookings = Array.from(
+          new Map(dbBookings.map(item => [item.booking_code, item])).values()
+        );
+        
+        const processedDbBookings = uniqueDbBookings.map((booking): Booking => ({
+          id: booking.id || `db-${booking.booking_code}`,
+          booking_code: booking.booking_code,
+          booking_date: booking.created_at || new Date().toISOString(),
+          total_amount: booking.total_amount || 0,
+          status: (booking.status || 'pending').toLowerCase() as Booking['status'],
+          passenger_count: booking.passenger_count || 1,
+          passenger_name: booking.passenger_name,
+          train_name: booking.train_name,
+          origin: booking.origin,
+          destination: booking.destination
+        }));
+        
+        // Merge with existing bookings
+        const existingCodes = new Set(allBookings.map(b => b.booking_code));
+        const uniqueDbBookingsFiltered = processedDbBookings.filter(b => 
+          !existingCodes.has(b.booking_code)
+        );
+        
+        allBookings = [...allBookings, ...uniqueDbBookingsFiltered];
+        
+      } catch (dbError: any) {
+        if (dbError.name === 'AbortError') {
+          console.log('Database fetch was aborted');
+          return;
+        }
+        
+        console.error('Database query failed:', dbError);
+        
+        // Don't throw error here, continue with cached data
+      }
+    }
+    
+    // Load from cache if we don't have enough data
+    if (allBookings.length === 0) {
+      const savedBookings = safeLocalStorage.getItem('myBookings');
+      if (savedBookings) {
+        try {
+          const cacheData = safeJsonParse<{bookings: Booking[], timestamp: number}>(savedBookings, {bookings: [], timestamp: 0});
+          if (Array.isArray(cacheData.bookings) && cacheData.bookings.length > 0) {
+            // Check cache age (5 minutes)
+            const cacheAge = Date.now() - cacheData.timestamp;
+            if (cacheAge < 5 * 60 * 1000) {
+              allBookings = [...cacheData.bookings];
+              console.log('Using cached bookings:', allBookings.length);
+            } else {
+              console.log('Cache expired, not using');
+            }
+          }
+        } catch (error) {
+          console.warn('Error parsing cache:', error);
+        }
+      }
+    }
+    
+    // Filter out invalid bookings
+    const validBookings = allBookings.filter(booking => {
+      // Skip manual pending bookings with zero amount
+      if (booking.id?.startsWith('manual-') && booking.status === 'pending' && booking.total_amount === 0) {
+        return false;
+      }
+      return true;
+    });
+    
+    // Deduplicate and sort
+    const uniqueBookings = Array.from(
+      new Map(validBookings.map(item => [item.booking_code, item])).values()
+    )
+    .sort((a, b) => 
+      new Date(b.booking_date).getTime() - new Date(a.booking_date).getTime()
+    )
+    .slice(0, 15); // Limit to 15 bookings for performance
+    
+    // Update state if component is still mounted
+    if (isMounted.current) {
+      setBookings(uniqueBookings);
+      
+      // Cache to localStorage
+      try {
+        const cacheData = {
+          bookings: uniqueBookings,
+          timestamp: Date.now(),
+          version: '1.0'
+        };
+        safeLocalStorage.setItem('myBookings', JSON.stringify(cacheData));
+      } catch (error) {
+        console.warn('Failed to cache bookings:', error);
+      }
+    }
+    
+  } catch (mainError: any) {
+    if (mainError.name === 'AbortError') {
+      console.log('Request was aborted');
+      return;
+    }
+    
+    console.error('Error loading bookings:', mainError);
+    
+    if (isMounted.current) {
+      let errorMessage = 'Gagal memuat data pesanan';
+      
+      if (mainError.message === 'Request timeout' || mainError.message === 'Database query timeout') {
+        errorMessage = 'Waktu permintaan habis. Coba refresh halaman atau periksa koneksi internet Anda.';
+      } else if (mainError?.code === '42P01') {
+        errorMessage = 'Sistem pesanan sedang dalam maintenance';
+      } else if (mainError?.message?.includes('network') || mainError?.message?.includes('fetch') || mainError?.message?.includes('Failed to fetch')) {
+        errorMessage = 'Koneksi internet bermasalah. Pastikan Anda terhubung ke internet.';
+      } else if (mainError?.message?.includes('jwt')) {
+        errorMessage = 'Sesi Anda telah berakhir. Silakan login kembali.';
+        // Clear auth data if JWT is invalid
+        safeLocalStorage.removeItem('myBookings');
+      } else if (mainError?.message?.includes('invalid') || mainError?.message?.includes('Invalid')) {
+        errorMessage = 'Data tidak valid diterima dari server.';
+      } else {
+        errorMessage = mainError?.message || 'Terjadi kesalahan tidak terduga. Silakan coba lagi.';
+      }
+      
+      setBookingsError(errorMessage);
+      
+      // Fallback to cache even on error
+      const savedBookings = safeLocalStorage.getItem('myBookings');
+      if (savedBookings) {
+        try {
+          const cacheData = safeJsonParse<{bookings: Booking[], timestamp: number}>(savedBookings, {bookings: [], timestamp: 0});
+          if (Array.isArray(cacheData.bookings)) {
+            setBookings(cacheData.bookings.slice(0, 10));
+          }
+        } catch (error) {
+          console.warn('Error loading from cache:', error);
+        }
+      }
+    }
+  } finally {
+    if (isMounted.current) {
+      setLoading(false);
+      // Clear abort controller reference
+      abortControllerRef.current = null;
+    }
+  }
+}, [user, loading]);
 
-  // Filter bookings for different categories
-  const activeBookings = useMemo(() => {
-    return bookings.filter(booking => 
+  // Memoized filtered bookings
+  const { activeBookings, historyBookings, paidBookings, pendingBookings } = useMemo(() => {
+    const active = bookings.filter(booking => 
       ['pending', 'waiting_payment', 'confirmed', 'paid', 'active'].includes(booking.status)
     );
-  }, [bookings]);
-
-  const historyBookings = useMemo(() => {
-    return bookings.filter(booking => 
+    
+    const history = bookings.filter(booking => 
       ['cancelled', 'failed', 'expired'].includes(booking.status)
     );
-  }, [bookings]);
-
-  const paidBookings = useMemo(() => {
-    return bookings.filter(booking => 
+    
+    const paid = bookings.filter(booking => 
       booking.payment_status === 'paid' || booking.status === 'paid' || booking.status === 'confirmed'
     );
-  }, [bookings]);
-
-  const pendingBookings = useMemo(() => {
-    return bookings.filter(booking => 
+    
+    const pending = bookings.filter(booking => 
       booking.status === 'pending' || booking.status === 'waiting_payment' || booking.payment_status === 'pending'
     );
+    
+    return { activeBookings: active, historyBookings: history, paidBookings: paid, pendingBookings: pending };
   }, [bookings]);
 
-  // Filter coin transactions (hanya 5 terbaru)
   const recentCoinTransactions = useMemo(() => {
-    return coinTransactions.slice(0, 5);
+    return coinTransactions.slice(0, 3);
   }, [coinTransactions]);
 
-  // Debounced refresh
-  const handleRefresh = useCallback(async () => {
-    if (refreshing || !user) return;
-    
-    setRefreshing(true);
-    try {
-      await fetchBookings(true);
-    } catch (error) {
-      console.error('Refresh error:', error);
-    } finally {
-      refreshTimeoutRef.current = setTimeout(() => {
-        if (isMounted.current) {
-          setRefreshing(false);
-        }
-      }, 1000);
-    }
-  }, [refreshing, user, fetchBookings]);
-
-  // Setup auto-refresh for pending bookings
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const interval = setInterval(() => {
-      const hasPendingBookings = bookings.some(b => 
-        b.status === 'pending' || b.status === 'waiting_payment' || b.payment_status === 'pending'
-      );
-      
-      if (hasPendingBookings) {
-        console.log('🔄 Auto-refreshing for pending bookings');
-        fetchBookings();
+  // Handle refresh
+const handleRefresh = useCallback(async () => {
+  if (refreshing || !user || !isMounted.current) return;
+  
+  setRefreshing(true);
+  try {
+    // Clear cache before refresh
+    safeLocalStorage.removeItem('myBookings');
+    await fetchBookings(true);
+  } catch (error) {
+    console.error('Refresh error:', error);
+  } finally {
+    // Always stop refreshing after 2 seconds max
+    const timeout = setTimeout(() => {
+      if (isMounted.current) {
+        setRefreshing(false);
       }
-    }, 30000); // Every 30 seconds
+    }, 2000);
+    
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = timeout;
+  }
+}, [refreshing, user, fetchBookings]);
 
-    return () => clearInterval(interval);
-  }, [user?.id, bookings, fetchBookings]);
-
-  // Event listener untuk update dari payment success
+  // Setup auto-refresh hanya untuk pending bookings
   useEffect(() => {
-    const handleBookingUpdated = (event: CustomEvent) => {
-      console.log('📢 Booking update event received:', event.detail);
-      fetchBookings(true);
-    };
-
-    window.addEventListener('bookingUpdated', handleBookingUpdated as EventListener);
+    if (!user?.id || !isMounted.current) {
+      return;
+    }
+    
+    const hasPendingBookings = bookings.some(b => 
+      b.status === 'pending' || b.status === 'waiting_payment' || b.payment_status === 'pending'
+    );
+    
+    if (hasPendingBookings) {
+      if (pendingRefreshIntervalRef.current) {
+        clearInterval(pendingRefreshIntervalRef.current);
+      }
+      
+      pendingRefreshIntervalRef.current = setInterval(() => {
+        if (isMounted.current && !loading) {
+          fetchBookings();
+        }
+      }, 30000); // 30 detik
+    } else {
+      if (pendingRefreshIntervalRef.current) {
+        clearInterval(pendingRefreshIntervalRef.current);
+        pendingRefreshIntervalRef.current = null;
+      }
+    }
     
     return () => {
-      window.removeEventListener('bookingUpdated', handleBookingUpdated as EventListener);
+      if (pendingRefreshIntervalRef.current) {
+        clearInterval(pendingRefreshIntervalRef.current);
+        pendingRefreshIntervalRef.current = null;
+      }
     };
-  }, [fetchBookings]);
+  }, [user?.id, bookings, loading, fetchBookings]);
 
-  // Handle navigation functions
-  const handleLogout = useCallback(async () => {
-    try {
+  // Event handlers
+  // Dalam DashboardPage component, perbaiki handleLogout
+const handleLogout = useCallback(async () => {
+  try {
+    console.log('[Dashboard] Starting logout process...');
+    
+    // Call signOut from AuthContext
+    if (signOut) {
       await signOut();
-      router.replace('/');
-    } catch (error) {
-      console.error('❌ Error during logout:', error);
+      console.log('[Dashboard] AuthContext signOut completed');
     }
-  }, [signOut, router]);
+    
+    // Clear all localStorage data
+    console.log('[Dashboard] Clearing localStorage...');
+    safeLocalStorage.removeItem('myBookings');
+    safeLocalStorage.removeItem('userProfile');
+    safeLocalStorage.removeItem('tripCoins');
+    
+    // Clear sessionStorage
+    console.log('[Dashboard] Clearing sessionStorage...');
+    safeSessionStorage.removeItem('paymentSuccess');
+    safeSessionStorage.removeItem('newBookingData');
+    safeSessionStorage.removeItem('newBookingCode');
+    
+    // Clear all cookies related to Supabase
+    console.log('[Dashboard] Clearing Supabase cookies...');
+    const cookieNames = [
+      'sb-access-token',
+      'sb-refresh-token',
+      'supabase-auth-token',
+      'supabase-refresh-token'
+    ];
+    
+    cookieNames.forEach(cookieName => {
+      try {
+        document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      } catch (error) {
+        console.warn(`Failed to clear cookie ${cookieName}:`, error);
+      }
+    });
+    
+    // Cleanup before redirect
+    cleanup();
+    
+    console.log('[Dashboard] Redirecting to login page...');
+    
+    // Force redirect with replace to prevent going back
+    window.location.href = '/auth/login';
+    
+  } catch (error) {
+    console.error('[Dashboard] Logout error:', error);
+    
+    // Fallback: try to redirect anyway
+    try {
+      window.location.href = '/auth/login';
+    } catch (fallbackError) {
+      console.error('[Dashboard] Fallback redirect failed:', fallbackError);
+      alert('Logout gagal. Silakan refresh halaman dan coba lagi.');
+    }
+  }
+}, [signOut, cleanup, router]);
 
   const handleLogin = useCallback(() => {
     router.push('/auth/login');
@@ -865,27 +1096,31 @@ export default function DashboardPage() {
     router.push('/auth/register');
   }, [router]);
 
-  const handleViewCoinHistory = useCallback(() => {
-    if (!user) {
-      router.push('/auth/login');
-      return;
-    }
-    // Arahkan ke tab khusus atau modal untuk melihat history coin
-    alert('Fitur riwayat coin akan tersedia segera!');
-  }, [router, user]);
-
   const handleViewBookingDetails = useCallback((bookingId: string) => {
     router.push(`/booking/detail/${bookingId}`);
-  }, [router]);
-
-  const handleViewMyBookings = useCallback(() => {
-    router.push('/my-bookings');
   }, [router]);
 
   const handleDownloadTicket = useCallback((booking: Booking) => {
     console.log('Download ticket for booking:', booking.booking_code);
     alert(`Tiket untuk booking ${booking.booking_code} sedang diproses...`);
   }, []);
+
+  const handleViewCoinHistory = useCallback(() => {
+    if (!user) {
+      alert('Silakan login untuk melihat riwayat coin');
+      return;
+    }
+    // Navigate to coin history page
+    router.push('/dashboard/coin-history');
+  }, [user, router]);
+
+  const handleViewMyBookings = useCallback(() => {
+    if (!user) {
+      alert('Silakan login untuk melihat booking');
+      return;
+    }
+    router.push('/my-bookings');
+  }, [user, router]);
 
   // Memoized user data
   const userData = useMemo(() => {
@@ -916,83 +1151,109 @@ export default function DashboardPage() {
     }
   }, [user, userProfile]);
 
-  // Memoized stats - REVISED: Menghapus wallet dan menambahkan Trip Coins
+  // Memoized stats
   const stats = useMemo(() => {
-    const baseStats = [
+    if (!user) {
+      return [
+        {
+          title: 'Total Pesanan',
+          value: '0',
+          subtitle: 'Login untuk melihat',
+          icon: <TicketIcon />,
+          color: 'blue' as const
+        },
+        {
+          title: 'Pesanan Aktif',
+          value: '0',
+          subtitle: 'Belum ada pesanan',
+          icon: <TrainIcon />,
+          color: 'green' as const
+        },
+        {
+          title: 'Trip Coins',
+          value: '0',
+          subtitle: 'Login untuk mendapatkan coin',
+          icon: <CoinIcon />,
+          color: 'yellow' as const
+        },
+        {
+          title: 'Pembayaran Lunas',
+          value: '0',
+          subtitle: 'Login untuk melihat',
+          icon: <CheckCircleIcon />,
+          color: 'purple' as const
+        }
+      ];
+    }
+    
+    return [
       {
         title: 'Total Pesanan',
-        value: user ? bookings.length.toString() : '0',
-        subtitle: user ? 'Semua waktu' : 'Login untuk melihat',
+        value: bookings.length.toString(),
+        subtitle: 'Semua waktu',
         icon: <TicketIcon />,
         color: 'blue' as const
       },
       {
         title: 'Pesanan Aktif',
-        value: user ? activeBookings.length.toString() : '0',
-        subtitle: user ? `${pendingBookings.length} menunggu` : 'Belum ada pesanan',
+        value: activeBookings.length.toString(),
+        subtitle: `${pendingBookings.length} menunggu`,
         icon: <TrainIcon />,
         color: 'green' as const
       },
       {
         title: 'Trip Coins',
-        value: user ? formatCoin(tripCoins) : '0',
-        subtitle: user ? `${coinTransactions.length} transaksi` : 'Login untuk mendapatkan coin',
+        value: formatCoin(tripCoins),
+        subtitle: `${coinTransactions.length} transaksi`,
         icon: <CoinIcon />,
         color: 'yellow' as const
       },
       {
         title: 'Pembayaran Lunas',
-        value: user ? paidBookings.length.toString() : '0',
-        subtitle: user ? 'Pembayaran berhasil' : 'Login untuk melihat',
+        value: paidBookings.length.toString(),
+        subtitle: 'Pembayaran berhasil',
         icon: <CheckCircleIcon />,
         color: 'purple' as const
       }
     ];
+  }, [user, bookings.length, activeBookings.length, pendingBookings.length, tripCoins, coinTransactions.length, paidBookings.length]);
 
-    return baseStats;
-  }, [user, bookings, activeBookings, pendingBookings, tripCoins, coinTransactions, paidBookings]);
+  // Navigation tabs
+  const navTabs = useMemo(() => [
+    { id: 'overview', label: 'Overview', icon: <UserIcon />, disabled: false },
+    { id: 'mybooking', label: 'My Booking', icon: <CalendarIcon />, disabled: !user },
+    { id: 'history', label: 'History', icon: <HistoryIcon />, disabled: !user },
+    { id: 'bookings', label: 'Semua Pesanan', icon: <TrainIcon />, disabled: !user },
+    { id: 'profile', label: 'Pengaturan', icon: <SettingsIcon />, disabled: false },
+  ], [user]);
 
-  // StatCard Component
-  const StatCard: React.FC<{
-    title: string;
-    value: string;
-    icon: React.ReactNode;
-    color: string;
-    subtitle?: string;
-  }> = ({ title, value, icon, color, subtitle }) => (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 hover:shadow-md transition-shadow">
-      <div className="flex items-center space-x-3 sm:space-x-4">
-        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${
-          color === 'blue' ? 'bg-blue-100 text-blue-600' :
-          color === 'green' ? 'bg-green-100 text-green-600' :
-          color === 'yellow' ? 'bg-yellow-100 text-yellow-600' :
-          color === 'purple' ? 'bg-purple-100 text-purple-600' :
-          'bg-orange-100 text-orange-600'
-        }`}>
-          {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-gray-500 text-sm truncate">{title}</p>
-          <p className="text-xl sm:text-2xl font-bold text-gray-800 truncate">{value}</p>
-          {subtitle && <p className="text-xs text-gray-400 mt-1 truncate">{subtitle}</p>}
+  // Loading state
+  if (authLoading && !user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-3 text-gray-600">Memuat dashboard...</p>
         </div>
       </div>
-    </div>
-  );
-
-  // Booking Card Component
-  interface BookingCardProps {
-    booking: Booking;
-    showActions?: boolean;
-    compact?: boolean;
+    );
   }
 
-  const BookingCard: React.FC<BookingCardProps> = ({ 
+  // Booking Card Component
+  const BookingCard = React.memo(function BookingCard({ 
     booking, 
     showActions = true,
     compact = false 
-  }) => {
+  }: BookingCardProps) {
     const statusConfig = getBookingStatusConfig(booking.status || booking.payment_status || 'pending');
+    
+    const handleViewDetails = useCallback(() => {
+      handleViewBookingDetails(booking.id);
+    }, [booking.id, handleViewBookingDetails]);
+    
+    const handleDownload = useCallback(() => {
+      handleDownloadTicket(booking);
+    }, [booking, handleDownloadTicket]);
     
     return (
       <div className={`bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow ${compact ? 'mb-3' : ''}`}>
@@ -1017,7 +1278,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Route Information */}
         {(booking.origin || booking.destination) && (
           <div className="mb-3 p-3 bg-blue-50 rounded-lg">
             <div className="flex items-center justify-between">
@@ -1040,7 +1300,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Passenger Info */}
         {booking.passenger_name && !compact && (
           <div className="mb-3">
             <p className="text-gray-600 text-sm mb-1">Penumpang:</p>
@@ -1051,7 +1310,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Coin Earned Badge */}
         {['paid', 'confirmed', 'completed'].includes(booking.status) && booking.total_amount > 0 && (
           <div className="mb-3">
             <div className="inline-flex items-center gap-1 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -1063,7 +1321,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Actions */}
         {showActions && (
           <div className="flex justify-between items-center pt-3 border-t border-gray-200">
             <div className="text-xs text-gray-500 truncate flex-1 min-w-0">
@@ -1071,14 +1328,14 @@ export default function DashboardPage() {
             </div>
             <div className="flex gap-2 ml-3 shrink-0">
               <button
-                onClick={() => handleViewBookingDetails(booking.id)}
+                onClick={handleViewDetails}
                 className="px-3 py-1.5 text-xs sm:text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors whitespace-nowrap"
               >
                 Detail
               </button>
               {(booking.status === 'paid' || booking.status === 'confirmed' || booking.payment_status === 'paid') && (
                 <button
-                  onClick={() => handleDownloadTicket(booking)}
+                  onClick={handleDownload}
                   className="px-3 py-1.5 text-xs sm:text-sm font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap"
                 >
                   <DownloadIcon />
@@ -1090,20 +1347,46 @@ export default function DashboardPage() {
         )}
       </div>
     );
-  };
+  });
 
-  // Quick Action Card
-  interface QuickActionCardProps {
+  // StatCard Component
+  const StatCard = React.memo(function StatCard({
+    title,
+    value,
+    icon,
+    color,
+    subtitle
+  }: {
     title: string;
-    description: string;
+    value: string;
     icon: React.ReactNode;
     color: string;
-    onClick: () => void;
-    buttonText?: string;
-    disabled?: boolean;
-  }
+    subtitle?: string;
+  }) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 hover:shadow-md transition-shadow">
+        <div className="flex items-center space-x-3 sm:space-x-4">
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${
+            color === 'blue' ? 'bg-blue-100 text-blue-600' :
+            color === 'green' ? 'bg-green-100 text-green-600' :
+            color === 'yellow' ? 'bg-yellow-100 text-yellow-600' :
+            color === 'purple' ? 'bg-purple-100 text-purple-600' :
+            'bg-orange-100 text-orange-600'
+          }`}>
+            {icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-gray-500 text-sm truncate">{title}</p>
+            <p className="text-xl sm:text-2xl font-bold text-gray-800 truncate">{value}</p>
+            {subtitle && <p className="text-xs text-gray-400 mt-1 truncate">{subtitle}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  });
 
-  const QuickActionCard: React.FC<QuickActionCardProps> = ({
+  // Quick Action Card
+  const QuickActionCard = React.memo(function QuickActionCard({
     title,
     description,
     icon,
@@ -1111,57 +1394,42 @@ export default function DashboardPage() {
     onClick,
     buttonText = 'Akses',
     disabled = false
-  }) => (
-    <div className={`bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow ${disabled ? 'opacity-50' : ''}`}>
-      <div className="flex items-start mb-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center mr-3 shrink-0 ${
-          color === 'blue' ? 'bg-blue-100 text-blue-600' :
-          color === 'green' ? 'bg-green-100 text-green-600' :
-          color === 'orange' ? 'bg-orange-100 text-orange-600' :
-          'bg-purple-100 text-purple-600'
-        }`}>
-          {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <h4 className="font-semibold text-gray-800 truncate">{title}</h4>
-          <p className="text-gray-600 text-sm mt-1 line-clamp-2">{description}</p>
-        </div>
-      </div>
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className={`w-full mt-3 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
-          disabled
-            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            : 'text-white bg-blue-600 hover:bg-blue-700'
-        }`}
-      >
-        <span>{buttonText}</span>
-        <ArrowRightIcon />
-      </button>
-    </div>
-  );
-
-  // Navigation tabs
-  const navTabs = useMemo(() => [
-    { id: 'overview', label: 'Overview', icon: <UserIcon />, disabled: false },
-    { id: 'mybooking', label: 'My Booking', icon: <CalendarIcon />, disabled: !user },
-    { id: 'history', label: 'History', icon: <HistoryIcon />, disabled: !user },
-    { id: 'bookings', label: 'Semua Pesanan', icon: <TrainIcon />, disabled: !user },
-    { id: 'profile', label: 'Pengaturan', icon: <SettingsIcon />, disabled: false },
-  ], [user]);
-
-  // Loading state
-  if (authLoading && !user) {
+  }: QuickActionCardProps) {
+    const handleClick = useCallback(() => {
+      if (!disabled) onClick();
+    }, [disabled, onClick]);
+    
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-3 text-gray-600">Memuat dashboard...</p>
+      <div className={`bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow ${disabled ? 'opacity-50' : ''}`}>
+        <div className="flex items-start mb-3">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center mr-3 shrink-0 ${
+            color === 'blue' ? 'bg-blue-100 text-blue-600' :
+            color === 'green' ? 'bg-green-100 text-green-600' :
+            color === 'orange' ? 'bg-orange-100 text-orange-600' :
+            'bg-purple-100 text-purple-600'
+          }`}>
+            {icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="font-semibold text-gray-800 truncate">{title}</h4>
+            <p className="text-gray-600 text-sm mt-1 line-clamp-2">{description}</p>
+          </div>
         </div>
+        <button
+          onClick={handleClick}
+          disabled={disabled}
+          className={`w-full mt-3 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+            disabled
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'text-white bg-blue-600 hover:bg-blue-700'
+          }`}
+        >
+          <span>{buttonText}</span>
+          <ArrowRightIcon />
+        </button>
       </div>
     );
-  }
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">

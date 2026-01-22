@@ -11,19 +11,41 @@ const CheckCircleIcon = () => (
   </svg>
 );
 
-const ArrowRightIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-  </svg>
-);
+const hasAccess = (userRole: string | undefined, path: string): boolean => {
+  if (!userRole) return false;
+  
+  const role = userRole.toLowerCase();
+  const targetPath = path.toLowerCase();
+  
+  // Rule untuk Super Admin (Akses Segalanya)
+  if (role === 'super_admin') return true;
 
+  // Rule untuk Admin
+  if (targetPath.startsWith('/admin')) {
+    return role === 'admin';
+  }
+  
+  // Rule untuk Staff
+  if (targetPath.startsWith('/staff')) {
+    return role === 'staff';
+  }
+  
+  // Rule untuk User biasa ke Dashboard Umum
+  if (targetPath.startsWith('/dashboard')) {
+    return true; // Semua role yang login bisa ke dashboard umum
+  }
+  
+  return true; 
+};
 // Helper function untuk menentukan redirect berdasarkan role
-const getRedirectPathByRole = (userRole: string | undefined) => {
-  switch (userRole?.toLowerCase()) {
+const getDefaultRedirectByRole = (userRole: string | undefined): string => {
+  const role = (userRole || 'user').toLowerCase();
+  
+  switch (role) {
     case 'admin':
       return '/admin/dashboard';
     case 'super_admin':
-      return '/super-admin/dashboard';
+      return '/admin/dashboard';
     case 'staff':
       return '/staff/dashboard';
     case 'user':
@@ -37,50 +59,64 @@ function RedirectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
-  const [redirecting, setRedirecting] = useState(false);
+  const [status, setStatus] = useState<'checking' | 'redirecting' | 'no_access'>('checking');
+  const [targetPath, setTargetPath] = useState<string>('/dashboard');
   const [countdown, setCountdown] = useState(3);
 
   useEffect(() => {
-    if (!loading && user) {
-      const redirectUrl = searchParams.get('redirect');
-      
-      if (redirectUrl) {
-        setRedirecting(true);
-        // Decode and redirect to the original URL
-        const decodedUrl = decodeURIComponent(redirectUrl);
-        // Mulai countdown
-        const countdownInterval = setInterval(() => {
+    if (!loading) {
+      if (user) {
+        // User sudah login, tentukan redirect path
+        const redirectParam = searchParams.get('redirect');
+        
+        let finalPath = '/dashboard';
+        
+        if (redirectParam) {
+          try {
+            const decodedPath = decodeURIComponent(redirectParam);
+            
+            // Validasi apakah user punya akses ke path tersebut
+            if (hasAccess(user.role, decodedPath)) {
+              finalPath = decodedPath;
+            } else {
+              // User tidak punya akses, gunakan default berdasarkan role
+              finalPath = getDefaultRedirectByRole(user.role);
+              setStatus('no_access');
+            }
+          } catch (error) {
+            console.error('Invalid redirect URL:', error);
+            finalPath = getDefaultRedirectByRole(user.role);
+          }
+        } else {
+          // Tidak ada redirect param, gunakan default berdasarkan role
+          finalPath = getDefaultRedirectByRole(user.role);
+        }
+        
+        setTargetPath(finalPath);
+        setStatus('redirecting');
+        
+        // Mulai countdown untuk redirect
+        const interval = setInterval(() => {
           setCountdown((prev) => {
             if (prev <= 1) {
-              clearInterval(countdownInterval);
-              router.push(decodedUrl);
+              clearInterval(interval);
+              router.push(finalPath);
               return 0;
             }
             return prev - 1;
           });
         }, 1000);
         
-        return () => clearInterval(countdownInterval);
+        return () => clearInterval(interval);
       } else {
-        // Redirect berdasarkan role user
-        setRedirecting(true);
-        const roleBasedPath = getRedirectPathByRole(user.role);
-        const countdownInterval = setInterval(() => {
-          setCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(countdownInterval);
-              router.push(roleBasedPath);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-        
-        return () => clearInterval(countdownInterval);
+        // User belum login, redirect ke login page
+        const loginUrl = new URL('/auth/login', window.location.origin);
+        const redirectParam = searchParams.get('redirect');
+        if (redirectParam) {
+          loginUrl.searchParams.set('redirect', redirectParam);
+        }
+        router.push(loginUrl.toString());
       }
-    } else if (!loading && !user) {
-      // If not logged in, redirect to login
-      router.push('/auth/login');
     }
   }, [user, loading, searchParams, router]);
 
@@ -95,25 +131,27 @@ function RedirectContent() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A58CA] to-[#0548AD] flex items-center justify-center p-4">
-        <div className="text-center">
-          <p className="text-white">Anda belum login. Mengarahkan ke halaman login...</p>
-        </div>
-      </div>
-    );
+  if (status === 'checking') {
+    return null;
   }
 
   // Get role display name
   const getRoleDisplayName = (role: string | undefined) => {
-    switch (role?.toLowerCase()) {
+    const normalizedRole = (role || 'user').toLowerCase();
+    switch (normalizedRole) {
       case 'admin': return 'Admin';
       case 'super_admin': return 'Super Admin';
       case 'staff': return 'Staff';
-      case 'user': return 'User';
       default: return 'User';
     }
+  };
+
+  // Get path display name
+  const getPathDisplayName = (path: string) => {
+    if (path.startsWith('/admin')) return 'Admin Dashboard';
+    if (path.startsWith('/staff')) return 'Staff Dashboard';
+    if (path.startsWith('/super-admin')) return 'Super Admin Dashboard';
+    return 'Dashboard';
   };
 
   return (
@@ -124,52 +162,67 @@ function RedirectContent() {
             <CheckCircleIcon />
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Login Berhasil!</h1>
-          <p className="text-gray-600 mb-2">
-            Selamat datang kembali, <span className="font-semibold">{user.name || user.email}</span>!
-          </p>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">
+            {status === 'no_access' ? 'Akses Dibatasi' : 'Login Berhasil!'}
+          </h1>
+          
+          {status === 'no_access' ? (
+            <div className="space-y-4">
+              <p className="text-gray-600">
+                Maaf, Anda tidak memiliki akses ke halaman yang diminta.
+              </p>
+              <p className="text-gray-600">
+                Sebagai <span className="font-semibold">{getRoleDisplayName(user?.role)}</span>, Anda akan diarahkan ke:
+              </p>
+            </div>
+          ) : (
+            <p className="text-gray-600 mb-2">
+              Selamat datang kembali, <span className="font-semibold">{user?.name || user?.email}</span>!
+            </p>
+          )}
+          
           <div className="inline-block bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full mb-4">
-            Role: {getRoleDisplayName(user.role)}
+            Role: {getRoleDisplayName(user?.role)}
           </div>
           
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
             <p className="text-gray-700 mb-2">
-              Anda akan diarahkan ke halaman {user.role === 'admin' ? 'admin' : 'dashboard'} dalam:
+              {status === 'redirecting' ? 'Mengarahkan ke:' : 'Anda akan diarahkan ke:'}
             </p>
-            <div className="text-3xl font-bold text-blue-600">{countdown} detik</div>
-          </div>
-          
-          {redirecting && (
-            <div className="space-y-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-              <p className="text-sm text-gray-500">Mengarahkan...</p>
+            <div className="text-xl font-bold text-blue-600 mb-2">
+              {getPathDisplayName(targetPath)}
             </div>
-          )}
-          
-          <div className="mt-6">
-            <button
-              onClick={() => {
-                const redirectUrl = searchParams.get('redirect');
-                if (redirectUrl) {
-                  router.push(decodeURIComponent(redirectUrl));
-                } else {
-                  const roleBasedPath = getRedirectPathByRole(user.role);
-                  router.push(roleBasedPath);
-                }
-              }}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center mx-auto"
-            >
-              <span>Lanjutkan Sekarang</span>
-              <ArrowRightIcon />
-            </button>
+            <div className="text-sm text-gray-500 truncate">
+              {targetPath}
+            </div>
+            
+            {status === 'redirecting' && (
+              <div className="mt-4">
+                <div className="text-3xl font-bold text-blue-600">{countdown}</div>
+                <p className="text-sm text-gray-500 mt-1">detik</p>
+              </div>
+            )}
           </div>
-
-          <div className="mt-4 text-sm text-gray-500">
-            <p>Redirect ke: {
-              searchParams.get('redirect') 
-                ? decodeURIComponent(searchParams.get('redirect')!)
-                : getRedirectPathByRole(user.role)
-            }</p>
+          
+          <div className="space-y-3">
+            {status === 'redirecting' && (
+              <div className="space-y-2">
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-green-500 rounded-full transition-all duration-1000"
+                    style={{ width: `${(3 - countdown) * 33.33}%` }}
+                  ></div>
+                </div>
+                <p className="text-sm text-gray-500">Mempersiapkan halaman...</p>
+              </div>
+            )}
+            
+            <button
+              onClick={() => router.push(targetPath)}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300"
+            >
+              Lanjutkan Sekarang
+            </button>
           </div>
         </div>
       </div>

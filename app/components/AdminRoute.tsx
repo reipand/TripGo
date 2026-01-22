@@ -13,7 +13,7 @@ interface AdminRouteProps {
 
 const AdminRoute: React.FC<AdminRouteProps> = ({ 
   children, 
-  redirectTo = '/dashboard',
+  redirectTo = 'admin/dashboard',
   requiredPermission
 }) => {
   const { user, userProfile, loading } = useAuth();

@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/app/contexts/AuthContext';
+import { supabase } from '@/app/lib/supabaseClient';
 
 // --- Komponen Ikon ---
 const EyeIcon = () => (
@@ -56,7 +57,7 @@ const GoogleIcon = () => (
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signIn, signInWithGoogle, loading: authLoading } = useAuth();
+  const { signIn, signInWithGoogle, loading: authLoading, user, userProfile, isAdmin } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -66,7 +67,7 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const [redirectUrl, setRedirectUrl] = useState<string>('/dashboard');
 
   // Get redirect URL from query params
   useEffect(() => {
@@ -75,7 +76,16 @@ function LoginContent() {
     const email = searchParams.get('email');
     
     if (redirect) {
-      setRedirectUrl(redirect);
+      // Decode and validate redirect URL
+      try {
+        const decodedRedirect = decodeURIComponent(redirect);
+        // Validate it's a safe path
+        if (decodedRedirect.startsWith('/')) {
+          setRedirectUrl(decodedRedirect);
+        }
+      } catch (err) {
+        console.error('Invalid redirect URL:', err);
+      }
     }
     
     if (message) {
@@ -101,7 +111,58 @@ function LoginContent() {
     if (rememberedEmail) {
       setFormData(prev => ({ ...prev, email: rememberedEmail, rememberMe: true }));
     }
-  }, [searchParams]);
+    
+    // Jika user sudah login, redirect berdasarkan role
+    if (user && userProfile) {
+      handleAlreadyLoggedIn();
+    }
+  }, [searchParams, user, userProfile]);
+
+  const handleAlreadyLoggedIn = () => {
+    console.log('User already logged in, checking for redirect...');
+    
+    if (!userProfile) return;
+    
+    const userRole = userProfile.role?.toLowerCase() || 'user';
+    console.log(`Logged in user role: ${userRole}`);
+    
+    // Determine target path based on role
+    let targetPath = redirectUrl;
+    
+    // Jika redirect URL adalah dashboard default, tentukan berdasarkan role
+    if (redirectUrl === '/dashboard' || redirectUrl === '/') {
+      switch (userRole) {
+        case 'admin':
+        case 'super_admin':
+          targetPath = '/admin/dashboard';
+          break;
+        case 'staff':
+          targetPath = '/staff/dashboard';
+          break;
+        default:
+          targetPath = '/dashboard';
+      }
+    }
+    
+    // Check if user has access to the target path
+    if (!hasAccess(userRole, targetPath)) {
+      // Jika tidak punya akses, redirect ke dashboard sesuai role
+      switch (userRole) {
+        case 'admin':
+        case 'super_admin':
+          targetPath = '/admin/dashboard';
+          break;
+        case 'staff':
+          targetPath = '/staff/dashboard';
+          break;
+        default:
+          targetPath = '/dashboard';
+      }
+    }
+    
+    console.log('Redirecting logged-in user to:', targetPath);
+    router.push(targetPath);
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -112,104 +173,96 @@ function LoginContent() {
     setError(''); // Clear error when user types
   };
 
+  // Fixed: handleSubmit dengan proper role checking
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  
-  // Basic validation
-  if (!formData.email.trim()) {
-    setError('Email tidak boleh kosong');
-    return;
-  }
-  
-  if (!formData.password.trim()) {
-    setError('Password tidak boleh kosong');
-    return;
-  }
-  
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(formData.email)) {
-    setError('Format email tidak valid');
-    return;
-  }
+    e.preventDefault();
+    setError('');
+    setLoading(true);
 
-  setLoading(true);
-  setError('');
-
-  try {
-    // Hanya menerima error, karena signIn tidak mengembalikan user
-    const { error: signInError } = await signIn(formData.email.trim(), formData.password.trim());
-    
-    if (signInError) {
-      // Handle specific error messages
-      if (signInError.message.includes('Invalid login credentials')) {
-        setError('Email atau password salah');
-      } else if (signInError.message.includes('Email not confirmed')) {
-        setError('Email belum diverifikasi. Silakan cek email Anda untuk verifikasi.');
-      } else if (signInError.message.includes('User not found')) {
-        setError('Akun tidak ditemukan. Silakan periksa email atau daftar akun baru.');
-      } else if (signInError.message.includes('too many requests')) {
-        setError('Terlalu banyak percobaan login. Silakan coba lagi nanti.');
-      } else {
-        setError(signInError.message || 'Terjadi kesalahan saat login');
-      }
-    } else {
-
-      if (formData.rememberMe) {
-        localStorage.setItem('remembered_email', formData.email.trim());
+    try {
+      // Save remember me preference
+      if (formData.rememberMe && formData.email) {
+        localStorage.setItem('remembered_email', formData.email);
       } else {
         localStorage.removeItem('remembered_email');
       }
+
+      const { error: signInError } = await signIn(formData.email, formData.password);
       
+      if (signInError) {
+        setError(signInError.message || 'Login gagal. Periksa email dan password Anda.');
+        setLoading(false);
+        return;
+      }
+
+      // Login berhasil, set pesan sukses dan tunggu redirect dari auth context
       setSuccessMessage('Login berhasil! Mengarahkan...');
       
-      // Small delay for user to see success message
-      setTimeout(() => {
-        if (redirectUrl) {
-          router.push(decodeURIComponent(redirectUrl));
-        } else {
-          router.push('/dashboard');
-        }
-      }, 1000);
+      // Redirect akan ditangani oleh onAuthStateChange di AuthContext
+      // atau oleh handleAlreadyLoggedIn di useEffect
+      
+    } catch (err: any) {
+      console.error('Login exception:', err);
+      setError(err.message || 'Terjadi kesalahan saat login');
+      setLoading(false);
     }
-  } catch (err: any) {
-    console.error('Login error:', err);
-    setError('Terjadi kesalahan sistem. Silakan coba lagi.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
+
+  // Helper function to check access
+  const hasAccess = (userRole: string, path: string): boolean => {
+    const normalizedRole = userRole.toLowerCase();
+    
+    // Admin dan Super Admin bisa akses semua admin routes
+    if (path.startsWith('/admin') && !['admin', 'super_admin'].includes(normalizedRole)) {
+      return false;
+    }
+    
+    // Staff hanya bisa akses staff routes
+    if (path.startsWith('/staff') && !['staff', 'super_admin'].includes(normalizedRole)) {
+      return false;
+    }
+    
+    // Super Admin only routes
+    if (path.startsWith('/super-admin') && normalizedRole !== 'super_admin') {
+      return false;
+    }
+    
+    return true;
+  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError('');
     
     try {
-      const { error: socialError } = await signInWithGoogle();
+      // Save remember me preference untuk email dari Google
+      if (formData.rememberMe && formData.email) {
+        localStorage.setItem('remembered_email', formData.email);
+      }
+      
+      // Construct proper callback URL with redirect parameter
+      const callbackUrl = `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`;
+      console.log('Google login callback URL:', callbackUrl);
+      
+      const { error: socialError } = await signInWithGoogle(callbackUrl);
       
       if (socialError) {
-        if (socialError.message.includes('popup blocked')) {
+        if (socialError.message?.includes('popup blocked')) {
           setError('Popup diblokir oleh browser. Silakan izinkan popup untuk situs ini.');
-        } else if (socialError.message.includes('access_denied')) {
+        } else if (socialError.message?.includes('access_denied')) {
           setError('Anda membatalkan proses login dengan Google.');
         } else {
           setError(socialError.message || 'Gagal login dengan Google');
         }
+        setLoading(false);
       } else {
-        // Google login successful
-        setSuccessMessage('Login dengan Google berhasil! Mengarahkan...');
-        
-        setTimeout(() => {
-          if (redirectUrl) {
-            router.push(decodeURIComponent(redirectUrl));
-          } else {
-            router.push('/dashboard');
-          }
-        }, 1000);
+        // Google login initiated successfully
+        setSuccessMessage('Mengarahkan ke Google untuk login...');
+        // Redirect will be handled by OAuth flow
       }
     } catch (err: any) {
       console.error('Google login error:', err);
       setError('Terjadi kesalahan saat login dengan Google');
-    } finally {
       setLoading(false);
     }
   };
@@ -225,10 +278,10 @@ function LoginContent() {
           <h1 className="text-3xl font-bold text-white">Selamat Datang Kembali</h1>
           <p className="text-blue-100 mt-2">Masuk untuk melanjutkan ke TripGO</p>
           
-          {redirectUrl && (
+          {redirectUrl && redirectUrl !== '/dashboard' && (
             <div className="mt-3 p-3 bg-blue-500 bg-opacity-20 rounded-lg inline-block">
               <p className="text-blue-100 text-sm">
-                Anda akan diarahkan kembali setelah login berhasil
+                Anda akan diarahkan ke <span className="font-semibold">{redirectUrl}</span> setelah login
               </p>
             </div>
           )}
@@ -269,6 +322,7 @@ function LoginContent() {
                   placeholder="nama@email.com"
                   required
                   disabled={loading || authLoading}
+                  autoComplete="email"
                 />
               </div>
             </div>
@@ -280,7 +334,7 @@ function LoginContent() {
                   Password <span className="text-red-500">*</span>
                 </label>
                 <Link 
-                  href={redirectUrl ? `/auth/forgot-password?redirect=${encodeURIComponent(redirectUrl)}` : '/auth/forgot-password'} 
+                  href={`/auth/forgot-password?redirect=${encodeURIComponent(redirectUrl)}`}
                   className="text-sm text-blue-600 hover:text-blue-500 font-medium"
                 >
                   Lupa password?
@@ -299,6 +353,7 @@ function LoginContent() {
                   placeholder="Masukkan password"
                   required
                   disabled={loading || authLoading}
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -382,7 +437,7 @@ function LoginContent() {
               <p className="text-gray-600">
                 Belum punya akun?{' '}
                 <Link 
-                  href={redirectUrl ? `/auth/register?redirect=${encodeURIComponent(redirectUrl)}` : '/auth/register'} 
+                  href={`/auth/register?redirect=${encodeURIComponent(redirectUrl)}`}
                   className="text-blue-600 hover:text-blue-500 font-semibold hover:underline"
                 >
                   Daftar sekarang

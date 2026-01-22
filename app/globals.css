@@ -8,6 +8,7 @@
      /* Warna dasar untuk mode terang */
     --background: 249 250 251; /* Corresponds to Tailwind's gray-50 */
     --foreground: 17 24 39;   /* Corresponds to Tailwind's gray-900 */
+    --font-inter: 'Inter', sans-serif;
     
     /* Palet Warna utama TripGo (dalam format R G B untuk opacity) */
     --primary-blue: 10 88 202; /* #0A58CA */
@@ -37,7 +38,11 @@
     /* Menggunakan variabel CSS untuk warna background dan teks */
     background-color: rgb(var(--background));
     color: rgb(var(--foreground));
-    
+       font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  background-color: #f9fafb; /* bg-gray-50 */
+  color: #111827; /* text-gray-900 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
     /* Font 'Inter' sudah diaplikasikan dari file app/layout.tsx. 
       Baris di bawah ini menambahkan anti-aliasing untuk membuat teks
       terlihat lebih tajam dan halus di berbagai browser.

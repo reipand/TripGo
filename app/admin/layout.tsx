@@ -1,29 +1,20 @@
-import type { Metadata } from 'next'
-import AdminSidebar from '@/components/admin/AdminSidebar'
-import AdminHeader from '@/components/admin/AdminHeader'
-import { SupabaseProvider } from '@/components/providers/SupabaseProvider'
+// app/admin/layout.tsx
+'use client';
 
-export const metadata: Metadata = {
-  title: 'Admin Dashboard - TripGo',
-  description: 'TripGo Administration Panel',
-}
+import { ReactNode } from 'react';
+import AdminSidebar from '@/app/components/layout/AdminSidebar';
+import AdminHeader from '@/app/components/layout/AdminHeader';
 
-export default function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
-    <SupabaseProvider>
-      <div className="flex min-h-screen bg-gray-100">
-        <AdminSidebar />
-        <div className="flex-1">
-          <AdminHeader />
-          <main className="p-6">
-            {children}
-          </main>
-        </div>
+    <div className="flex h-screen bg-gray-50">
+      <AdminSidebar />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <AdminHeader />
+        <main className="flex-1 overflow-y-auto p-6">
+          {children}
+        </main>
       </div>
-    </SupabaseProvider>
-  )
+    </div>
+  );
 }
