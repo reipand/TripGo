@@ -3,8 +3,8 @@
 
 import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { 
-  CheckCircle, Download, Clock, Train, User, Calendar, 
+import {
+  CheckCircle, Download, Clock, Train, User, Calendar,
   MapPin, CreditCard, ArrowRight, Mail, Phone, Shield,
   Ticket as TicketIcon, Package, Coffee, Wifi, Utensils,
   Home, RefreshCw, AlertCircle, BadgeCheck
@@ -45,7 +45,7 @@ interface BookingData {
   has_ticket?: boolean;
   booking_date?: string;
   user_id?: string;
-  
+
   // New fields from updated API
   pnr_number?: string;
   coach_number?: string;
@@ -62,7 +62,7 @@ interface BookingData {
   convenience_fee?: number;
   discount_amount?: number;
   final_amount?: number;
-  
+
   // Transit related fields - UPDATED
   has_transit?: boolean;
   transit_info?: {
@@ -75,7 +75,7 @@ interface BookingData {
     facilities?: string[];
   };
   facilities?: string[];
-  
+
   // NEW: Data transit sesuai gambar
   transit_station?: string;
   transit_arrival?: string;
@@ -128,33 +128,33 @@ const formatCurrency = (amount: number) => {
 // --- Komponen Transit Info (Updated) ---
 const TransitInfo = ({ booking }: { booking: BookingData }) => {
   const hasTransit = booking.has_transit || booking.transit_station;
-  
+
   if (!hasTransit) return null;
-  
+
   const transitStation = booking.transit_station || booking.transit_info?.transit_station;
   const transitArrival = booking.transit_arrival || booking.transit_info?.connection_departure_time;
   const transitDeparture = booking.transit_departure || booking.transit_info?.connection_arrival_time;
-  
+
   // Hitung durasi transit jika ada arrival dan departure
   const calculateTransitDuration = () => {
     if (!transitArrival || !transitDeparture) return '15 menit';
-    
+
     try {
       const [arrHour, arrMin] = transitArrival.split(':').map(Number);
       const [depHour, depMin] = transitDeparture.split(':').map(Number);
-      
+
       const arrMinutes = arrHour * 60 + arrMin;
       const depMinutes = depHour * 60 + depMin;
-      
+
       let duration = depMinutes - arrMinutes;
       if (duration < 0) duration += 24 * 60;
-      
+
       return `${duration} menit`;
     } catch {
       return '15 menit';
     }
   };
-  
+
   return (
     <div className="mt-6 p-6 bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border border-amber-200 shadow-sm">
       <div className="flex items-center mb-4">
@@ -166,29 +166,29 @@ const TransitInfo = ({ booking }: { booking: BookingData }) => {
           <p className="text-amber-600 text-sm">Anda akan transit di {transitStation}</p>
         </div>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
           <p className="text-sm text-amber-700 mb-1">Stasiun Transit</p>
           <p className="font-bold text-gray-800 text-lg">{transitStation}</p>
         </div>
-        
+
         <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
           <p className="text-sm text-amber-700 mb-1">Durasi Transit</p>
           <p className="font-bold text-amber-600 text-lg">{calculateTransitDuration()}</p>
         </div>
-        
+
         <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
           <p className="text-sm text-amber-700 mb-1">Tiba di Transit</p>
           <p className="font-bold text-gray-800 text-lg">{transitArrival || '07:30'}</p>
         </div>
-        
+
         <div className="bg-white/80 p-4 rounded-xl border border-amber-100">
           <p className="text-sm text-amber-700 mb-1">Berangkat Lagi</p>
           <p className="font-bold text-gray-800 text-lg">{transitDeparture || '07:45'}</p>
         </div>
       </div>
-      
+
       {/* Transit Discount & Additional Price Info */}
       {(booking.transit_discount || booking.transit_additional_price) && (
         <div className="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
@@ -201,7 +201,7 @@ const TransitInfo = ({ booking }: { booking: BookingData }) => {
                 </p>
               </div>
             )}
-            
+
             {booking.transit_additional_price && booking.transit_additional_price > 0 && (
               <div className="text-center">
                 <p className="text-sm text-blue-700 mb-1">Biaya Tambahan Transit</p>
@@ -213,12 +213,12 @@ const TransitInfo = ({ booking }: { booking: BookingData }) => {
           </div>
         </div>
       )}
-      
+
       <div className="mt-4 pt-4 border-t border-amber-200">
         <div className="flex items-start">
           <AlertCircle className="w-5 h-5 text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
           <p className="text-sm text-amber-700">
-            <span className="font-bold">Catatan:</span> Tiket ini berlaku sampai {transitStation}. 
+            <span className="font-bold">Catatan:</span> Tiket ini berlaku sampai {transitStation}.
             Untuk perjalanan lanjutan, silakan pesan tiket terpisah.
           </p>
         </div>
@@ -232,20 +232,20 @@ const PaymentSuccessContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  
+
   const [countdown, setCountdown] = useState(15);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // State untuk data
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [ticketData, setTicketData] = useState<TicketData | null>(null);
-  
+
   // Inisialisasi Supabase client
   const [supabase, setSupabase] = useState<any>(null);
-  
+
   useEffect(() => {
     // Inisialisasi Supabase client di client side
     const initSupabase = async () => {
@@ -257,7 +257,7 @@ const PaymentSuccessContent = () => {
         console.error('Failed to initialize Supabase:', error);
       }
     };
-    
+
     initSupabase();
   }, []);
 
@@ -286,13 +286,13 @@ const PaymentSuccessContent = () => {
     try {
       const [depHours, depMinutes] = departureTime.split(':').map(Number);
       const [arrHours, arrMinutes] = arrivalTime.split(':').map(Number);
-      
+
       let totalMinutes = (arrHours * 60 + arrMinutes) - (depHours * 60 + depMinutes);
       if (totalMinutes < 0) totalMinutes += 24 * 60;
-      
+
       const hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
-      
+
       if (hours === 0) return `${minutes}m`;
       if (minutes === 0) return `${hours}j`;
       return `${hours}j ${minutes}m`;
@@ -307,16 +307,16 @@ const PaymentSuccessContent = () => {
       try {
         setLoading(true);
         setError(null);
-        
+
         console.log('🔄 Loading payment success data...');
-        
+
         // STRATEGI 1: Ambil data dari URL parameters
         const bookingCode = searchParams.get('bookingCode');
         const orderId = searchParams.get('orderId');
         const status = searchParams.get('status');
-        
+
         console.log('📋 URL Params:', { bookingCode, orderId, status });
-        
+
         // Ambil data transit dari URL
         const url = new URL(window.location.href);
         const transitStation = url.searchParams.get('transitStation');
@@ -328,7 +328,7 @@ const PaymentSuccessContent = () => {
         const adminFee = url.searchParams.get('adminFee');
         const insuranceFee = url.searchParams.get('insuranceFee');
         const discountAmount = url.searchParams.get('discountAmount');
-        
+
         console.log('🚉 Transit data from URL:', {
           transitStation,
           transitArrival,
@@ -336,48 +336,55 @@ const PaymentSuccessContent = () => {
           transitDiscount,
           transitAdditionalPrice
         });
-        
+
         // STRATEGY 2: Cari data di sessionStorage
         let bookingFromSession = null;
         let paymentFromSession = null;
-        
+
         try {
           // Coba ambil dari sessionStorage
           const currentPayment = sessionStorage.getItem('currentPayment');
           const sessionBooking = sessionStorage.getItem('currentBooking');
-          
+
           if (currentPayment || sessionBooking) {
             const paymentData = currentPayment ? JSON.parse(currentPayment) : null;
             const bookingData = sessionBooking ? JSON.parse(sessionBooking) : null;
-            
+
             console.log('📦 Session data found:', { paymentData, bookingData });
-            
+
             // Data transit dari URL params
-            const hasTransit = !!transitStation;
-            const baseFare = 265000;
-            const seatPremiumValue = seatPremium ? parseInt(seatPremium) : 172250;
-            const transitDiscountValue = transitDiscount ? parseInt(transitDiscount) : 26500;
-            const transitAdditionalPriceValue = transitAdditionalPrice ? parseInt(transitAdditionalPrice) : 7500;
-            const adminFeeValue = adminFee ? parseInt(adminFee) : 5000;
-            const insuranceFeeValue = insuranceFee ? parseInt(insuranceFee) : 10000;
-            const discountAmountValue = discountAmount ? parseInt(discountAmount) : 26500; // Diskon dari promo
-            
-            // Perhitungan total yang benar
-            const calculatedTotal = baseFare + seatPremiumValue - transitDiscountValue + 
-                                  transitAdditionalPriceValue - discountAmountValue + 
-                                  adminFeeValue + insuranceFeeValue;
-            
-            console.log('💰 Total calculation:', {
-              baseFare,
-              seatPremium: seatPremiumValue,
-              transitDiscount: -transitDiscountValue,
-              transitAdditional: transitAdditionalPriceValue,
-              promoDiscount: -discountAmountValue,
-              adminFee: adminFeeValue,
-              insuranceFee: insuranceFeeValue,
-              total: calculatedTotal
+            const sessionBookingData = bookingData || paymentData;
+
+            // Ambil total dari session jika tersedia
+            const sessionTotal = paymentData?.totalAmount || paymentData?.amount || bookingData?.totalAmount || bookingData?.amount;
+            const urlAmount = searchParams.get('amount');
+
+            // Prioritaskan total dari URL > Session > Perhitungan
+            const baseFareValue = sessionBookingData?.basePrice || 265000;
+            const seatPremiumValue = seatPremium ? parseInt(seatPremium) : (sessionBookingData?.seatPremium || 0);
+            const transitDiscountValue = transitDiscount ? parseInt(transitDiscount) : (sessionBookingData?.transitDiscount || 0);
+            const transitAdditionalPriceValue = transitAdditionalPrice ? parseInt(transitAdditionalPrice) : (sessionBookingData?.transitAdditionalPrice || 0);
+            const adminFeeValue = adminFee ? parseInt(adminFee) : (sessionBookingData?.adminFee || 5000);
+            const insuranceFeeValue = insuranceFee ? parseInt(insuranceFee) : (sessionBookingData?.insuranceFee || 10000);
+            const discountAmountValue = discountAmount ? parseInt(discountAmount) : (sessionBookingData?.discountAmount || 0);
+
+            // Jika ada total dari URL atau Session, gunakan itu sebagai source of truth utama
+            let calculatedTotal = sessionTotal || (urlAmount ? parseInt(urlAmount) : 0);
+
+            // Jika masih 0 atau tidak ada, barulah hitung
+            if (!calculatedTotal) {
+              calculatedTotal = baseFareValue + seatPremiumValue - transitDiscountValue +
+                transitAdditionalPriceValue - discountAmountValue +
+                adminFeeValue + insuranceFeeValue;
+            }
+
+            console.log('💰 Final Total source:', {
+              sessionTotal,
+              urlAmount,
+              calculatedTotal,
+              baseFare: baseFareValue
             });
-            
+
             // Buat payment data
             paymentFromSession = {
               order_id: orderId || paymentData?.orderId || `ORDER-${Date.now()}`,
@@ -388,21 +395,20 @@ const PaymentSuccessContent = () => {
                 settlement_time: new Date().toISOString()
               },
               fare_breakdown: {
-                base_fare: baseFare,
+                base_fare: baseFareValue,
                 seat_premium: seatPremiumValue,
                 admin_fee: adminFeeValue,
                 insurance_fee: insuranceFeeValue,
                 transit_discount: transitDiscountValue,
                 transit_additional: transitAdditionalPriceValue,
                 discount: discountAmountValue,
-                subtotal: baseFare + seatPremiumValue + transitAdditionalPriceValue + 
-                         adminFeeValue + insuranceFeeValue,
+                subtotal: baseFareValue + seatPremiumValue + transitAdditionalPriceValue +
+                  adminFeeValue + insuranceFeeValue,
                 total: calculatedTotal
               }
             };
-            
+
             // Buat booking data
-            const sessionBookingData = bookingData || paymentData;
             bookingFromSession = {
               booking_code: bookingCode || sessionBookingData?.bookingCode || `BOOK-${Date.now().toString().slice(-8)}`,
               order_id: orderId || sessionBookingData?.orderId || `ORDER-${Date.now()}`,
@@ -441,7 +447,7 @@ const PaymentSuccessContent = () => {
               discount_amount: discountAmountValue,
               final_amount: calculatedTotal,
               // Data transit
-              has_transit: hasTransit,
+              has_transit: !!transitStation,
               transit_station: transitStation || 'Stasiun Cirebon',
               transit_arrival: transitArrival || '07:30',
               transit_departure: transitDeparture || '07:45',
@@ -450,81 +456,66 @@ const PaymentSuccessContent = () => {
               seat_premium: seatPremiumValue,
               admin_fee: adminFeeValue,
               insurance_fee: insuranceFeeValue,
-              base_price: baseFare
+              base_price: baseFareValue
             };
           }
         } catch (storageError) {
           console.error('Storage error:', storageError);
         }
-        
+
         // STRATEGI 3: Cari di database jika ada bookingCode dan supabase tersedia
         let bookingFromDB = null;
+        let invoiceFromDB = null;
+
         if (bookingCode && supabase) {
           try {
             console.log('🔍 Searching in database for:', bookingCode);
+
+            // 1. Get Booking
             const { data: dbBooking, error: dbError } = await supabase
               .from('bookings_kereta')
-              .select('*')
+              .select(`
+                *,
+                jadwal_kereta (
+                  *,
+                  kereta (*)
+                ),
+                penumpang (*),
+                invoices (*)
+              `)
               .eq('booking_code', bookingCode)
               .maybeSingle();
-              
+
             if (!dbError && dbBooking) {
               console.log('✅ Found in database:', dbBooking);
+
+              // 2. Get Invoice separately if needed
+              const { data: dbInvoice } = await supabase
+                .from('invoices')
+                .select('*')
+                .eq('booking_id', dbBooking.id)
+                .maybeSingle();
+
+              invoiceFromDB = dbInvoice;
+
+              const seatPremiumVal = dbBooking.seat_premium || (dbBooking.total_amount - (dbBooking.base_price || 265000) - (dbBooking.convenience_fee || 5000) - (dbBooking.insurance_fee || 10000) + (dbBooking.discount_amount || 0));
+
               bookingFromDB = {
-                booking_code: dbBooking.booking_code,
-                order_id: dbBooking.order_id,
-                ticket_number: dbBooking.ticket_number,
-                passenger_name: dbBooking.passenger_name,
-                passenger_email: dbBooking.passenger_email,
-                passenger_phone: dbBooking.passenger_phone,
-                train_name: dbBooking.train_name,
-                train_type: dbBooking.train_type,
-                train_code: dbBooking.train_code,
-                train_class: dbBooking.train_class,
-                origin: dbBooking.origin,
-                destination: dbBooking.destination,
-                departure_date: dbBooking.departure_date,
-                departure_time: dbBooking.departure_time,
-                arrival_time: dbBooking.arrival_time,
-                total_amount: dbBooking.total_amount,
-                status: dbBooking.status,
-                payment_status: dbBooking.payment_status || 'paid',
-                payment_method: dbBooking.payment_method,
-                passenger_count: dbBooking.passenger_count,
-                created_at: dbBooking.created_at,
-                updated_at: dbBooking.updated_at,
-                selected_seats: dbBooking.selected_seats,
-                has_ticket: dbBooking.has_ticket,
-                booking_date: dbBooking.booking_date,
-                user_id: dbBooking.user_id,
-                pnr_number: dbBooking.pnr_number,
-                coach_number: dbBooking.coach_number,
-                seat_numbers: dbBooking.seat_numbers,
-                checkin_status: dbBooking.checkin_status,
-                baggage_allowance: dbBooking.baggage_allowance,
-                trip_duration: dbBooking.trip_duration,
-                platform: dbBooking.platform,
-                is_insurance_included: dbBooking.is_insurance_included,
-                insurance_amount: dbBooking.insurance_amount,
-                convenience_fee: dbBooking.convenience_fee,
-                discount_amount: dbBooking.discount_amount,
-                final_amount: dbBooking.final_amount,
-                // Data transit dari database
-                has_transit: dbBooking.has_transit,
-                transit_station: dbBooking.transit_station,
-                transit_arrival: dbBooking.transit_arrival,
-                transit_departure: dbBooking.transit_departure,
-                transit_discount: dbBooking.transit_discount,
-                transit_additional_price: dbBooking.transit_additional_price,
-                seat_premium: dbBooking.seat_premium,
-                admin_fee: dbBooking.admin_fee,
-                insurance_fee: dbBooking.insurance_fee,
-                base_price: dbBooking.base_price || 265000
+                ...dbBooking,
+                train_name: dbBooking.jadwal_kereta?.kereta?.name || dbBooking.train_name,
+                train_type: dbBooking.jadwal_kereta?.kereta?.type || dbBooking.train_type,
+                // Ensure calculations follow the schema
+                base_price: dbBooking.base_price || 265000,
+                seat_premium: seatPremiumVal,
+                admin_fee: dbBooking.convenience_fee || 5000,
+                insurance_fee: dbBooking.insurance_amount || 10000,
+                discount_amount: dbBooking.discount_amount || 0,
+                final_amount: dbBooking.total_amount || dbBooking.final_amount,
               };
-              
-              // Update booking ke status paid jika belum
-              if (dbBooking.payment_status !== 'paid') {
-                await supabase
+
+              // Update payment status if needed
+              if (dbBooking.payment_status === 'pending') {
+                const { error: updateErr } = await supabase
                   .from('bookings_kereta')
                   .update({
                     payment_status: 'paid',
@@ -532,21 +523,55 @@ const PaymentSuccessContent = () => {
                     updated_at: new Date().toISOString()
                   })
                   .eq('id', dbBooking.id);
+
+                if (!updateErr) {
+                  bookingFromDB.payment_status = 'paid';
+                  bookingFromDB.status = 'confirmed';
+                }
               }
             }
           } catch (dbError) {
             console.error('Database error:', dbError);
           }
         }
-        
+
         // Prioritaskan data: DB > Session > Default
         let finalBooking = bookingFromDB || bookingFromSession;
         let finalPayment = paymentFromSession;
-        
-        // Jika tidak ada data, buat default dengan data transit
+
+        if (invoiceFromDB) {
+          const fareBreakdown = {
+            base_fare: finalBooking.base_price || 265000,
+            seat_premium: finalBooking.seat_premium || 0,
+            admin_fee: finalBooking.admin_fee || 5000,
+            insurance_fee: finalBooking.insurance_fee || 10000,
+            transit_discount: finalBooking.transit_discount || 0,
+            transit_additional: finalBooking.transit_additional_price || 0,
+            discount: finalBooking.discount_amount || 0,
+            subtotal: (finalBooking.base_price || 265000) +
+              (finalBooking.seat_premium || 0) +
+              (finalBooking.transit_additional_price || 0) +
+              (finalBooking.admin_fee || 5000) +
+              (finalBooking.insurance_fee || 10000),
+            total: finalBooking.total_amount
+          };
+
+          finalPayment = {
+            order_id: finalBooking.order_id,
+            amount: finalBooking.total_amount,
+            payment_method: finalBooking.payment_method || 'E-WALLET',
+            status: 'success',
+            payment_data: {
+              settlement_time: invoiceFromDB.created_at || new Date().toISOString()
+            },
+            fare_breakdown: fareBreakdown
+          };
+        }
+
+        // Jika masih tidak ada data, gunakan default
         if (!finalBooking) {
           console.log('⚠️ No booking found, creating default with transit');
-          
+
           const hasTransit = !!transitStation;
           const baseFare = 265000;
           const seatPremiumValue = seatPremium ? parseInt(seatPremium) : 172250;
@@ -555,11 +580,11 @@ const PaymentSuccessContent = () => {
           const adminFeeValue = adminFee ? parseInt(adminFee) : 5000;
           const insuranceFeeValue = insuranceFee ? parseInt(insuranceFee) : 10000;
           const discountAmountValue = discountAmount ? parseInt(discountAmount) : 26500;
-          
-          const calculatedTotal = baseFare + seatPremiumValue - transitDiscountValue + 
-                                transitAdditionalPriceValue - discountAmountValue + 
-                                adminFeeValue + insuranceFeeValue;
-          
+
+          const calculatedTotal = baseFare + seatPremiumValue - transitDiscountValue +
+            transitAdditionalPriceValue - discountAmountValue +
+            adminFeeValue + insuranceFeeValue;
+
           finalBooking = {
             booking_code: bookingCode || `BOOK-${Date.now().toString().slice(-8)}`,
             order_id: orderId || `ORDER-${Date.now()}`,
@@ -609,7 +634,7 @@ const PaymentSuccessContent = () => {
             insurance_fee: insuranceFeeValue,
             base_price: baseFare
           };
-          
+
           // Coba simpan ke database jika supabase tersedia
           if (supabase && bookingCode) {
             try {
@@ -619,7 +644,7 @@ const PaymentSuccessContent = () => {
                   ...finalBooking,
                   id: `book_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
                 }]);
-                
+
               if (saveError) {
                 console.error('Failed to save to database:', saveError);
               } else {
@@ -630,7 +655,7 @@ const PaymentSuccessContent = () => {
             }
           }
         }
-        
+
         // Buat payment data jika tidak ada
         if (!finalPayment && finalBooking) {
           const breakdown = {
@@ -641,14 +666,14 @@ const PaymentSuccessContent = () => {
             transit_discount: finalBooking.transit_discount || 0,
             transit_additional: finalBooking.transit_additional_price || 0,
             discount: finalBooking.discount_amount || 0,
-            subtotal: (finalBooking.base_price || 265000) + 
-                     (finalBooking.seat_premium || 0) + 
-                     (finalBooking.transit_additional_price || 0) + 
-                     (finalBooking.admin_fee || 5000) + 
-                     (finalBooking.insurance_fee || 10000),
+            subtotal: (finalBooking.base_price || 265000) +
+              (finalBooking.seat_premium || 0) +
+              (finalBooking.transit_additional_price || 0) +
+              (finalBooking.admin_fee || 5000) +
+              (finalBooking.insurance_fee || 10000),
             total: finalBooking.total_amount
           };
-          
+
           finalPayment = {
             order_id: finalBooking.order_id,
             amount: finalBooking.total_amount,
@@ -660,26 +685,26 @@ const PaymentSuccessContent = () => {
             fare_breakdown: breakdown
           };
         }
-        
+
         // Buat ticket data
         const ticket = {
           ticket_number: finalBooking.ticket_number || `TICKET-${finalBooking.booking_code.slice(-8)}`,
           seat_number: finalBooking.seat_numbers?.[0] || 'A6',
           coach_number: finalBooking.coach_number || '2'
         };
-        
-        console.log('✅ Final data loaded:', { 
+
+        console.log('✅ Final data loaded:', {
           bookingCode: finalBooking.booking_code,
           hasTransit: finalBooking.has_transit,
           transitStation: finalBooking.transit_station,
           transitDiscount: finalBooking.transit_discount,
           totalAmount: finalBooking.total_amount
         });
-        
+
         setBookingData(finalBooking);
         setPaymentData(finalPayment);
         setTicketData(ticket);
-        
+
         // Simpan data ke storage untuk my-bookings
         if (finalBooking) {
           try {
@@ -688,7 +713,7 @@ const PaymentSuccessContent = () => {
             sessionStorage.setItem('lastBookingCode', finalBooking.booking_code);
             sessionStorage.setItem('lastOrderId', finalBooking.order_id);
             sessionStorage.setItem('lastPaymentTime', Date.now().toString());
-            
+
             // Simpan data booking untuk my-bookings
             const bookingForStorage = {
               ...finalBooking,
@@ -722,40 +747,40 @@ const PaymentSuccessContent = () => {
               insuranceFee: finalBooking.insurance_fee,
               basePrice: finalBooking.base_price
             };
-            
+
             sessionStorage.setItem('recentBookingSuccess', JSON.stringify(bookingForStorage));
-            
+
             // Juga simpan ke localStorage sebagai cache
             const existingBookings = localStorage.getItem('myBookings');
             let bookingsArray = [];
-            
+
             try {
               bookingsArray = existingBookings ? JSON.parse(existingBookings) : [];
               if (!Array.isArray(bookingsArray)) bookingsArray = [];
             } catch {
               bookingsArray = [];
             }
-            
+
             // Cek duplikat
             const existingIndex = bookingsArray.findIndex(
-              (b: any) => b.booking_code === finalBooking.booking_code || 
-                         b.bookingCode === finalBooking.booking_code
+              (b: any) => b.booking_code === finalBooking.booking_code ||
+                b.bookingCode === finalBooking.booking_code
             );
-            
+
             if (existingIndex !== -1) {
               bookingsArray[existingIndex] = bookingForStorage;
             } else {
               bookingsArray.unshift(bookingForStorage);
             }
-            
+
             // Simpan maksimal 50 booking
             localStorage.setItem('myBookings', JSON.stringify(bookingsArray.slice(0, 50)));
-            
+
           } catch (saveError) {
             console.error('Error saving to storage:', saveError);
           }
         }
-        
+
       } catch (error: any) {
         console.error('Error loading data:', error);
         setError('Data pemesanan sedang diproses. Silakan cek email Anda untuk konfirmasi.');
@@ -763,7 +788,7 @@ const PaymentSuccessContent = () => {
         setLoading(false);
       }
     };
-    
+
     // Delay sedikit untuk memastikan Supabase client siap
     const timer = setTimeout(() => {
       if (supabase !== null) {
@@ -773,7 +798,7 @@ const PaymentSuccessContent = () => {
         loadData();
       }
     }, 100);
-    
+
     return () => clearTimeout(timer);
   }, [searchParams, user, supabase]);
 
@@ -785,7 +810,6 @@ const PaymentSuccessContent = () => {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          handleRedirect();
           return 0;
         }
         return prev - 1;
@@ -793,20 +817,27 @@ const PaymentSuccessContent = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [countdown, isRedirecting, loading]);
+  }, [isRedirecting, loading]);
 
   // Handle redirect
   const handleRedirect = useCallback(() => {
     if (isRedirecting) return;
-    
+
     setIsRedirecting(true);
-    
+
     // Redirect ke my-bookings dengan parameter
     const bookingCode = bookingData?.booking_code || '';
     const redirectUrl = `/my-bookings?justPaid=true&bookingCode=${encodeURIComponent(bookingCode)}&fromPayment=true`;
-    
+
     router.replace(redirectUrl);
   }, [isRedirecting, bookingData, router]);
+
+  // Redirection monitor
+  useEffect(() => {
+    if (countdown === 0 && !isRedirecting && !loading && bookingData) {
+      handleRedirect();
+    }
+  }, [countdown, isRedirecting, loading, bookingData, handleRedirect]);
 
   // Handle manual redirect
   const handleRedirectNow = useCallback(() => {
@@ -816,7 +847,7 @@ const PaymentSuccessContent = () => {
   // Handle print/download ticket
   const handleDownloadTicket = useCallback(() => {
     if (!bookingData || !ticketData) return;
-    
+
     const printWindow = window.open('', '_blank');
     if (printWindow) {
       const seats = ticketData.seat_number || 'A6';
@@ -825,7 +856,7 @@ const PaymentSuccessContent = () => {
       const transitStation = bookingData.transit_station;
       const transitArrival = bookingData.transit_arrival;
       const transitDeparture = bookingData.transit_departure;
-      
+
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
@@ -1147,14 +1178,33 @@ const PaymentSuccessContent = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-green-50 to-white flex items-center justify-center p-4">
-        <div className="text-center">
-          <div className="relative">
-            <div className="w-24 h-24 border-4 border-green-200 rounded-full"></div>
-            <div className="absolute inset-0 animate-spin rounded-full border-4 border-green-500 border-t-transparent"></div>
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center p-4">
+        <div className="text-center max-w-xs w-full">
+          <div className="relative w-24 h-24 mx-auto">
+            {/* Decorative background rings */}
+            <div className="absolute inset-0 rounded-full border-4 border-green-100 opacity-50"></div>
+            <div className="absolute inset-2 rounded-full border-2 border-emerald-50 opacity-30 animate-pulse"></div>
+
+            {/* Main spinning indicator */}
+            <div className="absolute inset-0 animate-spin rounded-full border-t-4 border-r-4 border-green-500 border-l-transparent border-b-transparent"></div>
+
+            {/* Center icon or dot */}
+            <div className="absolute inset-[38%] bg-green-500 rounded-full shadow-lg shadow-green-200 animate-pulse"></div>
           </div>
-          <h2 className="mt-6 text-2xl font-semibold text-gray-800">Memproses Pembayaran Anda</h2>
-          <p className="mt-2 text-gray-600">Harap tunggu sebentar...</p>
+
+          <div className="mt-8 space-y-3">
+            <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-emerald-600 animate-pulse">
+              Memproses Pembayaran
+            </h2>
+            <div className="flex items-center justify-center space-x-1.5 text-gray-500">
+              <span className="text-sm font-medium">Menyesuaikan tiket Anda</span>
+              <span className="flex space-x-1">
+                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce"></span>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1200,11 +1250,11 @@ const PaymentSuccessContent = () => {
     transit_discount: bookingData.transit_discount || 0,
     transit_additional: bookingData.transit_additional_price || 0,
     discount: bookingData.discount_amount || 0,
-    subtotal: (bookingData.base_price || 265000) + 
-             (bookingData.seat_premium || 0) + 
-             (bookingData.transit_additional_price || 0) + 
-             (bookingData.admin_fee || 5000) + 
-             (bookingData.insurance_fee || 10000),
+    subtotal: (bookingData.base_price || 265000) +
+      (bookingData.seat_premium || 0) +
+      (bookingData.transit_additional_price || 0) +
+      (bookingData.admin_fee || 5000) +
+      (bookingData.insurance_fee || 10000),
     total: bookingData.total_amount
   };
 
@@ -1222,7 +1272,7 @@ const PaymentSuccessContent = () => {
               </div>
             </div>
           </div>
-          
+
           <h1 className="text-5xl font-bold text-gray-800 mb-4">
             Pembayaran Berhasil!
           </h1>
@@ -1234,7 +1284,7 @@ const PaymentSuccessContent = () => {
               </span>
             )}
           </p>
-          
+
           <div className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full shadow-lg">
             <Clock className="w-5 h-5 mr-3" />
             <span className="font-bold text-lg">
@@ -1259,7 +1309,7 @@ const PaymentSuccessContent = () => {
                     {formatCurrency(paymentData.amount)}
                   </p>
                 </div>
-                
+
                 <div className="text-center">
                   <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
                     <User className="w-8 h-8" />
@@ -1269,7 +1319,7 @@ const PaymentSuccessContent = () => {
                     {bookingData.passenger_count} orang
                   </p>
                 </div>
-                
+
                 <div className="text-center">
                   <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
                     <BadgeCheck className="w-8 h-8" />
@@ -1289,7 +1339,7 @@ const PaymentSuccessContent = () => {
                   <Train className="w-6 h-6 mr-3 text-blue-600" />
                   Detail Tiket
                 </h2>
-                
+
                 {/* Train Info */}
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
@@ -1303,7 +1353,7 @@ const PaymentSuccessContent = () => {
                       </span>
                     </div>
                   </div>
-                  
+
                   {/* Journey Timeline */}
                   <div className="relative mb-8">
                     <div className="flex items-center justify-between mb-2">
@@ -1311,7 +1361,7 @@ const PaymentSuccessContent = () => {
                         <p className="text-3xl font-bold text-gray-800">{formatTime(bookingData.departure_time)}</p>
                         <p className="text-sm text-gray-600">{bookingData.origin}</p>
                       </div>
-                      
+
                       <div className="text-center flex-1 mx-8">
                         <div className="relative h-2 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full">
                           <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-white border-4 border-blue-500 rounded-full"></div>
@@ -1324,17 +1374,17 @@ const PaymentSuccessContent = () => {
                           {bookingData.trip_duration || calculateTripDuration(bookingData.departure_time, bookingData.arrival_time)}
                         </p>
                       </div>
-                      
+
                       <div className="text-center">
                         <p className="text-3xl font-bold text-gray-800">{formatTime(bookingData.arrival_time)}</p>
                         <p className="text-sm text-gray-600">{bookingData.destination}</p>
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Tampilkan Transit Info jika ada */}
                   {hasTransit && <TransitInfo booking={bookingData} />}
-                  
+
                   {/* Date & Seat Info */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                     <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
@@ -1346,7 +1396,7 @@ const PaymentSuccessContent = () => {
                         {formatDate(bookingData.departure_date)}
                       </p>
                     </div>
-                    
+
                     <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
                       <div className="flex items-center mb-2">
                         <MapPin className="w-5 h-5 text-purple-600 mr-2" />
@@ -1358,21 +1408,21 @@ const PaymentSuccessContent = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Passenger Info */}
                 <div className="border-t border-gray-200 pt-6">
                   <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
                     <User className="w-5 h-5 mr-2 text-purple-600" />
                     Informasi Penumpang
                   </h3>
-                  
+
                   <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Nama</span>
                         <span className="font-bold text-gray-800">{bookingData.passenger_name}</span>
                       </div>
-                      
+
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Email</span>
                         <div className="flex items-center">
@@ -1380,7 +1430,7 @@ const PaymentSuccessContent = () => {
                           <span className="font-bold text-gray-800">{bookingData.passenger_email}</span>
                         </div>
                       </div>
-                      
+
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Telepon</span>
                         <div className="flex items-center">
@@ -1393,7 +1443,7 @@ const PaymentSuccessContent = () => {
                 </div>
               </div>
             </div>
-            
+
             {/* Instructions */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-200">
               <h3 className="font-bold text-blue-800 text-xl mb-4">
@@ -1410,7 +1460,7 @@ const PaymentSuccessContent = () => {
                       <p className="text-blue-700 text-sm">Tiket elektronik telah dikirim ke email Anda</p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-start">
                     <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mr-3 mt-0.5">
                       <span className="font-bold">2</span>
@@ -1421,7 +1471,7 @@ const PaymentSuccessContent = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="space-y-3">
                   <div className="flex items-start">
                     <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mr-3 mt-0.5">
@@ -1432,7 +1482,7 @@ const PaymentSuccessContent = () => {
                       <p className="text-blue-700 text-sm">Bawa KTP/NIK asli saat keberangkatan</p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-start">
                     <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mr-3 mt-0.5">
                       <span className="font-bold">4</span>
@@ -1444,7 +1494,7 @@ const PaymentSuccessContent = () => {
                   </div>
                 </div>
               </div>
-              
+
               {/* Additional transit instructions */}
               {hasTransit && (
                 <div className="mt-6 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
@@ -1461,13 +1511,13 @@ const PaymentSuccessContent = () => {
               )}
             </div>
           </div>
-          
+
           {/* Right Column - Actions & Payment Summary */}
           <div className="lg:col-span-1">
             {/* Actions Card */}
             <div className="bg-white rounded-2xl shadow-xl p-8 mb-8 sticky top-8">
               <h2 className="text-2xl font-bold text-gray-800 mb-8 pb-4 border-b border-gray-200">Aksi</h2>
-              
+
               <div className="space-y-6">
                 <button
                   onClick={handleDownloadTicket}
@@ -1478,22 +1528,21 @@ const PaymentSuccessContent = () => {
                     Download Tiket
                   </span>
                 </button>
-                
+
                 <button
                   onClick={() => router.push('/search/trains')}
                   className="w-full px-8 py-4 border-2 border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300"
                 >
                   <span className="font-bold">Pesan Tiket Lagi</span>
                 </button>
-                
+
                 <button
                   onClick={handleRedirectNow}
                   disabled={isRedirecting}
-                  className={`w-full px-8 py-4 rounded-xl transition-all duration-300 transform ${isRedirecting ? '' : 'hover:-translate-y-1'} ${
-                    isRedirecting
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-green-600 to-emerald-700 text-white hover:shadow-xl'
-                  }`}
+                  className={`w-full px-8 py-4 rounded-xl transition-all duration-300 transform ${isRedirecting ? '' : 'hover:-translate-y-1'} ${isRedirecting
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-green-600 to-emerald-700 text-white hover:shadow-xl'
+                    }`}
                 >
                   <span className="font-bold text-lg flex items-center justify-center">
                     {isRedirecting ? (
@@ -1507,11 +1556,11 @@ const PaymentSuccessContent = () => {
                   </span>
                 </button>
               </div>
-              
+
               {/* Payment Summary - UPDATED dengan data transit */}
               <div className="mt-12 pt-8 border-t border-gray-200">
                 <h3 className="font-bold text-gray-700 text-xl mb-6">Ringkasan Pembayaran</h3>
-                
+
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Tiket Kereta ({bookingData.passenger_count} orang)</span>
@@ -1519,7 +1568,7 @@ const PaymentSuccessContent = () => {
                       {formatCurrency(fareBreakdown.base_fare || 265000)}
                     </span>
                   </div>
-                  
+
                   {fareBreakdown.seat_premium && fareBreakdown.seat_premium > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Tambahan kursi premium</span>
@@ -1528,7 +1577,7 @@ const PaymentSuccessContent = () => {
                       </span>
                     </div>
                   )}
-                  
+
                   {hasTransit && fareBreakdown.transit_additional && fareBreakdown.transit_additional > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Biaya tambahan transit</span>
@@ -1537,7 +1586,7 @@ const PaymentSuccessContent = () => {
                       </span>
                     </div>
                   )}
-                  
+
                   {fareBreakdown.transit_discount && fareBreakdown.transit_discount > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Diskon Transit (10%)</span>
@@ -1546,7 +1595,7 @@ const PaymentSuccessContent = () => {
                       </span>
                     </div>
                   )}
-                  
+
                   {fareBreakdown.discount && fareBreakdown.discount > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Diskon Promo</span>
@@ -1555,21 +1604,21 @@ const PaymentSuccessContent = () => {
                       </span>
                     </div>
                   )}
-                  
+
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Biaya Admin</span>
                     <span className="font-semibold text-gray-800">
                       {formatCurrency(fareBreakdown.admin_fee || 5000)}
                     </span>
                   </div>
-                  
+
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Asuransi Perjalanan</span>
                     <span className="font-semibold text-gray-800">
                       {formatCurrency(fareBreakdown.insurance_fee || 10000)}
                     </span>
                   </div>
-                  
+
                   <div className="border-t border-gray-300 pt-4 mt-4">
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-gray-800 text-lg">Total</span>
@@ -1577,11 +1626,11 @@ const PaymentSuccessContent = () => {
                         {formatCurrency(paymentData.amount)}
                       </span>
                     </div>
-                    
-                    {(fareBreakdown.transit_discount > 0 || fareBreakdown.discount > 0) && (
+
+                    {((fareBreakdown.transit_discount || 0) > 0 || (fareBreakdown.discount || 0) > 0) && (
                       <p className="text-sm text-gray-500 text-right mt-1">
                         <span className="line-through">
-                          {formatCurrency(fareBreakdown.subtotal || fareBreakdown.base_fare + (fareBreakdown.seat_premium || 0) + (fareBreakdown.transit_additional || 0) + (fareBreakdown.admin_fee || 0) + (fareBreakdown.insurance_fee || 0))}
+                          {formatCurrency(fareBreakdown.subtotal || (fareBreakdown.base_fare || 0) + (fareBreakdown.seat_premium || 0) + (fareBreakdown.transit_additional || 0) + (fareBreakdown.admin_fee || 0) + (fareBreakdown.insurance_fee || 0))}
                         </span>
                         <span className="ml-2 text-green-600">
                           Hemat {formatCurrency((fareBreakdown.transit_discount || 0) + (fareBreakdown.discount || 0))}
@@ -1591,7 +1640,7 @@ const PaymentSuccessContent = () => {
                   </div>
                 </div>
               </div>
-              
+
               {/* Ticket Info */}
               {ticketData && (
                 <div className="mt-8 p-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
@@ -1624,7 +1673,7 @@ const PaymentSuccessContent = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Footer */}
         <div className="mt-12 text-center">
           <p className="text-gray-500 text-sm">

@@ -10,10 +10,10 @@ const supabase = createClient(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { bookingCode: string } }
+  { params }: { params: { bookingcode: string } }
 ) {
   try {
-    const bookingCode = params.bookingCode;
+    const bookingCode = params.bookingcode;
 
     if (!bookingCode) {
       return NextResponse.json(
@@ -40,7 +40,7 @@ export async function GET(
       console.log(`✅ Booking found in bookings_kereta: ${booking.booking_code}`);
     } else {
       console.log(`⚠️ Booking not found in bookings_kereta, checking payment_transactions...`);
-      
+
       // Coba cari di payment_transactions
       const { data: paymentData, error: paymentError } = await supabase
         .from('payment_transactions')
@@ -74,8 +74,8 @@ export async function GET(
         };
       } else {
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             message: 'Booking tidak ditemukan',
             debug: {
               bookingCode,
@@ -95,37 +95,46 @@ export async function GET(
         .from('penumpang')
         .select('*')
         .eq('booking_id', booking.id)
-        .order('passenger_order', { ascending: true }) : 
-      Promise.resolve({ data: null, error: null }),
-      
+        .order('passenger_order', { ascending: true }) :
+        Promise.resolve({ data: null, error: null }),
+
       // Tiket
       supabase
         .from('tickets')
         .select('*')
         .eq('booking_id', bookingCode)
         .single(),
-      
+
       // Pembayaran
       booking.order_id ? supabase
         .from('payment_transactions')
         .select('*')
         .eq('order_id', booking.order_id)
         .single() :
-      Promise.resolve({ data: null, error: null })
+        Promise.resolve({ data: null, error: null })
     ]);
 
     // Proses hasil
-    const passengers = passengersResult.status === 'fulfilled' ? 
+    const passengers = passengersResult.status === 'fulfilled' ?
       passengersResult.value.data || [] : [];
-    
-    const ticket = ticketResult.status === 'fulfilled' ? 
+
+    const ticket = ticketResult.status === 'fulfilled' ?
       (ticketResult.value.data || null) : null;
-    
-    const payment = paymentResult.status === 'fulfilled' ? 
+
+    const payment = paymentResult.status === 'fulfilled' ?
       (paymentResult.value.data || null) : null;
 
+    // Enriched Metadata
+    const enrichedBooking = {
+      ...booking,
+      pnr_number: booking.pnr_number || `PNR${bookingCode.slice(-6).toUpperCase()}`,
+      passenger_count: passengers.length || booking.passenger_count || 1,
+      // Ensure seat numbers are available as an array
+      seat_numbers: booking.seat_numbers || (ticket?.seat_number ? [ticket.seat_number] : passengers.map(p => p.seat_number).filter(Boolean))
+    };
+
     console.log(`✅ Detail loaded:`, {
-      booking: booking.booking_code,
+      booking: enrichedBooking.booking_code,
       passengers: passengers.length,
       hasTicket: !!ticket,
       hasPayment: !!payment
@@ -134,14 +143,15 @@ export async function GET(
     return NextResponse.json({
       success: true,
       data: {
-        booking,
+        booking: enrichedBooking,
         passengers,
         ticket,
         payment,
         metadata: {
           has_passengers: passengers.length > 0,
           has_ticket: !!ticket,
-          has_payment: !!payment
+          has_payment: !!payment,
+          total_passengers: passengers.length || 1
         }
       }
     });
@@ -149,8 +159,8 @@ export async function GET(
   } catch (error: any) {
     console.error('❌ Error fetching booking details:', error);
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         message: 'Terjadi kesalahan saat mengambil data booking',
         error: error.message,
         timestamp: new Date().toISOString()
@@ -164,22 +174,22 @@ export async function GET(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const bookingCode = body.bookingCode;
-    
+    const bookingCode = body.bookingcode || body.bookingCode;
+
     if (!bookingCode) {
       return NextResponse.json(
         { success: false, message: 'bookingCode diperlukan' },
         { status: 400 }
       );
     }
-    
+
     // Redirect ke GET dengan parameter yang sama
     return NextResponse.json({
       success: true,
       message: 'Gunakan GET endpoint untuk detail booking',
       get_endpoint: `/api/bookings/detail/${bookingCode}`
     });
-    
+
   } catch (error) {
     return NextResponse.json(
       { success: false, message: 'Invalid request' },

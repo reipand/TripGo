@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { realtimeManager } from '@/app/lib/realtimeClient';
 
@@ -30,6 +30,8 @@ interface SearchResult {
   class: string;
   stops?: number;
   lastUpdated: string;
+  routeType?: 'Direct' | 'Transit';
+  transitDetails?: any[];
 }
 
 // Icons
@@ -68,104 +70,78 @@ const RealtimeSearch: React.FC = () => {
   const [filters, setFilters] = useState<SearchFilters>({
     origin: '',
     destination: '',
-    departureDate: '',
+    departureDate: new Date().toISOString().split('T')[0],
     returnDate: '',
     passengers: 1,
     class: 'economy',
-    transportType: 'flight'
+    transportType: 'train' // Default to train as per user request focus
   });
 
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [searchPerformed, setSearchPerformed] = useState(false);
-
-  // Mock data generator for demonstration
-  const generateMockResults = useCallback((searchFilters: SearchFilters): SearchResult[] => {
-    const mockResults: SearchResult[] = [];
-    const now = new Date();
-    
-    for (let i = 0; i < 10; i++) {
-      const departureTime = new Date(now.getTime() + (i * 2 + 1) * 60 * 60 * 1000);
-      const arrivalTime = new Date(departureTime.getTime() + (2 + Math.random() * 4) * 60 * 60 * 1000);
-      
-      mockResults.push({
-        id: `${searchFilters.transportType}-${i + 1}`,
-        transportType: searchFilters.transportType,
-        origin: searchFilters.origin,
-        destination: searchFilters.destination,
-        departureTime: departureTime.toLocaleTimeString('id-ID', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        arrivalTime: arrivalTime.toLocaleTimeString('id-ID', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        duration: `${Math.floor((arrivalTime.getTime() - departureTime.getTime()) / (1000 * 60 * 60))}j ${Math.floor(((arrivalTime.getTime() - departureTime.getTime()) % (1000 * 60 * 60)) / (1000 * 60))}m`,
-        price: Math.floor(500000 + Math.random() * 2000000),
-        availableSeats: Math.floor(Math.random() * 50) + 1,
-        airline: searchFilters.transportType === 'flight' ? ['Garuda', 'Lion Air', 'AirAsia', 'Citilink'][Math.floor(Math.random() * 4)] : undefined,
-        trainName: searchFilters.transportType === 'train' ? ['Argo Bromo', 'Taksaka', 'Gajayana', 'Bima'][Math.floor(Math.random() * 4)] : undefined,
-        class: searchFilters.class,
-        stops: searchFilters.transportType === 'flight' ? Math.floor(Math.random() * 2) : 0,
-        lastUpdated: new Date().toISOString()
-      });
-    }
-    
-    return mockResults.sort((a, b) => a.price - b.price);
-  }, []);
 
   // Real-time search function
   const performSearch = useCallback(async (searchFilters: SearchFilters) => {
     setLoading(true);
+    setError(null);
     setSearchPerformed(true);
-    
+    setResults([]);
+
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Generate mock results
-      const mockResults = generateMockResults(searchFilters);
-      setResults(mockResults);
-      setLastUpdate(new Date());
-      
-      // Subscribe to real-time updates
-      if (searchFilters.transportType === 'flight') {
-        realtimeManager.subscribeToFlights((payload) => {
-          console.log('Flight data updated:', payload);
-          // Update results based on real-time changes
-          setResults(prevResults => 
-            prevResults.map(result => {
-              if (result.id === payload.new.id) {
-                return { ...result, ...payload.new, lastUpdated: new Date().toISOString() };
-              }
-              return result;
-            })
-          );
-          setLastUpdate(new Date());
-        });
-      } else {
-        realtimeManager.subscribeToTrains((payload) => {
-          console.log('Train data updated:', payload);
-          // Update results based on real-time changes
-          setResults(prevResults => 
-            prevResults.map(result => {
-              if (result.id === payload.new.id) {
-                return { ...result, ...payload.new, lastUpdated: new Date().toISOString() };
-              }
-              return result;
-            })
-          );
-          setLastUpdate(new Date());
-        });
+      const queryParams = new URLSearchParams({
+        origin: searchFilters.origin,
+        destination: searchFilters.destination,
+        date: searchFilters.departureDate,
+        transportType: searchFilters.transportType
+      });
+
+      const response = await fetch(`/api/search?${queryParams.toString()}`);
+
+      if (!response.ok) {
+        throw new Error('Search failed');
       }
-    } catch (error) {
-      console.error('Search error:', error);
+
+      const data = await response.json();
+
+      if (data.results) {
+        const mappedResults: SearchResult[] = data.results.map((item: any) => ({
+          id: item.id,
+          transportType: 'train', // API currently assumes train generally
+          origin: item.origin_station.name,
+          destination: item.destination_station.name,
+          departureTime: item.departure_time,
+          arrivalTime: item.arrival_time,
+          duration: item.duration || 'N/A',
+          price: item.price,
+          availableSeats: item.availableSeats,
+          trainName: item.train_name,
+          class: item.class_type,
+          stops: item.route_type === 'Transit' ? item.transit_details?.length : 0,
+          routeType: item.route_type,
+          transitDetails: item.transit_details,
+          lastUpdated: new Date().toISOString()
+        }));
+
+        setResults(mappedResults);
+        setLastUpdate(new Date());
+      } else {
+        setResults([]);
+      }
+
+      // Subscribe to real-time updates for general tables if needed
+      // Note: For specific rows found, we could subscribe to 'jadwal_kereta' changes
+      // This is left as an enhancement since we are already fetching fresh data.
+
+    } catch (err: any) {
+      console.error('Search error:', err);
+      setError(err.message || 'An error occurred while searching');
     } finally {
       setLoading(false);
     }
-  }, [generateMockResults]);
+  }, []);
 
   // Handle search form submission
   const handleSearch = (e: React.FormEvent) => {
@@ -177,25 +153,11 @@ const RealtimeSearch: React.FC = () => {
 
   // Handle result selection
   const handleSelectResult = (result: SearchResult) => {
-    const searchParams = new URLSearchParams({
-      origin: filters.origin,
-      destination: filters.destination,
-      departureDate: filters.departureDate,
-      returnDate: filters.returnDate || '',
-      passengers: filters.passengers.toString(),
-      class: filters.class,
-      transportType: filters.transportType
-    });
-    
-    router.push(`/search/${filters.transportType}?${searchParams.toString()}`);
+    // Navigate to booking or details page
+    // For now, we can just log or show alert as the booking flow might be separate
+    console.log('Selected:', result);
+    // router.push(`/booking/${result.id}`); 
   };
-
-  // Cleanup subscriptions on unmount
-  useEffect(() => {
-    return () => {
-      realtimeManager.unsubscribeAll();
-    };
-  }, []);
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
@@ -212,7 +174,7 @@ const RealtimeSearch: React.FC = () => {
               value={filters.origin}
               onChange={(e) => setFilters(prev => ({ ...prev, origin: e.target.value }))}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Kota asal"
+              placeholder="Kota asal (e.g. Bandung)"
               required
             />
           </div>
@@ -227,7 +189,7 @@ const RealtimeSearch: React.FC = () => {
               value={filters.destination}
               onChange={(e) => setFilters(prev => ({ ...prev, destination: e.target.value }))}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Kota tujuan"
+              placeholder="Kota tujuan (e.g. Gambir)"
               required
             />
           </div>
@@ -242,7 +204,6 @@ const RealtimeSearch: React.FC = () => {
               value={filters.departureDate}
               onChange={(e) => setFilters(prev => ({ ...prev, departureDate: e.target.value }))}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              min={new Date().toISOString().split('T')[0]}
               required
             />
           </div>
@@ -275,33 +236,17 @@ const RealtimeSearch: React.FC = () => {
               onChange={(e) => setFilters(prev => ({ ...prev, transportType: e.target.value as 'flight' | 'train' }))}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="flight">Pesawat</option>
-              <option value="train">Kereta</option>
-            </select>
-          </div>
-
-          {/* Class */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Kelas
-            </label>
-            <select
-              value={filters.class}
-              onChange={(e) => setFilters(prev => ({ ...prev, class: e.target.value as 'economy' | 'business' | 'first' }))}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="economy">Ekonomi</option>
-              <option value="business">Bisnis</option>
-              <option value="first">First Class</option>
+              <option value="train">Kereta Api</option>
+              {/* <option value="flight">Pesawat (Coming Soon)</option> */}
             </select>
           </div>
 
           {/* Search Button */}
-          <div className="flex items-end">
+          <div className="flex items-end col-span-2 md:col-span-1 md:col-start-3">
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center justify-center"
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center justify-center shadow-md"
             >
               {loading ? (
                 <>
@@ -311,7 +256,7 @@ const RealtimeSearch: React.FC = () => {
               ) : (
                 <>
                   <SearchIcon />
-                  <span className="ml-2">Cari Tiket</span>
+                  <span className="ml-2">Cari Tiket Real-time</span>
                 </>
               )}
             </button>
@@ -319,17 +264,24 @@ const RealtimeSearch: React.FC = () => {
         </div>
       </form>
 
+      {/* Error Message */}
+      {error && (
+        <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-lg border border-red-200">
+          {error}
+        </div>
+      )}
+
       {/* Real-time Status */}
-      {searchPerformed && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+      {searchPerformed && !loading && !error && (
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg animate-fade-in">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-              <span className="text-sm text-blue-700">Data real-time aktif</span>
+              <div className="w-2.5 h-2.5 bg-green-500 rounded-full mr-2 animate-pulse shadow-sm shadow-green-400"></div>
+              <span className="text-sm font-medium text-blue-800">Live Database Results</span>
             </div>
             {lastUpdate && (
-              <span className="text-xs text-blue-600">
-                Terakhir update: {lastUpdate.toLocaleTimeString('id-ID')}
+              <span className="text-xs text-blue-600 font-mono">
+                Updated: {lastUpdate.toLocaleTimeString('id-ID')}
               </span>
             )}
           </div>
@@ -337,58 +289,100 @@ const RealtimeSearch: React.FC = () => {
       )}
 
       {/* Search Results */}
-      {results.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            Hasil Pencarian ({results.length} ditemukan)
+      {results.length > 0 ? (
+        <div className="mt-6 space-y-4">
+          <h3 className="text-lg font-bold text-gray-800 border-b pb-2">
+            Hasil Pencarian ({results.length})
           </h3>
-          <div className="space-y-4">
+          <div className="grid gap-4">
             {results.map((result) => (
               <div
                 key={result.id}
                 onClick={() => handleSelectResult(result)}
-                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                className="group border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-lg transition-all duration-200 cursor-pointer bg-white relative overflow-hidden"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                {/* Transit Badge */}
+                {result.routeType === 'Transit' && (
+                  <div className="absolute top-0 right-0 bg-orange-100 text-orange-700 text-xs font-bold px-3 py-1 rounded-bl-lg border-l border-b border-orange-200">
+                    TRANSIT ROUTE
+                  </div>
+                )}
+
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-start space-x-4 w-full md:w-auto">
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm ${result.transportType === 'flight' ? 'bg-sky-100 text-sky-600' : 'bg-orange-100 text-orange-600'}`}>
                       {result.transportType === 'flight' ? <PlaneIcon /> : <TrainIcon />}
                     </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <h4 className="font-semibold text-gray-800">
-                          {result.transportType === 'flight' ? result.airline : result.trainName}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-bold text-gray-900 text-lg">
+                          {result.trainName}
                         </h4>
-                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${result.class === 'Eksekutif' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
                           {result.class}
                         </span>
                       </div>
-                      <div className="flex items-center space-x-4 text-sm text-gray-600">
-                        <span>{result.origin} → {result.destination}</span>
-                        <span className="flex items-center">
+
+                      <div className="flex items-center text-sm text-gray-500 gap-4 flex-wrap">
+                        <div className="flex items-center">
+                          <span className="font-medium text-gray-900 mr-1">{result.origin}</span>
+                          <span className="text-gray-400 mx-1">→</span>
+                          <span className="font-medium text-gray-900">{result.destination}</span>
+                        </div>
+                        <div className="flex items-center bg-gray-50 px-2 py-1 rounded">
                           <ClockIcon />
-                          <span className="ml-1">{result.duration}</span>
-                        </span>
-                        <span className="flex items-center">
+                          <span className="ml-1.5">{result.duration}</span>
+                        </div>
+                        <div className="flex items-center text-green-600">
                           <UsersIcon />
-                          <span className="ml-1">{result.availableSeats} kursi tersedia</span>
-                        </span>
+                          <span className="ml-1.5 font-medium">{result.availableSeats} seats</span>
+                        </div>
                       </div>
+
+                      {/* Transit Details */}
+                      {result.routeType === 'Transit' && result.transitDetails && (
+                        <div className="mt-3 text-xs bg-orange-50 p-2 rounded border border-orange-100 text-orange-800">
+                          <span className="font-semibold block mb-1">Rute Transit:</span>
+                          <ul className="list-disc pl-4 space-y-0.5">
+                            {result.transitDetails.map((seg, idx) => (
+                              <li key={idx}>
+                                {seg.train_name}: {seg.dep} → {seg.arr}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-blue-600">
-                      Rp {result.price.toLocaleString('id-ID')}
+
+                  <div className="text-right w-full md:w-auto flex flex-row md:flex-col justify-between items-center md:items-end border-t md:border-0 pt-3 md:pt-0 mt-2 md:mt-0">
+                    <div>
+                      <div className="text-2xl font-bold text-blue-600">
+                        Rp {result.price.toLocaleString('id-ID')}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        {result.departureTime?.slice(0, 5)} - {result.arrivalTime?.slice(0, 5)}
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-500">
-                      {result.departureTime} - {result.arrivalTime}
-                    </div>
+                    <button className="hidden md:block mt-3 bg-blue-600 text-white text-sm font-semibold px-6 py-2 rounded-full hover:bg-blue-700 transition">
+                      Pilih
+                    </button>
                   </div>
                 </div>
               </div>
             ))}
           </div>
         </div>
+      ) : (
+        searchPerformed && !loading && (
+          <div className="mt-10 text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+            <div className="text-gray-400 mb-2">
+              <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+            <p className="text-gray-500 font-medium">Tidak ada jadwal ditemukan untuk rute ini.</p>
+            <p className="text-sm text-gray-400 mt-1">Coba ganti tanggal atau stasiun lain.</p>
+          </div>
+        )
       )}
     </div>
   );

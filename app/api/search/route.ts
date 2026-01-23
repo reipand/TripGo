@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/app/lib/supabaseClient';
 
-// Tipe data untuk hasil pencarian
+export const dynamic = 'force-dynamic';
+
+// Types
 type TrainResult = {
   id: string;
   train_id: string;
@@ -34,478 +36,284 @@ type TrainResult = {
   facilities: string[];
   insurance: number;
   seat_type: string;
-  route_type: string;
+  route_type: 'Direct' | 'Transit';
   schedule_id?: string;
+  transit_details?: any[]; // For transit routes
   resultType: 'train';
-};
-
-type StationResult = {
-  id: string;
-  code: string;
-  name: string;
-  city: string;
-  resultType: 'station';
-};
-
-type CityResult = {
-  id: string;
-  name: string;
-  province: string;
-  resultType: 'city';
 };
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const query = searchParams.get('q');
-  const type = searchParams.get('type') || 'all'; // all, station, city, train
+  const originQuery = searchParams.get('origin') || '';
+  const destinationQuery = searchParams.get('destination') || '';
+  const dateQuery = searchParams.get('date'); // YYYY-MM-DD
+  const transportType = searchParams.get('transportType') || 'train';
 
-  if (!query || query.trim().length < 2) {
-    return NextResponse.json({ 
-      error: 'Query parameter "q" is required and must be at least 2 characters' 
+  if (!originQuery || !destinationQuery || !dateQuery) {
+    return NextResponse.json({
+      error: 'Missing required parameters: origin, destination, date'
     }, { status: 400 });
   }
 
+  // Only handle trains for now as per schema availability
+  if (transportType !== 'train') {
+    return NextResponse.json({ results: [] });
+  }
+
   try {
-    const searchQuery = `%${query.trim()}%`;
-    console.log(`[SEARCH API] Searching for: "${query}", type: ${type}`);
+    console.log(`[SEARCH API] Searching: ${originQuery} -> ${destinationQuery} on ${dateQuery}`);
 
-    const results = [];
+    // 1. Resolve Stations
+    // We try to find stations matching the query (by code or name or city)
+    const { data: originStations } = await supabase
+      .from('stasiun')
+      .select('id, code, name, city')
+      .or(`name.ilike.%${originQuery}%,code.ilike.%${originQuery}%,city.ilike.%${originQuery}%`)
+      .limit(1);
 
-    // 1. Cari stasiun berdasarkan nama atau kota (kecuali type 'train')
-    if (type === 'all' || type === 'station') {
-      const { data: stationsData, error: stationsError } = await supabase
-        .from('stasiun')
-        .select('id, code, name, city')
-        .or(`name.ilike.${searchQuery},city.ilike.${searchQuery},code.ilike.${searchQuery}`)
-        .limit(10);
+    const { data: destStations } = await supabase
+      .from('stasiun')
+      .select('id, code, name, city')
+      .or(`name.ilike.%${destinationQuery}%,code.ilike.%${destinationQuery}%,city.ilike.%${destinationQuery}%`)
+      .limit(1);
 
-      if (stationsError) {
-        console.error('[SEARCH API] Stations query error:', stationsError);
-      } else {
-        const transformedStations: StationResult[] = (stationsData || []).map((station: any) => ({
-          id: `station-${station.id}`,
-          code: station.code,
-          name: station.name,
-          city: station.city,
-          resultType: 'station' as const
-        }));
-        results.push(...transformedStations);
-        console.log(`[SEARCH API] Found ${transformedStations.length} stations`);
-      }
+    if (!originStations?.length || !destStations?.length) {
+      return NextResponse.json({
+        results: [],
+        message: 'Origin or Destination station not found'
+      });
     }
 
-    // 2. Cari kota (jika ada tabel kota)
-    if (type === 'all' || type === 'city') {
-      try {
-        // Coba cari di tabel kota jika ada
-        const { data: citiesData, error: citiesError } = await supabase
-          .from('cities')
-          .select('id, name, province')
-          .ilike('name', searchQuery)
-          .limit(5);
+    const origin = originStations[0];
+    const dest = destStations[0];
+    const results: TrainResult[] = [];
 
-        if (!citiesError && citiesData) {
-          const transformedCities: CityResult[] = citiesData.map((city: any) => ({
-            id: `city-${city.id}`,
-            name: city.name,
-            province: city.province,
-            resultType: 'city' as const
-          }));
-          results.push(...transformedCities);
-          console.log(`[SEARCH API] Found ${transformedCities.length} cities`);
-        }
-      } catch (error) {
-        // Table cities mungkin tidak ada, itu ok
-        console.log('[SEARCH API] Cities table not available, skipping');
-      }
-    }
+    // 2. Direct Routes Search
+    // Strategy: Find schedules (jadwal_kereta) where there exists a rute_kereta from Origin and a rute_kereta to Dest
+    // AND origin comes before dest in route_order
 
-    // 3. Cari kereta berdasarkan nama (kecuali type 'station' atau 'city')
-    if (type === 'all' || type === 'train') {
-      const { data: trainsData, error: trainsError } = await supabase
-        .from('kereta')
-        .select('id, code, name, operator, train_type')
-        .or(`name.ilike.${searchQuery},code.ilike.${searchQuery}`)
-        .limit(5);
+    // Fetch potential schedules for the date
+    const { data: directSchedules, error: directError } = await supabase
+      .from('jadwal_kereta')
+      .select(`
+        id,
+        train_id,
+        travel_date,
+        status,
+        kereta (
+          id,
+          code,
+          name,
+          operator,
+          train_type,
+          fasilitas
+        ),
+        rute_kereta!inner (
+          id,
+          origin_station_id,
+          destination_station_id,
+          arrival_time,
+          departure_time,
+          route_order,
+          duration_minutes
+        )
+      `)
+      .eq('travel_date', dateQuery)
+      .eq('rute_kereta.origin_station_id', origin.id);
+    // Note: This filter only grabs schedules that have a segment STARTING at origin.
+    // This is a simplification. A direct train might start at A -> B -> Origin -> C -> Dest -> D.
+    // Ideally we want any schedule that STOPS at origin and STOPS at dest.
+    // But Supabase simple filters are limited. 
+    // Better approach: Get all schedules for the day, then filter in code, 
+    // OR use a more complex join if possible.
+    // For now, let's try to fetch schedules that HAVE a rute_segment starting at Origin.
+    // CAUTION: 'rute_kereta' entries might be "A->B", "B->C".
+    // If user wants A->C, and there is no single A->C segment, this query logic needs to check connected segments.
+    // However, usually detailed route tables break down A->B, B->C.
+    // BUT often booking systems store "Origins" and "Destinations" available for booking.
+    // Let's assume 'rute_kereta' contains legs.
 
-      if (trainsError) {
-        console.error('[SEARCH API] Trains query error:', trainsError);
-      } else {
-        // Untuk setiap kereta yang ditemukan, buat data dummy
-        const transformedTrains: TrainResult[] = (trainsData || []).map((train: any, index: number) => {
-          // Buat stasiun dummy untuk contoh
-          const originStation = {
-            code: 'BD',
-            name: 'Stasiun Bandung',
-            city: 'Bandung'
-          };
-          
-          const destinationStation = {
-            code: 'GMR',
-            name: 'Stasiun Gambir',
-            city: 'Jakarta'
-          };
+    // REVISED DIRECT STRATEGY:
+    // We need to find `jadwal_kereta` IDs that have:
+    // - A segment departing from Origin
+    // - A segment arriving at Dest
+    // - Order(Origin) <= Order(Dest)
 
-          // Generate waktu dummy berdasarkan index
-          const departureHours = 7 + (index * 3);
-          const departureTime = `${departureHours.toString().padStart(2, '0')}:00:00`;
-          const arrivalHours = departureHours + 3;
-          const arrivalTime = `${arrivalHours.toString().padStart(2, '0')}:30:00`;
-          
-          // Tentukan harga berdasarkan tipe kereta
-          let harga = 250000;
-          let class_type = 'Eksekutif';
-          
-          switch (train.train_type?.toLowerCase()) {
-            case 'premium':
-              harga = 500000;
-              class_type = 'Premium';
-              break;
-            case 'eksekutif':
-              harga = 350000;
-              class_type = 'Eksekutif';
-              break;
-            case 'bisnis':
-              harga = 250000;
-              class_type = 'Bisnis';
-              break;
-            case 'ekonomi':
-              harga = 150000;
-              class_type = 'Ekonomi';
-              break;
-          }
+    // Let's get all schedules for the day first (assuming volume isn't massive for a demo)
+    // or filter by date at least.
+    const { data: daySchedules, error: daySchedError } = await supabase
+      .from('jadwal_kereta')
+      .select(`
+         id,
+         train_id,
+         travel_date,
+         status,
+         kereta (
+           id,
+           code,
+           name,
+           operator,
+           train_type,
+           fasilitas
+         ),
+         rute_kereta (
+           id,
+           origin_station_id,
+           destination_station_id,
+           arrival_time,
+           departure_time,
+           route_order
+         )
+       `)
+      .eq('travel_date', dateQuery);
 
-          return {
-            id: `train-${train.id}`,
-            train_id: train.id,
-            train_number: train.code,
-            train_name: train.name,
-            train_type: train.train_type || 'Eksekutif',
-            operator: train.operator || 'PT KAI',
-            origin_station: originStation,
-            destination_station: destinationStation,
-            departure_time: departureTime,
-            arrival_time: arrivalTime,
-            duration_minutes: 180 + (index * 30),
-            duration: `${3 + (index * 0.5)}j ${(index * 30)}m`,
-            travel_date: new Date().toISOString().split('T')[0],
-            status: 'scheduled',
-            harga: harga,
-            price: harga,
-            stok_kursi: Math.floor(Math.random() * 40) + 5,
-            availableSeats: Math.floor(Math.random() * 40) + 5,
-            class_type: class_type,
-            trainClass: class_type,
-            facilities: getFacilitiesByClass(class_type),
-            insurance: 5000,
-            seat_type: 'Reserved Seat',
+    if (daySchedules) {
+      for (const schedule of daySchedules) {
+        const routes = schedule.rute_kereta || [];
+
+        // Find logical departure segment (starts at origin)
+        // Note: Users might depart from a station that is a 'destination' of previous segment vs 'origin' of next.
+        // Usually 'origin_station_id' in rute_kereta means where the train segment starts moving from.
+        const startSegment = routes.find((r: any) => r.origin_station_id === origin.id);
+
+        // Find logical arrival segment (ends at dest)
+        const endSegment = routes.find((r: any) => r.destination_station_id === dest.id);
+
+        if (startSegment && endSegment && startSegment.route_order <= endSegment.route_order) {
+          // Calculate duration and price (dummy price for now as schemas differ on price location)
+          // If Start and End are same segment, it's just that segment.
+          // If different, we sum up? Or just take Start.Dep and End.Arr.
+
+          const startTime = startSegment.departure_time;
+          const endTime = endSegment.arrival_time;
+
+          // Simple duration calc (assuming same day arrival for simplicity or handling crossover)
+          // For this demo, let's trust the times are ISO or HH:MM:SS
+          // Convert value to simple strings
+
+          results.push({
+            id: schedule.id,
+            train_id: schedule.kereta.id,
+            train_number: schedule.kereta.code,
+            train_name: schedule.kereta.name,
+            train_type: schedule.kereta.train_type || 'Eksekutif',
+            operator: schedule.kereta.operator,
+            origin_station: origin,
+            destination_station: dest,
+            departure_time: startTime,
+            arrival_time: endTime,
+            duration_minutes: 0, // Calculate if needed
+            duration: 'Calculating...', // improve later
+            travel_date: schedule.travel_date,
+            status: schedule.status,
+            harga: 150000, // Placeholder or fetch from 'detail_pemesanan' historicals or 'kelas'
+            price: 150000,
+            stok_kursi: 50, // Placeholder
+            availableSeats: 50,
+            class_type: schedule.kereta.train_type || 'Eksekutif',
+            trainClass: schedule.kereta.train_type || 'Eksekutif',
+            facilities: schedule.kereta.fasilitas || [],
+            insurance: 0,
+            seat_type: 'Reserved',
             route_type: 'Direct',
-            schedule_id: `schedule-${train.id}`,
-            resultType: 'train' as const
-          };
-        });
-        results.push(...transformedTrains);
-        console.log(`[SEARCH API] Found ${transformedTrains.length} trains`);
-      }
-    }
-
-    // 4. Cari di jadwal berdasarkan kota asal/tujuan
-    if (type === 'all' || type === 'schedule') {
-      try {
-        // Cari jadwal yang berhubungan dengan stasiun yang cocok dengan query
-        const { data: schedulesData, error: schedulesError } = await supabase
-          .from('jadwal_kereta')
-          .select(`
-            id,
-            travel_date,
-            status,
-            train_id,
-            kereta (
-              id,
-              code,
-              name,
-              operator,
-              train_type
-            )
-          `)
-          .limit(5);
-
-        if (!schedulesError && schedulesData) {
-          const today = new Date().toISOString().split('T')[0];
-          
-          const transformedSchedules: TrainResult[] = schedulesData.map((schedule: any, index: number) => {
-            const train = Array.isArray(schedule.kereta) ? schedule.kereta[0] : schedule.kereta;
-            
-            if (!train) return null;
-
-            const originStation = {
-              code: 'BD',
-              name: 'Stasiun Bandung',
-              city: 'Bandung'
-            };
-            
-            const destinationStation = {
-              code: 'GMR',
-              name: 'Stasiun Gambir',
-              city: 'Jakarta'
-            };
-
-            const departureHours = 8 + (index * 2);
-            const departureTime = `${departureHours.toString().padStart(2, '0')}:30:00`;
-            const arrivalHours = departureHours + 4;
-            const arrivalTime = `${arrivalHours.toString().padStart(2, '0')}:00:00`;
-            
-            let harga = 300000;
-            let class_type = train.train_type || 'Eksekutif';
-            
-            switch (class_type.toLowerCase()) {
-              case 'premium':
-                harga = 550000;
-                break;
-              case 'eksekutif':
-                harga = 350000;
-                break;
-              case 'bisnis':
-                harga = 250000;
-                break;
-              case 'ekonomi':
-                harga = 120000;
-                break;
-            }
-
-            return {
-              id: `schedule-${schedule.id}`,
-              train_id: schedule.train_id,
-              train_number: train.code,
-              train_name: train.name,
-              train_type: train.train_type || 'Eksekutif',
-              operator: train.operator || 'PT KAI',
-              origin_station: originStation,
-              destination_station: destinationStation,
-              departure_time: departureTime,
-              arrival_time: arrivalTime,
-              duration_minutes: 240,
-              duration: '4j 0m',
-              travel_date: schedule.travel_date || today,
-              status: schedule.status || 'scheduled',
-              harga: harga,
-              price: harga,
-              stok_kursi: Math.floor(Math.random() * 50) + 10,
-              availableSeats: Math.floor(Math.random() * 50) + 10,
-              class_type: class_type,
-              trainClass: class_type,
-              facilities: getFacilitiesByClass(class_type),
-              insurance: 5000,
-              seat_type: 'Reserved Seat',
-              route_type: 'Direct',
-              schedule_id: schedule.id,
-              resultType: 'train' as const
-            };
-          }).filter(Boolean) as TrainResult[];
-
-          results.push(...transformedSchedules);
-          console.log(`[SEARCH API] Found ${transformedSchedules.length} schedules`);
+            schedule_id: schedule.id,
+            resultType: 'train'
+          });
         }
-      } catch (error) {
-        console.log('[SEARCH API] Schedules search error, skipping:', error);
       }
     }
 
-    console.log(`[SEARCH API] Total results found: ${results.length}`);
+    // 3. Transit Routes Search
+    // Look for defined transit_routes
+    const { data: transitRoutes, error: transitError } = await supabase
+      .from('transit_routes')
+      .select(`
+        id,
+        route_name,
+        base_price,
+        transit_segments (
+          id,
+          segment_order,
+          origin_station_id,
+          destination_station_id,
+          departure_time,
+          arrival_time,
+          train_schedule_id,
+          train_id,
+          kereta (name, code, train_type),
+          jadwal_kereta (travel_date)
+        )
+      `)
+      .eq('is_active', true);
 
-    // Urutkan berdasarkan tipe untuk UX yang lebih baik
-    results.sort((a, b) => {
-      // Prioritas: station -> city -> train
-      const priority = { station: 1, city: 2, train: 3, schedule: 4 };
-      return priority[a.resultType] - priority[b.resultType];
-    });
+    // Post-filtering for origin matches
+    if (transitRoutes) {
+      for (const tr of transitRoutes) {
+        const segments = tr.transit_segments || [];
+        segments.sort((a: any, b: any) => a.segment_order - b.segment_order);
 
-    // Tambahkan metadata
-    const response = {
+        if (segments.length === 0) continue;
+
+        const firstSeg = segments[0];
+        const lastSeg = segments[segments.length - 1];
+
+        // Check if this transit route matches user request
+        if (firstSeg.origin_station_id === origin.id && lastSeg.destination_station_id === dest.id) {
+          // Check date match on the first segment (assuming travel starts on requested date)
+          // Note: segment might not have 'jadwal_kereta' loaded if query failed, check validity
+          const travelDate = firstSeg.jadwal_kereta?.travel_date;
+          if (travelDate !== dateQuery) continue;
+
+          results.push({
+            id: tr.id,
+            train_id: 'TRANSIT',
+            train_number: tr.route_name, // e.g. "Java Exec"
+            train_name: `Transit Route: ${tr.route_name}`,
+            train_type: 'Mixed',
+            operator: 'Multiple',
+            origin_station: origin,
+            destination_station: dest,
+            departure_time: firstSeg.departure_time,
+            arrival_time: lastSeg.arrival_time,
+            duration_minutes: 0,
+            duration: 'Transit',
+            travel_date: dateQuery,
+            status: 'available',
+            harga: tr.base_price,
+            price: tr.base_price,
+            stok_kursi: 10, // Logic to find min(seats) of all segments needed
+            availableSeats: 10,
+            class_type: 'Mixed',
+            trainClass: 'Mixed',
+            facilities: ['Transit'],
+            insurance: 0,
+            seat_type: 'Reserved',
+            route_type: 'Transit',
+            transit_details: segments.map((s: any) => ({
+              train_name: s.kereta?.name,
+              origin: s.origin_station_id,
+              dest: s.destination_station_id,
+              dep: s.departure_time,
+              arr: s.arrival_time
+            })),
+            resultType: 'train'
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({
       success: true,
-      query: query,
-      type: type,
       count: results.length,
       results: results,
       timestamp: new Date().toISOString()
-    };
-
-    return NextResponse.json(response);
+    });
 
   } catch (error: any) {
-    console.error('[SEARCH API] Unexpected Error:', error);
-    
-    // Fallback to dummy data
-    const dummyResults = generateDummyResults(query, type);
-    
+    console.error('[SEARCH API] Error:', error);
     return NextResponse.json({
-      success: true,
-      query: query,
-      type: type,
-      count: dummyResults.length,
-      results: dummyResults,
-      fallback: true,
-      message: 'Using fallback data',
-      timestamp: new Date().toISOString()
-    });
+      error: 'Internal Server Error',
+      details: error.message
+    }, { status: 500 });
   }
-}
-
-// Helper function untuk fasilitas berdasarkan kelas
-function getFacilitiesByClass(trainClass: string): string[] {
-  switch (trainClass.toLowerCase()) {
-    case 'premium':
-    case 'eksekutif':
-      return ['AC', 'Makanan', 'WiFi', 'Toilet Bersih', 'Stop Kontak', 'TV', 'Pemandangan', 'Selimut', 'Bantal'];
-    case 'bisnis':
-      return ['AC', 'Makanan Ringan', 'Toilet Bersih', 'Stop Kontak', 'Pemandangan', 'Selimut'];
-    case 'ekonomi':
-      return ['AC', 'Toilet', 'Kipas Angin', 'Pemandangan'];
-    default:
-      return ['AC', 'Toilet'];
-  }
-}
-
-// Generate dummy results for fallback
-function generateDummyResults(query: string, type: string): any[] {
-  const results = [];
-  const queryLower = query.toLowerCase();
-  
-  // Stations dummy data
-  const stations = [
-    { code: 'GMR', name: 'Gambir', city: 'Jakarta' },
-    { code: 'BD', name: 'Bandung', city: 'Bandung' },
-    { code: 'SBY', name: 'Surabaya Gubeng', city: 'Surabaya' },
-    { code: 'YK', name: 'Yogyakarta', city: 'Yogyakarta' },
-    { code: 'SMG', name: 'Semarang Tawang', city: 'Semarang' },
-    { code: 'CRB', name: 'Cirebon', city: 'Cirebon' },
-    { code: 'BKS', name: 'Bekasi', city: 'Bekasi' },
-    { code: 'TNG', name: 'Tangerang', city: 'Tangerang' },
-    { code: 'SLO', name: 'Solo Balapan', city: 'Solo' },
-    { code: 'MLG', name: 'Malang', city: 'Malang' }
-  ];
-
-  // Cities dummy data
-  const cities = [
-    { name: 'Jakarta', province: 'DKI Jakarta' },
-    { name: 'Bandung', province: 'Jawa Barat' },
-    { name: 'Surabaya', province: 'Jawa Timur' },
-    { name: 'Yogyakarta', province: 'DI Yogyakarta' },
-    { name: 'Semarang', province: 'Jawa Tengah' },
-    { name: 'Medan', province: 'Sumatera Utara' },
-    { name: 'Makassar', province: 'Sulawesi Selatan' },
-    { name: 'Denpasar', province: 'Bali' },
-    { name: 'Palembang', province: 'Sumatera Selatan' },
-    { name: 'Balikpapan', province: 'Kalimantan Timur' }
-  ];
-
-  // Trains dummy data
-  const trains = [
-    { code: 'ARGO-001', name: 'Argo Parahyangan', type: 'Eksekutif' },
-    { code: 'TAK-001', name: 'Taksaka', type: 'Eksekutif' },
-    { code: 'SMT-001', name: 'Sembrani', type: 'Premium' },
-    { code: 'GMR-001', name: 'Gumarang', type: 'Bisnis' },
-    { code: 'BMS-001', name: 'Bima', type: 'Eksekutif' },
-    { code: 'KRD-001', name: 'Commuter Line', type: 'Ekonomi' },
-    { code: 'HARINA-001', name: 'Harina', type: 'Eksekutif' },
-    { code: 'TURANGA-001', name: 'Turangga', type: 'Eksekutif' },
-    { code: 'MS-001', name: 'Mutiara Selatan', type: 'Bisnis' },
-    { code: 'SINGO-001', name: 'Singo', type: 'Eksekutif' }
-  ];
-
-  // Filter stations based on query
-  if (type === 'all' || type === 'station') {
-    const filteredStations = stations.filter(station => 
-      station.name.toLowerCase().includes(queryLower) || 
-      station.city.toLowerCase().includes(queryLower) ||
-      station.code.toLowerCase().includes(queryLower)
-    ).slice(0, 5);
-    
-    filteredStations.forEach((station, index) => {
-      results.push({
-        id: `station-dummy-${index}`,
-        code: station.code,
-        name: station.name,
-        city: station.city,
-        resultType: 'station'
-      });
-    });
-  }
-
-  // Filter cities based on query
-  if (type === 'all' || type === 'city') {
-    const filteredCities = cities.filter(city => 
-      city.name.toLowerCase().includes(queryLower) ||
-      city.province.toLowerCase().includes(queryLower)
-    ).slice(0, 3);
-    
-    filteredCities.forEach((city, index) => {
-      results.push({
-        id: `city-dummy-${index}`,
-        name: city.name,
-        province: city.province,
-        resultType: 'city'
-      });
-    });
-  }
-
-  // Filter trains based on query
-  if (type === 'all' || type === 'train') {
-    const filteredTrains = trains.filter(train => 
-      train.name.toLowerCase().includes(queryLower) ||
-      train.code.toLowerCase().includes(queryLower)
-    ).slice(0, 3);
-    
-    filteredTrains.forEach((train, index) => {
-      const today = new Date().toISOString().split('T')[0];
-      const departureHours = 8 + (index * 3);
-      const departureTime = `${departureHours.toString().padStart(2, '0')}:00:00`;
-      const arrivalHours = departureHours + 4;
-      const arrivalTime = `${arrivalHours.toString().padStart(2, '0')}:30:00`;
-      
-      let harga = 300000;
-      switch (train.type.toLowerCase()) {
-        case 'premium': harga = 550000; break;
-        case 'eksekutif': harga = 350000; break;
-        case 'bisnis': harga = 250000; break;
-        case 'ekonomi': harga = 80000; break;
-      }
-      
-      results.push({
-        id: `train-dummy-${index}`,
-        train_id: `train-${index}`,
-        train_number: train.code,
-        train_name: train.name,
-        train_type: train.type,
-        operator: 'PT KAI',
-        origin_station: { code: 'BD', name: 'Stasiun Bandung', city: 'Bandung' },
-        destination_station: { code: 'GMR', name: 'Stasiun Gambir', city: 'Jakarta' },
-        departure_time: departureTime,
-        arrival_time: arrivalTime,
-        duration_minutes: 270,
-        duration: '4j 30m',
-        travel_date: today,
-        status: 'scheduled',
-        harga: harga,
-        price: harga,
-        stok_kursi: Math.floor(Math.random() * 40) + 10,
-        availableSeats: Math.floor(Math.random() * 40) + 10,
-        class_type: train.type,
-        trainClass: train.type,
-        facilities: getFacilitiesByClass(train.type),
-        insurance: 5000,
-        seat_type: 'Reserved Seat',
-        route_type: 'Direct',
-        resultType: 'train'
-      });
-    });
-  }
-
-  // Urutkan berdasarkan tipe
-  results.sort((a, b) => {
-    const priority = { station: 1, city: 2, train: 3 };
-    return priority[a.resultType] - priority[b.resultType];
-  });
-
-  return results;
 }

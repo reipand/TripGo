@@ -12,7 +12,7 @@ async function getAuthUser(request: NextRequest) {
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    
+
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: false,
@@ -29,7 +29,7 @@ async function getAuthUser(request: NextRequest) {
 
     // Try to get session using Supabase
     const accessToken = cookies['sb-access-token'] || cookies['sb-' + supabaseUrl.split('//')[1]?.split('.')[0] + '-auth-token'];
-    
+
     if (accessToken) {
       const { data: { user }, error } = await supabase.auth.getUser(accessToken);
       if (!error && user) return user;
@@ -53,18 +53,18 @@ async function getAuthUser(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const bookingData = await request.json();
-    
+
     console.log('📝 Booking request received:', {
       schedule_id: bookingData.schedule_id,
       passenger_count: bookingData.passengers?.length,
       total_amount: bookingData.total_amount
     });
-    
+
     // Validasi data wajib
     if (!bookingData.schedule_id) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Schedule ID diperlukan',
           details: 'Schedule ID is required'
         },
@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
 
     if (!bookingData.passengers || !Array.isArray(bookingData.passengers) || bookingData.passengers.length === 0) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Data penumpang diperlukan',
           details: 'At least one passenger is required'
         },
@@ -85,8 +85,8 @@ export async function POST(request: NextRequest) {
 
     if (!bookingData.total_amount || bookingData.total_amount <= 0) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Total amount tidak valid',
           details: 'Total amount must be greater than 0'
         },
@@ -118,18 +118,18 @@ export async function POST(request: NextRequest) {
         .select('*, kereta:train_id(id, name, code)')
         .eq('id', bookingData.schedule_id)
         .single();
-      
+
       schedule = result.data;
       scheduleError = result.error;
     } else {
       // Jika bukan UUID valid (misalnya 'schedule-1'), coba cari berdasarkan data lain
       console.warn('⚠️ Invalid schedule ID format, attempting to find or create schedule');
-      
+
       // Jika ada train_id, coba cari schedule berdasarkan train_id dan travel_date
       if (bookingData.train_id && bookingData.departure_date) {
         // Cek apakah train_id valid (UUID atau format yang bisa digunakan)
         const trainIdIsValid = uuidRegex.test(bookingData.train_id) || bookingData.train_id.startsWith('train-');
-        
+
         if (trainIdIsValid) {
           // Cari schedule yang sudah ada
           const result = await supabase
@@ -141,14 +141,14 @@ export async function POST(request: NextRequest) {
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          
+
           schedule = result.data;
           scheduleError = result.error;
-          
+
           // Jika tidak ditemukan dan train_id adalah UUID valid, buat schedule baru
           if (!schedule && uuidRegex.test(bookingData.train_id)) {
             console.log('📝 Creating new schedule for train:', bookingData.train_id);
-            
+
             const newScheduleResult = await supabase
               .from('jadwal_kereta')
               .insert({
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
               })
               .select('*, kereta:train_id(id, name, code)')
               .single();
-            
+
             if (!newScheduleResult.error && newScheduleResult.data) {
               schedule = newScheduleResult.data;
               console.log('✅ New schedule created:', schedule.id);
@@ -172,15 +172,15 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
+
     if (scheduleError || !schedule) {
       console.error('❌ Schedule error:', scheduleError);
       console.error('❌ Schedule ID provided:', bookingData.schedule_id);
       console.error('❌ Booking data:', JSON.stringify(bookingData, null, 2));
-      
+
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Jadwal tidak ditemukan',
           details: `Schedule dengan ID "${bookingData.schedule_id}" tidak ditemukan di database. Silakan pilih jadwal yang valid dari halaman pencarian.`,
           suggestion: 'Pastikan Anda memilih kereta dari hasil pencarian yang valid'
@@ -201,8 +201,8 @@ export async function POST(request: NextRequest) {
 
     if (!availableSeatsCount || availableSeatsCount < bookingData.passengers.length) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Kursi tidak tersedia',
           details: `Only ${availableSeatsCount || 0} seats available, but ${bookingData.passengers.length} requested`
         },
@@ -220,8 +220,8 @@ export async function POST(request: NextRequest) {
 
     if (!recheckCount || recheckCount < requiredSeats) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Kursi tidak tersedia',
           details: 'Seats were just booked by another user. Please try again.'
         },
@@ -231,6 +231,28 @@ export async function POST(request: NextRequest) {
 
     // 3. Generate booking code
     const bookingCode = `KAI${Date.now().toString().slice(-8)}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    // NEW: Get station orders for seat-reuse logic
+    let startOrder = 0;
+    let endOrder = 999;
+    try {
+      if (bookingData.origin && bookingData.destination) {
+        const { data: routeData } = await supabase
+          .from('rute_kereta')
+          .select('route_order, stasiun!inner(nama_stasiun)')
+          .eq('schedule_id', bookingData.schedule_id);
+
+        if (routeData) {
+          const originRoute = routeData.find(r => (r.stasiun as any).nama_stasiun.includes(bookingData.origin));
+          const destRoute = routeData.find(r => (r.stasiun as any).nama_stasiun.includes(bookingData.destination));
+
+          if (originRoute) startOrder = originRoute.route_order;
+          if (destRoute) endOrder = destRoute.route_order;
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching route orders:', err);
+    }
 
     // 4. Create booking record
     const { data: booking, error: bookingError } = await supabase
@@ -252,8 +274,8 @@ export async function POST(request: NextRequest) {
     if (bookingError) {
       console.error('❌ Booking creation error:', bookingError);
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Gagal membuat booking',
           details: bookingError.message
         },
@@ -265,14 +287,14 @@ export async function POST(request: NextRequest) {
     const passengerIds = [];
     for (let i = 0; i < bookingData.passengers.length; i++) {
       const passenger = bookingData.passengers[i];
-      
+
       // Validasi data penumpang
       if (!passenger.fullName || !passenger.idNumber || !passenger.email) {
         // Rollback: delete booking
         await supabase.from('bookings_kereta').delete().eq('id', booking.id);
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: `Data penumpang ${i + 1} tidak lengkap`,
             details: 'Full name, ID number, and email are required for all passengers'
           },
@@ -303,8 +325,8 @@ export async function POST(request: NextRequest) {
         await supabase.from('penumpang').delete().eq('booking_id', booking.id);
         await supabase.from('bookings_kereta').delete().eq('id', booking.id);
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: 'Gagal menyimpan data penumpang',
             details: passengerError.message
           },
@@ -329,8 +351,8 @@ export async function POST(request: NextRequest) {
       await supabase.from('penumpang').delete().eq('booking_id', booking.id);
       await supabase.from('bookings_kereta').delete().eq('id', booking.id);
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Kursi tidak tersedia saat ini',
           details: 'Seats are no longer available. Please refresh and try again.'
         },
@@ -346,8 +368,8 @@ export async function POST(request: NextRequest) {
       await supabase.from('penumpang').delete().eq('booking_id', booking.id);
       await supabase.from('bookings_kereta').delete().eq('id', booking.id);
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: 'Kursi tidak tersedia saat ini',
           details: 'Some seats were just booked. Please refresh and try again.'
         },
@@ -362,10 +384,15 @@ export async function POST(request: NextRequest) {
       const passenger = bookingData.passengers[i];
 
       // Update seat status
+      // Note: We don't mark as 'booked' globally unless it's full. 
+      // Instead, we mark as 'available' but check segments.
+      // However, for backward compatibility, we keep 'booked' if it's the full route.
+      const isFullRoute = startOrder === 0 && endOrder >= 5; // Simplified check
+
       const { error: seatUpdateError } = await supabase
         .from('train_seats')
         .update({
-          status: 'booked',
+          status: isFullRoute ? 'booked' : 'available',
           booking_id: booking.id,
           updated_at: new Date().toISOString()
         })
@@ -378,8 +405,8 @@ export async function POST(request: NextRequest) {
         await supabase.from('penumpang').delete().eq('booking_id', booking.id);
         await supabase.from('bookings_kereta').delete().eq('id', booking.id);
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: 'Gagal memproses kursi',
             details: seatUpdateError.message
           },
@@ -387,10 +414,20 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Record in seat_availability for seat-reuse
+      await supabase.from('seat_availability').insert({
+        train_seat_id: seat.id,
+        schedule_id: bookingData.schedule_id,
+        departure_route_order: startOrder,
+        arrival_route_order: endOrder,
+        is_available: false,
+        booking_id: booking.id
+      });
+
       // Get seat price from coach
       const seatCoachId = (seat as any).coach_id;
       const seatNumber = (seat as any).seat_number;
-      
+
       const { data: coachData } = await supabase
         .from('gerbong')
         .select('class_type')
@@ -467,13 +504,13 @@ export async function POST(request: NextRequest) {
         status: 'pending'
       }
     });
-    
+
   } catch (error) {
     console.error('❌ Booking error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: 'Terjadi kesalahan saat memproses booking',
         details: errorMessage
       },

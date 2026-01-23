@@ -59,9 +59,9 @@ export async function GET(
   } catch (error: any) {
     console.error('Booking API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );
@@ -144,6 +144,19 @@ export async function PATCH(
 
     if (error) {
       console.error('Update booking error:', error);
+
+      // LOGIC: Specific handling for point_transactions constraint violation
+      if (error.message?.includes('point_transactions') && error.message?.includes('user_id')) {
+        return NextResponse.json(
+          {
+            error: 'Gagal memberikan poin (Guest Booking). Silakan jalankan SQL fix di Dashboard Supabase untuk mengizinkan update status guest.',
+            details: error.message,
+            code: 'POINT_TRANSACTION_FAILED'
+          },
+          { status: 400 }
+        );
+      }
+
       return NextResponse.json(
         { error: error.message },
         { status: 400 }
@@ -159,9 +172,9 @@ export async function PATCH(
   } catch (error: any) {
     console.error('Update booking API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );
@@ -225,9 +238,9 @@ export async function DELETE(
   } catch (error: any) {
     console.error('Delete booking API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );

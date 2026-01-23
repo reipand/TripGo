@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
+import {
   Home,
   Users,
   Ticket,
@@ -69,7 +69,17 @@ export default function AdminSidebar() {
           path: '/admin/trains',
           badge: 24
         },
-         {
+        {
+          title: 'Schedules',
+          icon: <Calendar className="w-5 h-5" />,
+          path: '/admin/schedules'
+        },
+        {
+          title: 'Routes',
+          icon: <MapPin className="w-5 h-5" />,
+          path: '/admin/routes'
+        },
+        {
           title: 'Stations',
           icon: <MapPin className="w-5 h-5" />,
           path: '/admin/stations',
@@ -80,6 +90,11 @@ export default function AdminSidebar() {
           icon: <Users className="w-5 h-5" />,
           path: '/admin/users',
           badge: 24
+        },
+        {
+          title: 'Manifest',
+          icon: <Users className="w-5 h-5" />,
+          path: '/admin/manifest'
         }
       ]
     },
@@ -110,32 +125,6 @@ export default function AdminSidebar() {
           title: 'Analytics',
           icon: <BarChart3 className="w-5 h-5" />,
           path: '/admin/analytics'
-        },
-        {
-          title: 'Activity',
-          icon: <Activity className="w-5 h-5" />,
-          path: '/admin/activity'
-        },
-        {
-          title: 'Systems',
-          icon: <Server className="w-5 h-5" />,
-          path: '/admin/systems'
-        },
-        {
-          title: 'Notifications',
-          icon: <Bell className="w-5 h-5" />,
-          path: '/admin/notifications',
-          badge: 3
-        },
-        {
-          title: 'Database',
-          icon: <Database className="w-5 h-5" />,
-          path: '/admin/database'
-        },
-        {
-          title: 'Security',
-          icon: <Shield className="w-5 h-5" />,
-          path: '/admin/security'
         }
       ]
     }
@@ -182,16 +171,15 @@ export default function AdminSidebar() {
     // Render regular menu items
     if (item.path) {
       return (
-        <Link 
-          key={index} 
+        <Link
+          key={index}
           href={item.path}
           className={`block mb-1 ${collapsed ? 'px-3' : 'px-4'}`}
         >
-          <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} py-3 rounded-lg transition-all duration-200 ${
-            isActive(item.path) 
-              ? 'bg-blue-50 text-blue-600' 
-              : 'text-gray-700 hover:bg-gray-50 hover:text-blue-600'
-          }`}>
+          <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} py-3 rounded-lg transition-all duration-200 ${isActive(item.path)
+            ? 'bg-blue-50 text-blue-600'
+            : 'text-gray-700 hover:bg-gray-50 hover:text-blue-600'
+            }`}>
             <div className="flex items-center">
               <span className={`${isActive(item.path) ? 'text-blue-600' : 'text-gray-500'}`}>
                 {item.icon}
@@ -215,16 +203,15 @@ export default function AdminSidebar() {
     if (!item.path) return null;
 
     return (
-      <Link 
-        key={index} 
+      <Link
+        key={index}
         href={item.path}
         className={`block ${collapsed ? 'px-3' : 'px-4'}`}
       >
-        <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} py-2.5 rounded-lg transition-all duration-200 ${
-          isActive(item.path) 
-            ? 'bg-blue-50 text-blue-600' 
-            : 'text-gray-600 hover:bg-gray-50 hover:text-blue-600'
-        }`}>
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} py-2.5 rounded-lg transition-all duration-200 ${isActive(item.path)
+          ? 'bg-blue-50 text-blue-600'
+          : 'text-gray-600 hover:bg-gray-50 hover:text-blue-600'
+          }`}>
           <div className="flex items-center">
             <span className={`${isActive(item.path) ? 'text-blue-600' : 'text-gray-500'}`}>
               {item.icon}
@@ -242,9 +229,8 @@ export default function AdminSidebar() {
   };
 
   return (
-    <div className={`flex flex-col h-screen bg-white border-r border-gray-200 transition-all duration-300 ${
-      collapsed ? 'w-20' : 'w-64'
-    }`}>
+    <div className={`flex flex-col h-screen bg-white border-r border-gray-200 transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'
+      }`}>
       {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'}`}>
@@ -279,7 +265,7 @@ export default function AdminSidebar() {
         {/* Settings Section */}
         <div className="mt-8 pt-6 border-t border-gray-200">
           <div className={collapsed ? 'px-3' : 'px-4'}>
-            <Link 
+            <Link
               href="/admin/settings"
               className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} py-2.5 rounded-lg text-gray-600 hover:bg-gray-50 hover:text-blue-600 transition-colors`}
             >

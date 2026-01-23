@@ -15,13 +15,13 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 
 // PERBAIKAN: Fungsi untuk mendapatkan atau membuat payment transaction
 async function getOrCreatePaymentTransaction(
-  orderId: string, 
-  bookingCode: string, 
+  orderId: string,
+  bookingCode: string,
   body: any,
   midtransResponse: any
 ) {
   console.log(`🔍 Checking existing payment for order_id: ${orderId}`);
-  
+
   try {
     // 1. Cari transaksi yang sudah ada
     const { data: existingPayment, error: findError } = await supabase
@@ -29,19 +29,19 @@ async function getOrCreatePaymentTransaction(
       .select('*')
       .eq('order_id', orderId)
       .maybeSingle(); // Gunakan maybeSingle untuk menghindari error jika tidak ada
-    
+
     if (findError) {
       console.error('❌ Error finding payment:', findError);
     }
-    
+
     // 2. Jika transaksi sudah ada, return data yang ada
     if (existingPayment) {
       console.log('✅ Existing payment found:', existingPayment.id);
-      
+
       // Update token jika ada yang baru
       if (midtransResponse.token && !existingPayment.midtrans_token) {
         console.log('🔄 Updating existing payment with new token');
-        
+
         const { error: updateError } = await supabase
           .from('payment_transactions')
           .update({
@@ -51,35 +51,38 @@ async function getOrCreatePaymentTransaction(
             updated_at: new Date().toISOString()
           })
           .eq('id', existingPayment.id);
-          
+
         if (updateError) {
           console.warn('⚠️ Failed to update token:', updateError);
         }
       }
-      
+
       return {
         success: true,
         data: existingPayment,
         isExisting: true
       };
     }
-    
+
     // 3. Jika tidak ada, buat transaksi baru
     console.log('🔄 Creating new payment transaction...');
-    
+
     // Cari booking_id
     let bookingId = null;
     if (bookingCode) {
-      const { data: bookingData } = await supabase
+      const { data: bookingData, error: bookingError } = await supabase
         .from('bookings_kereta')
         .select('id')
         .eq('booking_code', bookingCode)
-        .single()
-        .catch(() => ({ data: null }));
-      
+        .maybeSingle();
+
+      if (bookingError) {
+        console.warn('⚠️ Error finding booking:', bookingError.message);
+      }
+
       bookingId = bookingData?.id || null;
     }
-    
+
     // Bangun data payment
     const paymentData: any = {
       id: generateValidUUID(),
@@ -105,48 +108,48 @@ async function getOrCreatePaymentTransaction(
         booking_data: body
       })
     };
-    
+
     // Tambahkan booking_id jika ada
     if (bookingId) {
       paymentData.booking_id = bookingId;
     }
-    
+
     // 4. Coba insert dengan berbagai strategi
     let insertResult = null;
-    
+
     // Strategi 1: Coba insert biasa
     let { data: insertedData, error: insertError } = await supabase
       .from('payment_transactions')
       .insert([paymentData])
       .select()
       .single();
-    
+
     if (insertError) {
       console.error('❌ Initial insert failed:', insertError.message);
-      
+
       // Strategi 2: Jika duplicate key, coba tanpa ID (biarkan database generate)
       if (insertError.code === '23505' && insertError.message.includes('payment_transactions_pkey')) {
         console.log('🔄 Trying insert without custom ID');
         delete paymentData.id;
-        
+
         ({ data: insertedData, error: insertError } = await supabase
           .from('payment_transactions')
           .insert([paymentData])
           .select()
           .single());
       }
-      
+
       // Strategi 3: Jika masih error karena order_id duplicate, update existing
       if (insertError && insertError.code === '23505' && insertError.message.includes('payment_transactions_order_id_key')) {
         console.log('🔄 Duplicate order_id, updating existing record');
-        
+
         // Cari lagi dan update
         const { data: foundPayment } = await supabase
           .from('payment_transactions')
           .select('*')
           .eq('order_id', orderId)
           .single();
-          
+
         if (foundPayment) {
           const { error: updateError } = await supabase
             .from('payment_transactions')
@@ -158,19 +161,19 @@ async function getOrCreatePaymentTransaction(
               updated_at: new Date().toISOString()
             })
             .eq('id', foundPayment.id);
-            
+
           if (!updateError) {
             insertedData = foundPayment;
             insertError = null;
           }
         }
       }
-      
+
       // Strategi 4: Jika masih gagal, coba tanpa booking_id
       if (insertError) {
         console.log('🔄 Trying insert without booking_id');
         delete paymentData.booking_id;
-        
+
         ({ data: insertedData, error: insertError } = await supabase
           .from('payment_transactions')
           .insert([paymentData])
@@ -178,10 +181,10 @@ async function getOrCreatePaymentTransaction(
           .single());
       }
     }
-    
+
     if (insertError) {
       console.error('❌ All insert strategies failed:', insertError);
-      
+
       // Return response dengan data meskipun tidak tersimpan di database
       return {
         success: false,
@@ -190,18 +193,18 @@ async function getOrCreatePaymentTransaction(
         isExisting: false
       };
     }
-    
+
     console.log('✅ Payment transaction created:', insertedData?.id);
-    
+
     return {
       success: true,
       data: insertedData,
       isExisting: false
     };
-    
+
   } catch (error: any) {
     console.error('❌ Error in getOrCreatePaymentTransaction:', error);
-    
+
     return {
       success: false,
       error: error.message,
@@ -212,7 +215,7 @@ async function getOrCreatePaymentTransaction(
 
 // Fungsi untuk generate UUID yang valid
 function generateValidUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = Math.random() * 16 | 0;
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
@@ -223,7 +226,7 @@ function generateValidUUID(): string {
 async function createMidtransTransaction(data: any) {
   const serverKey = process.env.MIDTRANS_SERVER_KEY;
   const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
-  
+
   if (!serverKey || !clientKey) {
     console.log('⚠️ Midtrans keys not configured, using mock response');
     return {
@@ -235,7 +238,7 @@ async function createMidtransTransaction(data: any) {
 
   try {
     const encodedKey = Buffer.from(`${serverKey}:`).toString('base64');
-    
+
     const response = await fetch('https://app.sandbox.midtrans.com/snap/v1/transactions', {
       method: 'POST',
       headers: {
@@ -249,7 +252,7 @@ async function createMidtransTransaction(data: any) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ Midtrans API error:', response.status, errorText);
-      
+
       // Fallback untuk error 400 dan lainnya
       return {
         token: `FALLBACK-TOKEN-${Date.now()}`,
@@ -261,7 +264,7 @@ async function createMidtransTransaction(data: any) {
     return await response.json();
   } catch (error) {
     console.error('❌ Midtrans API call failed:', error);
-    
+
     return {
       token: `FALLBACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${data.transaction_details.order_id}`,
@@ -284,7 +287,7 @@ async function getRequestData(request: NextRequest) {
     // Coba ambil dari query parameters
     const url = new URL(request.url);
     const searchParams = url.searchParams;
-    
+
     const data: any = {};
     const params = [
       'booking_code', 'order_id', 'customer_name', 'customer_email',
@@ -292,20 +295,20 @@ async function getRequestData(request: NextRequest) {
       'origin', 'destination', 'departure_date', 'departure_time',
       'passenger_count', 'total_amount'
     ];
-    
+
     params.forEach(param => {
       const value = searchParams.get(param);
       if (value !== null) {
         data[param] = value;
       }
     });
-    
+
     console.log('📦 Data dari query params:', {
       order_id: data.order_id,
       booking_code: data.booking_code,
       amount: data.amount
     });
-    
+
     return data;
   }
 }
@@ -313,23 +316,26 @@ async function getRequestData(request: NextRequest) {
 // Fungsi untuk update booking status
 async function updateBookingStatus(bookingCode: string, orderId: string) {
   if (!bookingCode) return;
-  
+
   try {
     console.log(`🔄 Updating booking status for ${bookingCode}`);
-    
+
     // Cari booking
-    const { data: bookingData } = await supabase
+    const { data: bookingData, error: findError } = await supabase
       .from('bookings_kereta')
       .select('id, status, payment_status')
       .eq('booking_code', bookingCode)
-      .single()
-      .catch(() => ({ data: null }));
-    
+      .maybeSingle();
+
+    if (findError) {
+      console.warn('⚠️ Error finding booking:', findError.message);
+    }
+
     if (!bookingData) {
       console.log('⚠️ Booking not found for update');
       return;
     }
-    
+
     // Update booking
     const { error: updateError } = await supabase
       .from('bookings_kereta')
@@ -339,13 +345,13 @@ async function updateBookingStatus(bookingCode: string, orderId: string) {
         updated_at: new Date().toISOString()
       })
       .eq('id', bookingData.id);
-    
+
     if (updateError) {
       console.warn('⚠️ Booking update error:', updateError.message);
     } else {
       console.log('✅ Booking status updated');
     }
-    
+
   } catch (error: any) {
     console.warn('⚠️ Error updating booking:', error.message);
   }
@@ -354,10 +360,10 @@ async function updateBookingStatus(bookingCode: string, orderId: string) {
 // Fungsi utama untuk membuat transaksi pembayaran
 export async function POST(request: NextRequest) {
   console.log('🔍 /api/payment/create-transaction called');
-  
+
   try {
     const body = await getRequestData(request);
-    
+
     console.log('📥 Payment request data:', {
       booking_code: body.booking_code,
       order_id: body.order_id,
@@ -386,7 +392,7 @@ export async function POST(request: NextRequest) {
 
     const grossAmount = parseInt(amount);
     const bookingCode = body.booking_code || body.order_id;
-    
+
     // Buat data Midtrans
     const midtransData = {
       transaction_details: {
@@ -402,7 +408,7 @@ export async function POST(request: NextRequest) {
       item_details: [
         {
           id: `ticket-${bookingCode}`,
-          name: body.train_name 
+          name: body.train_name
             ? `Tiket Kereta ${body.train_name}`
             : 'Tiket Perjalanan Kereta',
           price: grossAmount,
@@ -415,14 +421,14 @@ export async function POST(request: NextRequest) {
         error: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/failed?order_id=${body.order_id}`,
         pending: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/pending?order_id=${body.order_id}`
       },
-      enabled_payments: body.payment_method 
+      enabled_payments: body.payment_method
         ? [body.payment_method]
         : ['credit_card', 'bank_transfer', 'gopay', 'shopeepay']
     };
 
     console.log('🔄 Calling Midtrans...');
     const midtransResponse = await createMidtransTransaction(midtransData);
-    
+
     console.log('✅ Midtrans response:', {
       token_length: midtransResponse.token?.length || 0,
       has_redirect_url: !!midtransResponse.redirect_url,
@@ -436,7 +442,7 @@ export async function POST(request: NextRequest) {
       body,
       midtransResponse
     );
-    
+
     // Update booking status jika perlu
     if (bookingCode && bookingCode !== body.order_id) {
       await updateBookingStatus(bookingCode, body.order_id);
@@ -466,12 +472,12 @@ export async function POST(request: NextRequest) {
         },
         expires_at: new Date(Date.now() + 3600000).toISOString(),
         timestamp: new Date().toISOString(),
-        ...(midtransResponse.is_fallback && { 
+        ...(midtransResponse.is_fallback && {
           is_fallback: true,
           note: 'Using fallback payment gateway for development/testing'
         })
       },
-      message: paymentResult.isExisting 
+      message: paymentResult.isExisting
         ? 'Transaksi pembayaran sudah ada, menggunakan token yang sama'
         : 'Transaksi pembayaran berhasil dibuat',
       ...(process.env.NODE_ENV === 'development' && {
@@ -489,7 +495,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ Payment API error:', error);
-    
+
     // Response fallback untuk development
     const fallbackResponse = {
       success: true,
@@ -512,7 +518,7 @@ export async function POST(request: NextRequest) {
       message: 'Transaksi pembayaran dibuat dalam mode fallback',
       note: 'Database atau payment gateway sedang dalam perbaikan'
     };
-    
+
     return NextResponse.json(fallbackResponse, { status: 200 });
   }
 }
@@ -520,7 +526,7 @@ export async function POST(request: NextRequest) {
 // GET method untuk testing
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  
+
   return NextResponse.json({
     success: true,
     endpoint: '/api/payment/create-transaction',

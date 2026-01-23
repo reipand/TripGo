@@ -8,10 +8,10 @@ const supabase = createClient(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const scheduleId = params.id;
+    const { id: scheduleId } = await params;
     const { searchParams } = new URL(request.url);
     const origin = searchParams.get('origin');
     const destination = searchParams.get('destination');
@@ -20,6 +20,16 @@ export async function GET(
       return NextResponse.json(
         { error: 'Origin and destination are required' },
         { status: 400 }
+      );
+    }
+
+    // Validate UUID format to prevent Postgres errors
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(scheduleId)) {
+      console.warn(`Invalid schedule ID format: ${scheduleId} (likely mock data)`);
+      return NextResponse.json(
+        { error: 'Transit routes not available for mock schedules' },
+        { status: 404 }
       );
     }
 
@@ -93,10 +103,10 @@ export async function GET(
 
       // Check if route connects origin to destination
       const originMatch = firstSegment.origin_station?.nama_stasiun?.toLowerCase().includes(origin.toLowerCase()) ||
-                         firstSegment.origin_station?.city?.toLowerCase().includes(origin.toLowerCase());
+        firstSegment.origin_station?.city?.toLowerCase().includes(origin.toLowerCase());
 
       const destinationMatch = lastSegment.destination_station?.nama_stasiun?.toLowerCase().includes(destination.toLowerCase()) ||
-                              lastSegment.destination_station?.city?.toLowerCase().includes(destination.toLowerCase());
+        lastSegment.destination_station?.city?.toLowerCase().includes(destination.toLowerCase());
 
       return originMatch && destinationMatch;
     });
@@ -140,7 +150,7 @@ export async function GET(
       // Sort by available seats first, then price
       if (a.min_available_seats === 0 && b.min_available_seats > 0) return 1;
       if (b.min_available_seats === 0 && a.min_available_seats > 0) return -1;
-      
+
       const priceA = a.base_price + (a.total_adjustment || 0);
       const priceB = b.base_price + (b.total_adjustment || 0);
       return priceA - priceB;

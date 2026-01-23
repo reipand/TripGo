@@ -73,6 +73,9 @@ interface BookingData {
   transitDeparture?: string;
   transitDiscount?: number; // Diskon 10% untuk transit
   transitAdditionalPrice?: number; // Biaya tambahan transit
+  // Data multi-segment
+  isMultiSegment?: boolean;
+  segments?: any[];
   // Data tambahan
   basePrice?: number; // Harga dasar per tiket
 }
@@ -142,7 +145,7 @@ const TransitIcon = () => (
 const PaymentPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<string>('bank-transfer');
@@ -156,7 +159,7 @@ const PaymentPageContent = () => {
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [virtualAccountNumber, setVirtualAccountNumber] = useState<string>('');
-  
+
   // Ref untuk menyimpan interval timer
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -268,17 +271,17 @@ const PaymentPageContent = () => {
     const loadBookingData = () => {
       setLoading(true);
       setErrorMessage(null);
-      
+
       try {
         console.log('🔍 Loading booking data from URL params...');
-        
+
         // Debug semua parameter
         const allParams: Record<string, string | null> = {};
         searchParams.forEach((value, key) => {
           allParams[key] = value;
         });
         console.log('📋 All URL params:', allParams);
-        
+
         // Ambil semua parameter dari URL
         const bookingCode = searchParams.get('bookingCode');
         const orderId = searchParams.get('orderId');
@@ -298,15 +301,16 @@ const PaymentPageContent = () => {
         const origin = searchParams.get('origin');
         const destination = searchParams.get('destination');
         const departureDate = searchParams.get('departureDate');
+        const isMultiSegment = searchParams.get('isMultiSegment') === 'true';
         const departureTime = searchParams.get('departureTime');
-        
+
         // Data transit
         const transitStation = searchParams.get('transitStation');
         const transitArrival = searchParams.get('transitArrival');
         const transitDeparture = searchParams.get('transitDeparture');
         const transitDiscount = searchParams.get('transitDiscount');
         const transitAdditionalPrice = searchParams.get('transitAdditionalPrice');
-        
+
         // Data tambahan
         const adminFee = searchParams.get('adminFee');
         const insuranceFee = searchParams.get('insuranceFee');
@@ -338,13 +342,13 @@ const PaymentPageContent = () => {
         // Coba ambil data dari sessionStorage terlebih dahulu
         let passengers: Passenger[] = [];
         let sessionTrainDetail: TrainDetail | null = null;
-        
+
         try {
           const sessionData = sessionStorage.getItem('currentBooking');
           if (sessionData) {
             const parsedData = JSON.parse(sessionData);
             console.log('📦 Session data:', parsedData);
-            
+
             // Coba ambil passengerDetails jika ada
             if (parsedData.passengerDetails && Array.isArray(parsedData.passengerDetails)) {
               passengers = parsedData.passengerDetails.map((p: any, index: number) => ({
@@ -359,7 +363,7 @@ const PaymentPageContent = () => {
             } else if (parsedData.passengers && Array.isArray(parsedData.passengers)) {
               passengers = parsedData.passengers;
             }
-            
+
             if (parsedData.trainDetail) {
               sessionTrainDetail = parsedData.trainDetail;
             }
@@ -416,6 +420,9 @@ const PaymentPageContent = () => {
           transitDeparture: transitDeparture || undefined,
           transitDiscount: transitDiscountValue,
           transitAdditionalPrice: transitAdditionalPriceValue,
+          // Data multi-segment
+          isMultiSegment: isMultiSegment || !!(sessionTrainDetail as any)?.isMultiSegment,
+          segments: (sessionTrainDetail as any)?.segments || [],
           // Data tambahan
           basePrice: basePriceValue
         };
@@ -423,18 +430,19 @@ const PaymentPageContent = () => {
         console.log('✅ Booking data loaded with transit:', {
           bookingCode: formattedData.bookingCode,
           passengerCount: formattedData.passengerCount,
-          transitStation: formattedData.transitStation,
+          isMultiSegment: formattedData.isMultiSegment,
+          segmentsCount: formattedData.segments?.length,
           transitDiscount: formattedData.transitDiscount,
           transitAdditionalPrice: formattedData.transitAdditionalPrice,
           discountAmount: formattedData.discountAmount,
           seatPremium: formattedData.seatPremium
         });
-        
+
         setBookingData(formattedData);
-        
+
         // Simpan ke sessionStorage
         sessionStorage.setItem('currentPayment', JSON.stringify(formattedData));
-        
+
         // Set payment method dari URL params jika ada
         if (paymentMethodParam && PAYMENT_METHODS.some(m => m.id === paymentMethodParam)) {
           setPaymentMethod(paymentMethodParam);
@@ -452,7 +460,7 @@ const PaymentPageContent = () => {
 
       } catch (error: any) {
         console.error('❌ Error loading booking data:', error);
-        
+
         // Fallback ke sessionStorage
         try {
           const sessionData = sessionStorage.getItem('currentPayment');
@@ -533,7 +541,7 @@ const PaymentPageContent = () => {
       try {
         paymentResponse = await fetch('/api/payment/create-transaction', {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
@@ -573,14 +581,14 @@ const PaymentPageContent = () => {
 
       if (paymentToken && window.snap) {
         console.log('🔗 Processing with Midtrans Snap...');
-        
+
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
         window.snap.pay(paymentToken, {
           onSuccess: async (result: any) => {
             console.log('✅ Payment success:', result);
             setPaymentStatus('success');
-            
+
             try {
               await fetch('/api/payment/update-status', {
                 method: 'POST',
@@ -595,13 +603,13 @@ const PaymentPageContent = () => {
             } catch (updateError) {
               console.warn('⚠️ Failed to update payment status:', updateError);
             }
-            
+
             router.push(`/payment/success?orderId=${bookingData.orderId}&bookingCode=${bookingData.bookingCode}`);
           },
           onPending: async (result: any) => {
             console.log('⏳ Payment pending:', result);
             setPaymentStatus('processing');
-            
+
             try {
               await fetch('/api/payment/update-status', {
                 method: 'POST',
@@ -616,7 +624,7 @@ const PaymentPageContent = () => {
             } catch (updateError) {
               console.warn('⚠️ Failed to update pending status:', updateError);
             }
-            
+
             router.push(`/payment/processing?orderId=${bookingData.orderId}&bookingCode=${bookingData.bookingCode}`);
           },
           onError: async (error: any) => {
@@ -633,11 +641,11 @@ const PaymentPageContent = () => {
             setMidtransLoading(false);
           }
         });
-        
+
       } else if (paymentUrl) {
         console.log('🔗 Redirecting to payment URL:', paymentUrl);
         window.location.href = paymentUrl;
-        
+
       } else {
         console.log('⚠️ No payment token or URL available');
         setProcessing(false);
@@ -647,9 +655,9 @@ const PaymentPageContent = () => {
 
     } catch (error: any) {
       console.error('💥 Payment process error:', error);
-      
+
       let userErrorMessage = 'Terjadi kesalahan saat memproses pembayaran';
-      
+
       if (error.message.includes('timeout')) {
         userErrorMessage = 'Waktu permintaan habis. Silakan coba lagi.';
       } else if (error.message.includes('network')) {
@@ -657,7 +665,7 @@ const PaymentPageContent = () => {
       } else {
         userErrorMessage = error.message || 'Terjadi kesalahan yang tidak diketahui';
       }
-      
+
       setErrorMessage(userErrorMessage);
       setProcessing(false);
       setMidtransLoading(false);
@@ -668,10 +676,10 @@ const PaymentPageContent = () => {
   // Fungsi untuk konfirmasi pembayaran manual
   const handleManualPaymentConfirmation = async () => {
     if (!bookingData) return;
-    
+
     try {
       setProcessing(true);
-      
+
       const response = await fetch('/api/payment/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -691,16 +699,16 @@ const PaymentPageContent = () => {
       if (!response.ok) {
         throw new Error('Gagal menyimpan konfirmasi');
       }
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         // Redirect ke konfirmasi manual
         router.push(`/payment/manual-confirmation?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&paymentMethod=${paymentMethod}&amount=${getTotalWithFees()}&bank=${selectedBank}&vaNumber=${paymentMethod === 'virtual-account' ? virtualAccountNumber : ''}`);
       } else {
         throw new Error(result.error || 'Gagal menyimpan konfirmasi');
       }
-      
+
     } catch (error) {
       console.error('Error updating manual payment:', error);
       setErrorMessage('Gagal menyimpan konfirmasi pembayaran. Silakan coba lagi.');
@@ -744,7 +752,7 @@ const PaymentPageContent = () => {
     console.log('✅ Midtrans Snap SDK loaded successfully');
     setScriptLoaded(true);
     setScriptError(false);
-    
+
     if (typeof window !== 'undefined') {
       (window as any).snap = (window as any).snap;
     }
@@ -759,7 +767,7 @@ const PaymentPageContent = () => {
   // Hitung total dengan biaya tambahan - FIXED: Perhitungan yang benar
   const getTotalWithFees = () => {
     if (!bookingData) return 0;
-    
+
     const basePrice = bookingData.basePrice || 265000;
     const passengerCountNum = bookingData.passengerCount || 1;
     const seatPremium = bookingData.seatPremium || 0;
@@ -768,22 +776,22 @@ const PaymentPageContent = () => {
     const adminFee = bookingData.adminFee || 5000;
     const insuranceFee = bookingData.insuranceFee || 10000;
     const discountAmount = bookingData.discountAmount || 0; // Diskon dari promo
-    
+
     // Biaya metode pembayaran
     const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
     const paymentFee = selectedMethod?.fees || 0;
-    
+
     // Perhitungan: 
     // (Harga dasar × jumlah penumpang) + seatPremium - transitDiscount + transitAdditionalPrice - promoDiscount + adminFee + insuranceFee + paymentFee
-    const total = (basePrice * passengerCountNum) + 
-                  seatPremium - 
-                  transitDiscount + 
-                  transitAdditionalPrice - 
-                  discountAmount + 
-                  adminFee + 
-                  insuranceFee + 
-                  paymentFee;
-    
+    const total = (basePrice * passengerCountNum) +
+      seatPremium -
+      transitDiscount +
+      transitAdditionalPrice -
+      discountAmount +
+      adminFee +
+      insuranceFee +
+      paymentFee;
+
     console.log('🧮 Total calculation:', {
       basePrice,
       passengerCount: passengerCountNum,
@@ -797,7 +805,7 @@ const PaymentPageContent = () => {
       paymentFee,
       total
     });
-    
+
     return total;
   };
 
@@ -817,7 +825,7 @@ const PaymentPageContent = () => {
         total: 0
       };
     }
-    
+
     const basePrice = bookingData.basePrice || 265000;
     const passengerCountNum = bookingData.passengerCount || 1;
     const seatPremium = bookingData.seatPremium || 0;
@@ -826,20 +834,20 @@ const PaymentPageContent = () => {
     const discountAmount = bookingData.discountAmount || 0; // Diskon dari promo
     const transitDiscount = bookingData.transitDiscount || 0; // Diskon transit 10%
     const transitAdditionalPrice = bookingData.transitAdditionalPrice || 0;
-    
+
     const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
     const paymentFee = selectedMethod?.fees || 0;
-    
+
     // Perhitungan total
-    const total = (basePrice * passengerCountNum) + 
-                  seatPremium - 
-                  transitDiscount + 
-                  transitAdditionalPrice - 
-                  discountAmount + 
-                  adminFee + 
-                  insuranceFee + 
-                  paymentFee;
-    
+    const total = (basePrice * passengerCountNum) +
+      seatPremium -
+      transitDiscount +
+      transitAdditionalPrice -
+      discountAmount +
+      adminFee +
+      insuranceFee +
+      paymentFee;
+
     return {
       basePrice,
       passengerCount: passengerCountNum,
@@ -857,9 +865,9 @@ const PaymentPageContent = () => {
   // Render transit information
   const renderTransitInfo = () => {
     if (!bookingData?.transitStation) return null;
-    
+
     const fareBreakdown = getFareBreakdown();
-    
+
     return (
       <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
         <div className="flex items-center mb-3">
@@ -901,40 +909,40 @@ const PaymentPageContent = () => {
   // Render bank details untuk transfer manual
   const renderBankDetails = () => {
     if (!bookingData || !showBankDetails) return null;
-    
+
     const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
     const bankOption = selectedMethod?.banks?.find(b => b.code === selectedBank);
-    
+
     if (!bankOption) return null;
-    
+
     // Generate account number based on bank
     const getAccountNumber = () => {
       if (paymentMethod === 'virtual-account') {
         return virtualAccountNumber;
       }
-      
+
       // For manual bank transfer
-      const bankCodes: {[key: string]: string} = {
+      const bankCodes: { [key: string]: string } = {
         'bca': '1234567890',
         'bni': '0987654321',
         'mandiri': '1122334455',
         'bri': '5566778899'
       };
-      
+
       return bankCodes[selectedBank] || '1234567890';
     };
-    
+
     const getAccountName = () => {
       return paymentMethod === 'virtual-account' ? `${bookingData.customerName.toUpperCase()}` : 'PT TripGo Indonesia';
     };
-    
+
     return (
       <div className="mt-6 p-6 bg-blue-50 border border-blue-200 rounded-xl">
         <div className="flex items-center mb-4">
           <InfoIcon />
           <h3 className="ml-3 font-bold text-blue-800 text-lg">Instruksi Pembayaran</h3>
         </div>
-        
+
         {paymentMethod === 'bank-transfer' ? (
           <div className="space-y-4">
             <div className="bg-white p-6 rounded-lg border border-gray-200">
@@ -958,7 +966,7 @@ const PaymentPageContent = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-lg border border-gray-200">
               <h4 className="font-semibold text-gray-700 mb-3">Langkah-langkah:</h4>
               <ol className="list-decimal list-inside space-y-2 text-gray-600 pl-2">
@@ -989,7 +997,7 @@ const PaymentPageContent = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-lg border border-gray-200">
               <h4 className="font-semibold text-gray-700 mb-3">Cara Bayar:</h4>
               <ol className="list-decimal list-inside space-y-2 text-gray-600 pl-2">
@@ -1003,7 +1011,7 @@ const PaymentPageContent = () => {
             </div>
           </div>
         ) : null}
-        
+
         <div className="mt-8 flex flex-col sm:flex-row gap-4">
           <button
             onClick={() => setShowBankDetails(false)}
@@ -1014,11 +1022,10 @@ const PaymentPageContent = () => {
           <button
             onClick={handleManualPaymentConfirmation}
             disabled={processing}
-            className={`flex-1 py-3.5 bg-[#FD7E14] text-white font-semibold rounded-xl transition-all ${
-              processing 
-                ? 'opacity-50 cursor-not-allowed' 
-                : 'hover:bg-[#E06700] shadow-lg hover:shadow-xl'
-            }`}
+            className={`flex-1 py-3.5 bg-[#FD7E14] text-white font-semibold rounded-xl transition-all ${processing
+              ? 'opacity-50 cursor-not-allowed'
+              : 'hover:bg-[#E06700] shadow-lg hover:shadow-xl'
+              }`}
           >
             {processing ? 'Memproses...' : 'Konfirmasi Pembayaran'}
           </button>
@@ -1045,7 +1052,7 @@ const PaymentPageContent = () => {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <header className="bg-white shadow-sm">
           <div className="max-w-6xl mx-auto px-4 py-4">
-            <button 
+            <button
               onClick={() => router.back()}
               className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
             >
@@ -1054,7 +1061,7 @@ const PaymentPageContent = () => {
             </button>
           </div>
         </header>
-        
+
         <main className="flex-grow flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1062,21 +1069,21 @@ const PaymentPageContent = () => {
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
             </div>
-            
+
             <h2 className="text-2xl font-bold text-gray-800 mb-2">Data Tidak Ditemukan</h2>
             <p className="text-gray-600 mb-6">
               {errorMessage || 'Data pemesanan tidak ditemukan. Silakan lakukan pemesanan ulang.'}
             </p>
-            
+
             <div className="space-y-3">
-              <Link 
+              <Link
                 href="/"
                 className="block w-full py-3 bg-[#FD7E14] text-white font-semibold rounded-xl hover:bg-[#E06700] transition-colors"
               >
                 Kembali ke Beranda
               </Link>
-              
-              <Link 
+
+              <Link
                 href="/booking"
                 className="block w-full py-3 border-2 border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
               >
@@ -1104,7 +1111,7 @@ const PaymentPageContent = () => {
         onLoad={handleScriptLoad}
         onError={handleScriptError}
       />
-      
+
       {/* Loading Overlay */}
       {(midtransLoading || processing) && !showBankDetails && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1114,8 +1121,8 @@ const PaymentPageContent = () => {
               {midtransLoading ? 'Menyiapkan Pembayaran...' : 'Memproses Pembayaran...'}
             </h3>
             <p className="text-gray-600 text-sm mb-2">
-              {midtransLoading 
-                ? 'Sedang menghubungkan ke sistem pembayaran...' 
+              {midtransLoading
+                ? 'Sedang menghubungkan ke sistem pembayaran...'
                 : 'Harap tunggu, mengarahkan ke halaman pembayaran...'
               }
             </p>
@@ -1123,12 +1130,12 @@ const PaymentPageContent = () => {
           </div>
         </div>
       )}
-      
+
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <header className="bg-white shadow-sm">
           <div className="max-w-6xl mx-auto px-4 py-4">
-            <button 
+            <button
               onClick={() => router.back()}
               className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
             >
@@ -1176,19 +1183,19 @@ const PaymentPageContent = () => {
               {/* Detail Pemesanan */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-6">Detail Pemesanan</h2>
-                
+
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <span className="text-gray-600">Kode Booking</span>
                       <p className="font-semibold font-mono text-lg text-gray-700">{bookingData.bookingCode}</p>
                     </div>
-                    
+
                     <div>
                       <span className="text-gray-600">Order ID</span>
                       <p className="font-semibold font-mono text-gray-700 text-sm">{bookingData.orderId}</p>
                     </div>
-                    
+
                     <div>
                       <span className="text-gray-600">Tanggal Pemesanan</span>
                       <p className="font-semibold text-gray-700">
@@ -1201,13 +1208,13 @@ const PaymentPageContent = () => {
                         })}
                       </p>
                     </div>
-                    
+
                     <div>
                       <span className="text-gray-600">Status</span>
                       <p className="font-semibold text-orange-600">Menunggu Pembayaran</p>
                     </div>
                   </div>
-                  
+
                   {/* Detail Perjalanan */}
                   <div className="border-t pt-6">
                     <h3 className="font-semibold text-gray-700 mb-4">Detail Perjalanan</h3>
@@ -1221,10 +1228,9 @@ const PaymentPageContent = () => {
                             <div className="ml-4">
                               <h3 className="font-bold text-lg text-gray-800">{bookingData.trainDetail.trainName}</h3>
                               <div className="flex items-center mt-1">
-                                <span className={`px-2 py-1 text-xs rounded font-medium ${
-                                  bookingData.trainDetail.trainType === 'Executive' ? 'bg-blue-100 text-blue-800' :
+                                <span className={`px-2 py-1 text-xs rounded font-medium ${bookingData.trainDetail.trainType === 'Executive' ? 'bg-blue-100 text-blue-800' :
                                   'bg-gray-100 text-gray-800'
-                                }`}>
+                                  }`}>
                                   {bookingData.trainDetail.trainType}
                                 </span>
                               </div>
@@ -1232,7 +1238,7 @@ const PaymentPageContent = () => {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="grid grid-cols-3 gap-4 py-6 border-y">
                         <div>
                           <div className="flex items-center text-gray-600 mb-1">
@@ -1243,7 +1249,7 @@ const PaymentPageContent = () => {
                             {formatDate(bookingData.trainDetail.departureDate)}
                           </p>
                         </div>
-                        
+
                         <div className="text-center">
                           <div className="flex items-center justify-center text-gray-600 mb-1">
                             <ClockIcon />
@@ -1251,7 +1257,7 @@ const PaymentPageContent = () => {
                           </div>
                           <p className="font-semibold text-gray-800">5j 0m</p>
                         </div>
-                        
+
                         <div className="text-right">
                           <div className="flex items-center justify-end text-gray-600 mb-1">
                             <UserIcon />
@@ -1260,40 +1266,73 @@ const PaymentPageContent = () => {
                           <p className="font-semibold text-gray-800">{bookingData.passengerCount || 1} orang</p>
                         </div>
                       </div>
-                      
+
                       {/* Transit Information */}
                       {renderTransitInfo()}
-                      
-                      <div className="pt-6">
-                        <div className="flex items-center justify-between">
-                          <div className="text-center">
-                            <p className="text-2xl font-bold text-gray-800">{bookingData.trainDetail.departureTime}</p>
-                            <p className="text-gray-600 mt-1">{bookingData.trainDetail.origin}</p>
-                          </div>
-                          
-                          <div className="text-center flex-1 mx-8">
-                            <div className="relative">
-                              <div className="h-0.5 bg-gray-300 w-full"></div>
-                              <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-gray-400 rounded-full"></div>
-                              <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-gray-400 rounded-full"></div>
-                              <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                                <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                                </svg>
+
+                      {/* Multi-Segment Detailed Display */}
+                      {bookingData.isMultiSegment && bookingData.segments && bookingData.segments.length > 0 ? (
+                        <div className="space-y-4 mt-6">
+                          {bookingData.segments.map((segment: any, index: number) => (
+                            <div key={index} className="bg-white rounded-lg border p-4 shadow-sm">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                                  Segmen {index + 1}
+                                </span>
+                                <span className="text-xs font-medium text-gray-500">
+                                  {segment.trainName} ({segment.trainType})
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between border-t pt-3">
+                                <div className="text-center sm:text-left">
+                                  <p className="text-sm font-bold text-gray-900">{segment.departureTime}</p>
+                                  <p className="text-xs text-gray-600">{segment.origin}</p>
+                                </div>
+                                <div className="flex-1 px-4 flex items-center justify-center">
+                                  <div className="h-0.5 bg-gray-200 w-full relative">
+                                    <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-gray-300 rounded-full"></div>
+                                  </div>
+                                </div>
+                                <div className="text-center sm:text-right">
+                                  <p className="text-sm font-bold text-gray-900">{segment.arrivalTime}</p>
+                                  <p className="text-xs text-gray-600">{segment.destination}</p>
+                                </div>
                               </div>
                             </div>
-                            <p className="text-xs text-gray-500 mt-2">5j 0m</p>
-                          </div>
-                          
-                          <div className="text-center">
-                            <p className="text-2xl font-bold text-gray-800">{bookingData.trainDetail.arrivalTime}</p>
-                            <p className="text-gray-600 mt-1">{bookingData.trainDetail.destination}</p>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="pt-6">
+                          <div className="flex items-center justify-between">
+                            <div className="text-center">
+                              <p className="text-2xl font-bold text-gray-800">{bookingData.trainDetail.departureTime}</p>
+                              <p className="text-gray-600 mt-1">{bookingData.trainDetail.origin}</p>
+                            </div>
+
+                            <div className="text-center flex-1 mx-8">
+                              <div className="relative">
+                                <div className="h-0.5 bg-gray-300 w-full"></div>
+                                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-gray-400 rounded-full"></div>
+                                <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-gray-400 rounded-full"></div>
+                                <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                                  <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                </div>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-2">5j 0m</p>
+                            </div>
+
+                            <div className="text-center">
+                              <p className="text-2xl font-bold text-gray-800">{bookingData.trainDetail.arrivalTime}</p>
+                              <p className="text-gray-600 mt-1">{bookingData.trainDetail.destination}</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
-                  
+
                   {/* Penumpang */}
                   <div>
                     <h3 className="font-semibold text-gray-700 mb-4">Penumpang</h3>
@@ -1334,16 +1373,15 @@ const PaymentPageContent = () => {
               {!showBankDetails && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <h2 className="text-xl font-bold text-gray-800 mb-6">Pilih Metode Pembayaran</h2>
-                  
+
                   <div className="space-y-4">
                     {PAYMENT_METHODS.map((method) => (
                       <div key={method.id}>
-                        <div 
-                          className={`border rounded-xl p-5 cursor-pointer transition-all hover:border-orange-300 ${
-                            paymentMethod === method.id 
-                              ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-100' 
-                              : 'border-gray-300'
-                          }`}
+                        <div
+                          className={`border rounded-xl p-5 cursor-pointer transition-all hover:border-orange-300 ${paymentMethod === method.id
+                            ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-100'
+                            : 'border-gray-300'
+                            }`}
                           onClick={() => {
                             setPaymentMethod(method.id);
                             if (method.banks && method.banks.length > 0) {
@@ -1353,14 +1391,13 @@ const PaymentPageContent = () => {
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
-                              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 ${
-                                paymentMethod === method.id ? 'border-orange-500 bg-orange-500' : 'border-gray-400'
-                              }`}>
+                              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 ${paymentMethod === method.id ? 'border-orange-500 bg-orange-500' : 'border-gray-400'
+                                }`}>
                                 {paymentMethod === method.id && (
                                   <div className="w-2 h-2 rounded-full bg-white"></div>
                                 )}
                               </div>
-                              
+
                               <div className="flex items-center">
                                 <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mr-4">
                                   <span className="text-2xl">{method.icon}</span>
@@ -1371,7 +1408,7 @@ const PaymentPageContent = () => {
                                 </div>
                               </div>
                             </div>
-                            
+
                             {method.fees > 0 ? (
                               <span className="text-gray-600 font-medium">
                                 +{formatCurrency(method.fees)}
@@ -1380,19 +1417,18 @@ const PaymentPageContent = () => {
                               <span className="text-green-600 font-medium">Gratis</span>
                             )}
                           </div>
-                          
+
                           {paymentMethod === method.id && method.banks && method.banks.length > 0 && (
                             <div className="mt-4 ml-14 pl-2">
                               <p className="text-sm text-gray-600 mb-3">Pilih Bank:</p>
                               <div className="flex flex-wrap gap-2">
                                 {method.banks.map(bank => (
-                                  <div 
-                                    key={`bank-${bank.code}`} 
-                                    className={`px-4 py-2 bg-white border rounded-lg text-sm transition-colors cursor-pointer ${
-                                      selectedBank === bank.code
-                                        ? 'border-orange-500 text-orange-700 bg-orange-50' 
-                                        : 'border-gray-300 text-gray-700 hover:border-orange-300 hover:text-orange-700'
-                                    }`}
+                                  <div
+                                    key={`bank-${bank.code}`}
+                                    className={`px-4 py-2 bg-white border rounded-lg text-sm transition-colors cursor-pointer ${selectedBank === bank.code
+                                      ? 'border-orange-500 text-orange-700 bg-orange-50'
+                                      : 'border-gray-300 text-gray-700 hover:border-orange-300 hover:text-orange-700'
+                                      }`}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedBank(bank.code);
@@ -1414,11 +1450,10 @@ const PaymentPageContent = () => {
                     <button
                       onClick={handlePayment}
                       disabled={processing || (!scriptLoaded && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet'))}
-                      className={`w-full py-4 rounded-xl font-bold transition-all text-lg ${
-                        processing || (!scriptLoaded && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet'))
-                          ? 'bg-gray-300 cursor-not-allowed text-gray-500' 
-                          : 'bg-[#FD7E14] text-white hover:bg-[#E06700] shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-                      }`}
+                      className={`w-full py-4 rounded-xl font-bold transition-all text-lg ${processing || (!scriptLoaded && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet'))
+                        ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                        : 'bg-[#FD7E14] text-white hover:bg-[#E06700] shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+                        }`}
                     >
                       {processing ? (
                         <div className="flex items-center justify-center">
@@ -1429,7 +1464,7 @@ const PaymentPageContent = () => {
                         `Bayar ${formatCurrency(fareBreakdown.total)}`
                       )}
                     </button>
-                    
+
                     {!scriptLoaded && (paymentMethod === 'credit-card' || paymentMethod === 'e-wallet') && (
                       <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
                         <div className="flex items-center justify-center">
@@ -1450,7 +1485,7 @@ const PaymentPageContent = () => {
             <div className="lg:col-span-1">
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-6">Ringkasan Pembayaran</h2>
-                
+
                 <div className="space-y-6">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Total Tagihan</span>
@@ -1458,7 +1493,7 @@ const PaymentPageContent = () => {
                       {formatCurrency(fareBreakdown.total)}
                     </span>
                   </div>
-                  
+
                   {/* Detail Biaya */}
                   <div className="border-t pt-6">
                     <h3 className="font-semibold text-gray-700 mb-4">Detail Biaya</h3>
@@ -1467,52 +1502,52 @@ const PaymentPageContent = () => {
                         <span className="text-gray-600">Tiket Kereta ({fareBreakdown.passengerCount} orang)</span>
                         <span>{formatCurrency(fareBreakdown.basePrice * fareBreakdown.passengerCount)}</span>
                       </div>
-                      
+
                       {fareBreakdown.seatPremium > 0 && (
                         <div className="flex justify-between text-gray-700">
                           <span className="text-gray-600">Tambahan kursi premium</span>
                           <span className="text-green-600">+{formatCurrency(fareBreakdown.seatPremium)}</span>
                         </div>
                       )}
-                      
+
                       {bookingData.transitStation && fareBreakdown.transitAdditionalPrice > 0 && (
                         <div className="flex justify-between text-gray-700">
                           <span className="text-gray-600">Biaya tambahan transit</span>
                           <span className="text-green-600">+{formatCurrency(fareBreakdown.transitAdditionalPrice)}</span>
                         </div>
                       )}
-                      
+
                       {fareBreakdown.transitDiscount > 0 && (
                         <div className="flex justify-between text-gray-700">
                           <span className="text-gray-600">Diskon Transit (10%)</span>
                           <span className="text-red-600">-{formatCurrency(fareBreakdown.transitDiscount)}</span>
                         </div>
                       )}
-                      
+
                       {fareBreakdown.discountAmount > 0 && (
                         <div className="flex justify-between text-gray-700">
                           <span className="text-gray-600">Diskon Promo</span>
                           <span className="text-red-600">-{formatCurrency(fareBreakdown.discountAmount)}</span>
                         </div>
                       )}
-                      
+
                       <div className="flex justify-between text-gray-700">
                         <span className="text-gray-600">Biaya Admin</span>
                         <span>{formatCurrency(fareBreakdown.adminFee)}</span>
                       </div>
-                      
+
                       <div className="flex justify-between text-gray-700">
                         <span className="text-gray-600">Asuransi Perjalanan</span>
                         <span>{formatCurrency(fareBreakdown.insuranceFee)}</span>
                       </div>
-                      
+
                       {fareBreakdown.paymentFee > 0 && (
                         <div className="flex justify-between text-gray-700">
                           <span className="text-gray-600">Biaya Pembayaran</span>
                           <span className="text-gray-600">+{formatCurrency(fareBreakdown.paymentFee)}</span>
                         </div>
                       )}
-                      
+
                       {/* Summary */}
                       <div className="pt-3 border-t mt-3">
                         <div className="flex justify-between font-bold text-gray-800">
@@ -1528,7 +1563,7 @@ const PaymentPageContent = () => {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Booking Info */}
                   <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                     <div className="space-y-2">
@@ -1556,7 +1591,7 @@ const PaymentPageContent = () => {
                       )}
                     </div>
                   </div>
-                  
+
                   {/* Contact Info */}
                   <div className="mt-6 p-4 bg-blue-50 rounded-lg">
                     <h4 className="font-semibold text-blue-800 mb-2">Kontak Utama</h4>
@@ -1566,7 +1601,7 @@ const PaymentPageContent = () => {
                       <div>{bookingData.customerPhone}</div>
                     </div>
                   </div>
-                  
+
                   {/* Informasi Penting */}
                   <div className="border-t pt-6">
                     <h3 className="font-bold text-gray-700 mb-4">Informasi Penting</h3>
@@ -1591,14 +1626,14 @@ const PaymentPageContent = () => {
                       </li>
                     </ul>
                   </div>
-                  
+
                   {/* Butuh Bantuan */}
                   <div className="border-t pt-6">
                     <h3 className="font-semibold text-gray-700 mb-3">Butuh Bantuan?</h3>
                     <p className="text-sm text-gray-600 mb-4">
                       Hubungi kami di <span className="font-semibold">1500-123</span> atau email <span className="font-semibold">support@tripgo.com</span>
                     </p>
-                    
+
                     <button
                       onClick={() => router.push(`/payment/fallback?bookingCode=${bookingData.bookingCode}&orderId=${bookingData.orderId}&amount=${fareBreakdown.total}&name=${encodeURIComponent(bookingData.customerName)}&email=${encodeURIComponent(bookingData.customerEmail)}`)}
                       className="w-full py-2.5 text-sm border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"

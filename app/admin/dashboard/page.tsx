@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/contexts/AuthContext';
-import { 
-  Users, 
-  Ticket, 
-  CreditCard, 
+import { supabase } from '@/app/lib/supabaseClient';
+import {
+  Users,
+  Ticket,
+  CreditCard,
   TrendingUp,
   Calendar,
   Train,
@@ -35,7 +36,7 @@ interface DashboardStats {
 }
 
 interface RecentActivity {
-  id: number;
+  id: string | number;
   type: 'user' | 'booking' | 'transaction' | 'train' | 'promotion';
   description: string;
   time: string;
@@ -60,36 +61,89 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate API calls
     const fetchDashboardData = async () => {
-      setLoading(true);
-      
-      // In a real app, fetch these from API
-      setTimeout(() => {
+      try {
+        setLoading(true);
+
+        const [
+          usersRes,
+          bookingsRes,
+          revenueRes,
+          activeUsersRes,
+          trainsRes,
+          stationsRes,
+          pendingRes,
+          promotionsRes,
+          recentBookingsRes,
+          recentUsersRes
+        ] = await Promise.all([
+          supabase.from('users').select('*', { count: 'exact', head: true }),
+          supabase.from('bookings_kereta').select('*', { count: 'exact', head: true }),
+          supabase.from('bookings_kereta').select('total_amount').eq('status', 'confirmed'),
+          supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
+          supabase.from('kereta').select('*', { count: 'exact', head: true }).eq('is_active', true),
+          supabase.from('stasiun').select('*', { count: 'exact', head: true }).eq('is_active', true),
+          supabase.from('bookings_kereta').select('*', { count: 'exact', head: true }).eq('payment_status', 'pending'),
+          supabase.from('promotions').select('*', { count: 'exact', head: true }).eq('is_active', true),
+          supabase.from('bookings_kereta').select('*, users(name, email)').order('created_at', { ascending: false }).limit(5),
+          supabase.from('users').select('*').order('created_at', { ascending: false }).limit(5)
+        ]);
+
+        const totalRevenue = revenueRes.data?.reduce((acc: number, curr: any) => acc + (curr.total_amount || 0), 0) || 0;
+
         setStats({
-          totalUsers: 156,
-          totalBookings: 1243,
-          totalRevenue: 245800000,
-          activeUsers: 89,
-          totalTrains: 24,
-          totalStations: 48,
-          pendingTransactions: 12,
-          activePromotions: 8
+          totalUsers: usersRes.count || 0,
+          totalBookings: bookingsRes.count || 0,
+          totalRevenue: totalRevenue,
+          activeUsers: activeUsersRes.count || 0,
+          totalTrains: trainsRes.count || 0,
+          totalStations: stationsRes.count || 0,
+          pendingTransactions: pendingRes.count || 0,
+          activePromotions: promotionsRes.count || 0
         });
 
-        setRecentActivity([
-          { id: 1, type: 'user', description: 'New user registered', time: '5 min ago', user: 'john.doe@email.com', status: 'success' },
-          { id: 2, type: 'booking', description: 'Booking confirmed', time: '15 min ago', user: 'sarah.wong@email.com', status: 'success' },
-          { id: 3, type: 'transaction', description: 'Payment pending', time: '30 min ago', user: 'mike.ross@email.com', status: 'pending' },
-          { id: 4, type: 'train', description: 'Train schedule updated', time: '1 hour ago', status: 'success' },
-          { id: 5, type: 'promotion', description: 'New promotion created', time: '2 hours ago', status: 'success' },
-        ]);
-        
+        // Merge recent bookings and users for "Recent Activity"
+        const bookingsActivity: RecentActivity[] = (recentBookingsRes.data || []).map((b: any) => ({
+          id: b.id,
+          type: 'booking',
+          description: `Booking ${b.booking_code} ${b.status}`,
+          time: new Date(b.created_at).toLocaleDateString(),
+          user: b.customer_email || 'Unknown',
+          status: b.status === 'confirmed' || b.status === 'completed' ? 'success' : b.status === 'pending' ? 'pending' : 'error'
+        }));
+
+        const usersActivity: RecentActivity[] = (recentUsersRes.data || []).map((u: any) => ({
+          id: u.id,
+          type: 'user',
+          description: 'New user registered',
+          time: new Date(u.created_at).toLocaleDateString(),
+          user: u.email,
+          status: 'success'
+        }));
+
+        setRecentActivity(bookingsActivity as any[]);
+
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      } finally {
         setLoading(false);
-      }, 1000);
+      }
     };
 
     fetchDashboardData();
+
+    // Realtime subscription
+    const channel = supabase.channel('admin-dashboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings_kereta' }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_transactions' }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kereta' }, () => fetchDashboardData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stasiun' }, () => fetchDashboardData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleNavigation = (path: string) => {
@@ -97,7 +151,7 @@ export default function AdminDashboard() {
   };
 
   const getStatusColor = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'success': return 'bg-green-100 text-green-800';
       case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'error': return 'bg-red-100 text-red-800';
@@ -106,7 +160,7 @@ export default function AdminDashboard() {
   };
 
   const getIconColor = (type: string) => {
-    switch(type) {
+    switch (type) {
       case 'user': return 'text-blue-600 bg-blue-100';
       case 'booking': return 'text-green-600 bg-green-100';
       case 'transaction': return 'text-purple-600 bg-purple-100';
@@ -117,7 +171,7 @@ export default function AdminDashboard() {
   };
 
   const getTypeIcon = (type: string) => {
-    switch(type) {
+    switch (type) {
       case 'user': return <Users className="w-4 h-4" />;
       case 'booking': return <Ticket className="w-4 h-4" />;
       case 'transaction': return <CreditCard className="w-4 h-4" />;
@@ -171,7 +225,7 @@ export default function AdminDashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div 
+        <div
           className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleNavigation('/admin/users')}
         >
@@ -185,7 +239,7 @@ export default function AdminDashboard() {
           <p className="text-gray-600 text-sm">Total Users</p>
         </div>
 
-        <div 
+        <div
           className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleNavigation('/admin/bookings')}
         >
@@ -199,7 +253,7 @@ export default function AdminDashboard() {
           <p className="text-gray-600 text-sm">Total Bookings</p>
         </div>
 
-        <div 
+        <div
           className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleNavigation('/admin/transactions')}
         >
@@ -232,7 +286,7 @@ export default function AdminDashboard() {
 
       {/* Secondary Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div 
+        <div
           className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleNavigation('/admin/trains')}
         >
@@ -245,7 +299,7 @@ export default function AdminDashboard() {
           <p className="text-gray-600 text-sm">Active Trains</p>
         </div>
 
-        <div 
+        <div
           className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleNavigation('/admin/stations')}
         >
@@ -258,7 +312,7 @@ export default function AdminDashboard() {
           <p className="text-gray-600 text-sm">Stations</p>
         </div>
 
-        <div 
+        <div
           className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleNavigation('/admin/promotions')}
         >
@@ -271,7 +325,7 @@ export default function AdminDashboard() {
           <p className="text-gray-600 text-sm">Active Promotions</p>
         </div>
 
-        <div 
+        <div
           className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => handleNavigation('/admin/notifications')}
         >
@@ -295,7 +349,7 @@ export default function AdminDashboard() {
               <span className="text-sm text-gray-500">Manage all aspects</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/users')}
                 className="p-4 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 text-left transition-all hover:scale-[1.02]"
               >
@@ -305,7 +359,7 @@ export default function AdminDashboard() {
                 </div>
                 <p className="text-sm text-gray-600">View and manage all user accounts</p>
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/bookings')}
                 className="p-4 bg-green-50 hover:bg-green-100 rounded-lg border border-green-200 text-left transition-all hover:scale-[1.02]"
               >
@@ -315,7 +369,7 @@ export default function AdminDashboard() {
                 </div>
                 <p className="text-sm text-gray-600">See all bookings and reservations</p>
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/trains/transactions')}
                 className="p-4 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 text-left transition-all hover:scale-[1.02]"
               >
@@ -325,7 +379,7 @@ export default function AdminDashboard() {
                 </div>
                 <p className="text-sm text-gray-600">Monitor payment transactions</p>
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/trains')}
                 className="p-4 bg-orange-50 hover:bg-orange-100 rounded-lg border border-orange-200 text-left transition-all hover:scale-[1.02]"
               >
@@ -335,7 +389,7 @@ export default function AdminDashboard() {
                 </div>
                 <p className="text-sm text-gray-600">Add and update train schedules</p>
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/promotions')}
                 className="p-4 bg-pink-50 hover:bg-pink-100 rounded-lg border border-pink-200 text-left transition-all hover:scale-[1.02]"
               >
@@ -345,7 +399,7 @@ export default function AdminDashboard() {
                 </div>
                 <p className="text-sm text-gray-600">Create and manage discounts</p>
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/analytics')}
                 className="p-4 bg-cyan-50 hover:bg-cyan-100 rounded-lg border border-cyan-200 text-left transition-all hover:scale-[1.02]"
               >
@@ -362,7 +416,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-800">Recent Activity</h2>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/notifications')}
                 className="text-sm text-blue-600 hover:text-blue-800 font-medium"
               >
@@ -461,7 +515,7 @@ export default function AdminDashboard() {
           <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-blue-800">Admin Information</h3>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/settings')}
                 className="text-blue-600 hover:text-blue-800"
               >
@@ -499,28 +553,28 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
             <h3 className="font-semibold text-gray-800 mb-4">Quick Links</h3>
             <div className="space-y-2">
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/analytics')}
                 className="flex items-center text-sm text-gray-600 hover:text-blue-600 w-full p-2 rounded hover:bg-blue-50 transition-colors"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
                 Analytics Reports
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/promotions/create')}
                 className="flex items-center text-sm text-gray-600 hover:text-green-600 w-full p-2 rounded hover:bg-green-50 transition-colors"
               >
                 <Tag className="w-4 h-4 mr-2" />
                 Create Promotion
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/test')}
                 className="flex items-center text-sm text-gray-600 hover:text-orange-600 w-full p-2 rounded hover:bg-orange-50 transition-colors"
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Test Pages
               </button>
-              <button 
+              <button
                 onClick={() => handleNavigation('/admin/settings')}
                 className="flex items-center text-sm text-gray-600 hover:text-purple-600 w-full p-2 rounded hover:bg-purple-50 transition-colors"
               >

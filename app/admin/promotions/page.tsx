@@ -48,7 +48,7 @@ export default function AdminPromotions() {
   useAdminRoute();
   const router = useRouter();
   const { userProfile, loading: authLoading } = useAuth();
-  
+
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,8 +95,8 @@ export default function AdminPromotions() {
         switch (statusFilter) {
           case 'active':
             query = query.eq('is_active', true)
-                        .lte('start_date', now)
-                        .gte('end_date', now);
+              .lte('start_date', now)
+              .gte('end_date', now);
             break;
           case 'inactive':
             query = query.eq('is_active', false);
@@ -189,6 +189,18 @@ export default function AdminPromotions() {
     if (!authLoading) {
       fetchPromotions();
       fetchStats();
+
+      // Realtime subscription for promotions
+      const channel = supabase.channel('admin-promotions-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'promotions' }, () => {
+          fetchPromotions();
+          fetchStats();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [authLoading, fetchPromotions, fetchStats]);
 
@@ -198,7 +210,7 @@ export default function AdminPromotions() {
     try {
       const { error } = await supabase
         .from('promotions')
-        .update({ 
+        .update({
           is_active: !promotionToToggle.is_active,
           updated_at: new Date().toISOString()
         })
@@ -208,7 +220,7 @@ export default function AdminPromotions() {
 
       // Refresh data
       await Promise.all([fetchPromotions(), fetchStats()]);
-      
+
       setShowToggleModal(false);
       setPromotionToToggle(null);
 
@@ -230,7 +242,7 @@ export default function AdminPromotions() {
 
       // Refresh data
       await Promise.all([fetchPromotions(), fetchStats()]);
-      
+
       setShowDeleteModal(false);
       setPromotionToDelete(null);
 
@@ -516,7 +528,7 @@ export default function AdminPromotions() {
                     <td className="px-6 py-4">
                       <div>
                         <div className="font-semibold text-gray-900">
-                          {promotion.discount_type === 'percentage' 
+                          {promotion.discount_type === 'percentage'
                             ? `${promotion.discount_value}%`
                             : formatCurrency(promotion.discount_value)
                           }
@@ -550,7 +562,7 @@ export default function AdminPromotions() {
                           {promotion.usage_count} / {promotion.usage_limit || '∞'}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {promotion.usage_limit 
+                          {promotion.usage_limit
                             ? `${Math.round((promotion.usage_count / promotion.usage_limit) * 100)}% used`
                             : 'No limit'
                           }
@@ -571,7 +583,7 @@ export default function AdminPromotions() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => router.push(`/admin/promotions/${promotion.id}/edit`)}
                           className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
@@ -579,7 +591,7 @@ export default function AdminPromotions() {
                         >
                           <Edit className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => {
                             setPromotionToToggle(promotion);
@@ -594,7 +606,7 @@ export default function AdminPromotions() {
                             <CheckCircle className="w-4 h-4" />
                           )}
                         </button>
-                        
+
                         <button
                           onClick={() => {
                             setPromotionToDelete(promotion.id);
@@ -633,7 +645,7 @@ export default function AdminPromotions() {
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
-                
+
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum;
                   if (totalPages <= 5) {
@@ -645,7 +657,7 @@ export default function AdminPromotions() {
                   } else {
                     pageNum = currentPage - 2 + i;
                   }
-                  
+
                   return (
                     <button
                       key={pageNum}
@@ -656,7 +668,7 @@ export default function AdminPromotions() {
                     </button>
                   );
                 })}
-                
+
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
@@ -689,14 +701,14 @@ export default function AdminPromotions() {
                 <p className="text-sm text-gray-600">{promotionToToggle.name}</p>
               </div>
             </div>
-            
+
             <p className="text-gray-700 mb-6">
-              {promotionToToggle.is_active 
+              {promotionToToggle.is_active
                 ? 'Are you sure you want to deactivate this promotion? It will no longer be available for users.'
                 : 'Are you sure you want to activate this promotion? It will become available for users.'
               }
             </p>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -731,11 +743,11 @@ export default function AdminPromotions() {
                 <p className="text-sm text-gray-600">This action cannot be undone</p>
               </div>
             </div>
-            
+
             <p className="text-gray-700 mb-6">
               Are you sure you want to delete this promotion? All associated data will be permanently removed.
             </p>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {

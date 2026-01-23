@@ -4,11 +4,11 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { 
-  TicketIcon, 
-  CalendarIcon, 
-  ClockIcon, 
-  UserIcon, 
+import {
+  TicketIcon,
+  CalendarIcon,
+  ClockIcon,
+  UserIcon,
   CheckCircleIcon,
   XCircleIcon,
   ArrowRightIcon,
@@ -149,7 +149,7 @@ const formatSelectedSeats = (selectedSeats: any): string[] => {
   if (!selectedSeats || selectedSeats === 'null' || selectedSeats === 'undefined') {
     return [];
   }
-  
+
   try {
     if (typeof selectedSeats === 'string') {
       if (selectedSeats.includes('[')) {
@@ -170,7 +170,7 @@ const formatSelectedSeats = (selectedSeats: any): string[] => {
       }
       return selectedSeats.split(',').map((s: string) => s.trim()).filter(Boolean);
     }
-    
+
     if (Array.isArray(selectedSeats)) {
       return selectedSeats.map(seat => {
         if (typeof seat === 'string') return seat.trim();
@@ -180,7 +180,7 @@ const formatSelectedSeats = (selectedSeats: any): string[] => {
         return String(seat).trim();
       }).filter(Boolean);
     }
-    
+
     return [];
   } catch (error) {
     console.error('Error formatting seats:', error);
@@ -193,10 +193,10 @@ const getTrainDisplayName = (booking: Booking): string => {
   if (booking.train_name && booking.train_name !== 'Kereta Api' && booking.train_name !== 'Train') {
     return booking.train_name;
   }
-  
+
   if (booking.train_code) {
     const code = booking.train_code.toUpperCase();
-    
+
     const trainMappings: Record<string, string> = {
       'KA-01': 'Argo Wilis',
       'KA-02': 'Argo Parahyangan',
@@ -219,14 +219,14 @@ const getTrainDisplayName = (booking: Booking): string => {
       'KA-19': 'Gajah Wong',
       'KA-20': 'Jaka Tingkir',
     };
-    
+
     if (trainMappings[code]) {
       return trainMappings[code];
     }
-    
+
     return `Kereta ${code}`;
   }
-  
+
   return booking.train_name || 'Kereta Api';
 };
 
@@ -242,11 +242,11 @@ const getTrainClassDisplay = (trainClass?: string, trainType?: string): string =
       'executive_premium': 'Eksekutif Premium',
       'business_premium': 'Bisnis Premium'
     };
-    
+
     const lowerClass = trainClass.toLowerCase();
     return classMappings[lowerClass] || trainClass;
   }
-  
+
   if (trainType) {
     const typeMappings: Record<string, string> = {
       'executive': 'Eksekutif',
@@ -254,11 +254,11 @@ const getTrainClassDisplay = (trainClass?: string, trainType?: string): string =
       'business': 'Bisnis',
       'premium': 'Premium'
     };
-    
+
     const lowerType = trainType.toLowerCase();
     return typeMappings[lowerType] || trainType;
   }
-  
+
   return 'Ekonomi';
 };
 
@@ -278,7 +278,7 @@ const getTrainOperator = (trainName: string): string => {
     'Lodaya': 'PT. Kereta Api Indonesia (KAI)',
     'Malabar': 'PT. Kereta Api Indonesia (KAI)',
   };
-  
+
   return operators[trainName] || 'PT. Kereta Api Indonesia (KAI)';
 };
 
@@ -287,13 +287,13 @@ const calculateTripDuration = (departureTime: string, arrivalTime: string): stri
   try {
     const [depHour, depMin] = departureTime.split(':').map(Number);
     const [arrHour, arrMin] = arrivalTime.split(':').map(Number);
-    
+
     let totalMinutes = (arrHour * 60 + arrMin) - (depHour * 60 + depMin);
     if (totalMinutes < 0) totalMinutes += 24 * 60;
-    
+
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    
+
     if (hours === 0) return `${minutes}m`;
     if (minutes === 0) return `${hours}j`;
     return `${hours}j ${minutes}m`;
@@ -314,13 +314,13 @@ const formatDateForInvoice = (dateString: string): string => {
     const day = date.getDate().toString().padStart(2, '0');
     const month = date.toLocaleDateString('id-ID', { month: 'long' });
     const year = date.getFullYear();
-    const time = date.toLocaleTimeString('id-ID', { 
-      hour: '2-digit', 
+    const time = date.toLocaleTimeString('id-ID', {
+      hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false 
+      hour12: false
     });
-    
+
     // Format: "17 Januari 2026 | 02.40.48"
     return `${day} ${month} ${year} | ${time.replace(/:/g, '.')}`;
   } catch (error) {
@@ -330,8 +330,8 @@ const formatDateForInvoice = (dateString: string): string => {
 };
 
 const formatCurrencyForPDF = (amount: number): string => {
-  return `Rp ${amount.toLocaleString('id-ID', { 
-    minimumFractionDigits: 0, 
+  return `Rp ${amount.toLocaleString('id-ID', {
+    minimumFractionDigits: 0,
     maximumFractionDigits: 0,
     useGrouping: true
   })}`;
@@ -340,244 +340,217 @@ const formatCurrencyForPDF = (amount: number): string => {
 const downloadInvoicePDF = async (booking: Booking) => {
   try {
     const doc = new jsPDF();
-    
-    // Logo dan Header - Warna orange dari TripGo
-    doc.setFillColor(253, 126, 20); // #FD7E14
-    doc.rect(0, 0, 210, 25, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.setFont('helvetica', 'bold');
-    doc.text('TRIPGO', 105, 12, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text('RAILWAY SERVICES', 105, 18, { align: 'center' });
-    
-    // Invoice Title
-    doc.setTextColor(40, 40, 40);
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('INVOICE', 105, 35, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Official Railway Ticket Invoice', 105, 42, { align: 'center' });
-    
-    // Garis pemisah tipis
-    doc.setDrawColor(220, 220, 220);
-    doc.line(15, 48, 195, 48);
-    
-    // Bill To Section - Seperti di screenshot
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text('BILL TO (PASSENGER):', 15, 58);
-    
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'bold');
-    doc.text(booking.passenger_name || 'Penumpang', 15, 65);
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 100, 100);
-    doc.text('Type:', 15, 72);
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text('Train Passenger', 15, 79);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text('Server:', 15, 86);
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text('railway.tripgo.id', 15, 93);
-    
-    // Payment Date dan Transaction ID - Di sebelah kanan
-    const paymentDate = booking.created_at || new Date().toISOString();
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text('Payment Date:', 115, 58);
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text(formatDateForInvoice(paymentDate), 115, 65);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text('Transaction ID:', 115, 72);
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text(booking.transaction_id || booking.booking_code || `TRX${Date.now().toString().slice(-6)}`, 115, 79);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text('Status:', 115, 86);
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
     const isPaid = booking.payment_status === 'paid' || booking.status === 'confirmed';
-    doc.setTextColor(isPaid ? [0, 150, 0] : [200, 0, 0]); // Hijau untuk LUNAS, merah untuk pending
-    doc.text(isPaid ? 'LUNAS' : 'PENDING', 115, 93);
-    
-    // Garis pemisah sebelum product description
-    doc.setDrawColor(220, 220, 220);
-    doc.line(15, 100, 195, 100);
-    
-    // PRODUCT DESCRIPTION Header - seperti di screenshot
-    doc.setFontSize(14);
+
+    // --- 1. HEADER SECTION ---
+    // Logo TripGo (Top Left)
     doc.setTextColor(40, 40, 40);
+    doc.setFontSize(28);
     doc.setFont('helvetica', 'bold');
-    doc.text('PRODUCT DESCRIPTION', 15, 110);
-    
-    // Train Details dengan bracket seperti di screenshot
-    const trainName = getTrainDisplayName(booking);
-    const trainClass = getTrainClassDisplay(booking.train_class, booking.train_type);
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(60, 60, 60);
-    doc.text(`[ ${trainName} - ${trainClass} ] Railway Ticket`, 15, 120);
-    
+
+    // Simulating a logo with a small orange accent
+    doc.setFillColor(253, 126, 20); // #FD7E14
+    doc.rect(15, 15, 8, 8, 'F');
+    doc.text('TRIPGO', 26, 23);
+
+    // Invoice # (Top Right)
+    doc.setFontSize(22);
+    doc.setTextColor(40, 40, 40);
+    doc.text('Invoice #', 195, 23, { align: 'right' });
+
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 100, 100);
-    doc.text('Digital ticket successfully delivered to passenger.', 15, 127);
-    
-    // Table for ticket details - seperti di screenshot
-    const tableData = [
-      [
-        {
-          content: `Train Ticket: ${booking.origin} to ${booking.destination}\n${formatDateForInvoice(booking.departure_date)}`,
-          styles: { cellPadding: { top: 8, right: 5, bottom: 8, left: 5 } }
-        },
-        {
-          content: booking.passenger_count.toString(),
-          styles: { halign: 'center', cellPadding: { top: 8, right: 5, bottom: 8, left: 5 } }
-        },
-        {
-          content: formatCurrencyForPDF(Math.round((booking.total_amount || 0) / booking.passenger_count)),
-          styles: { halign: 'right', cellPadding: { top: 8, right: 5, bottom: 8, left: 5 } }
-        },
-        {
-          content: formatCurrencyForPDF(booking.total_amount || 0),
-          styles: { halign: 'right', cellPadding: { top: 8, right: 5, bottom: 8, left: 5 } }
-        }
-      ]
-    ];
-    
-    autoTable(doc, {
-      startY: 135,
-      head: [[
-        { content: 'Description', styles: { halign: 'left', fontStyle: 'bold', fillColor: [253, 126, 20] } },
-        { content: 'QTY', styles: { halign: 'center', fontStyle: 'bold', fillColor: [253, 126, 20] } },
-        { content: 'Unit Price', styles: { halign: 'right', fontStyle: 'bold', fillColor: [253, 126, 20] } },
-        { content: 'Amount', styles: { halign: 'right', fontStyle: 'bold', fillColor: [253, 126, 20] } }
-      ]],
-      body: tableData,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [253, 126, 20], // Orange header
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 11,
-        cellPadding: { top: 5, right: 5, bottom: 5, left: 5 }
-      },
-      bodyStyles: {
-        fontSize: 10,
-        cellPadding: { top: 8, right: 5, bottom: 8, left: 5 }
-      },
-      styles: {
-        lineWidth: 0.1,
-        lineColor: [200, 200, 200]
-      },
-      columnStyles: {
-        0: { cellWidth: 100 },
-        1: { cellWidth: 20 },
-        2: { cellWidth: 35 },
-        3: { cellWidth: 35 }
-      },
-      margin: { left: 15, right: 15 }
-    });
-    
-    // Get final Y position after table
-    const finalY = (doc as any).lastAutoTable.finalY || 150;
-    
-    // Price breakdown - di sebelah kanan seperti di screenshot
-    // Hitung harga asli berdasarkan contoh di screenshot
-    const basePrice = booking.total_amount || 0;
-    const convenienceFee = booking.convenience_fee || 5000; // Default 5,000 seperti di screenshot
-    const insuranceAmount = booking.insurance_amount || 10000; // Default 10,000 seperti di screenshot
-    const discountAmount = booking.discount_amount || 0;
-    
-    // Original Item Price - ini yang perlu dihitung mundur dari Grand Total
-    const grandTotal = booking.final_amount || booking.total_amount || 0;
-    const originalItemPrice = grandTotal - convenienceFee - insuranceAmount + discountAmount;
-    
-    let yOffset = finalY + 15;
-    
-    doc.setFontSize(11);
-    doc.setTextColor(80, 80, 80);
-    doc.text('Original Item Price:', 125, yOffset);
-    doc.text(formatCurrencyForPDF(originalItemPrice), 175, yOffset, { align: 'right' });
-    
-    yOffset += 7;
-    
-    if (convenienceFee > 0) {
-      doc.text('Convenience Fee:', 125, yOffset);
-      doc.text(formatCurrencyForPDF(convenienceFee), 175, yOffset, { align: 'right' });
-      yOffset += 7;
-    }
-    
-    if (insuranceAmount > 0) {
-      doc.text('Insurance:', 125, yOffset);
-      doc.text(formatCurrencyForPDF(insuranceAmount), 175, yOffset, { align: 'right' });
-      yOffset += 7;
-    }
-    
-    if (discountAmount > 0) {
-      doc.text('General Discount:', 125, yOffset);
-      doc.text(`-${formatCurrencyForPDF(discountAmount)}`, 175, yOffset, { align: 'right' });
-      yOffset += 7;
-    }
-    
-    // Garis untuk total
-    doc.setDrawColor(200, 200, 200);
-    doc.line(125, yOffset + 3, 190, yOffset + 3);
-    yOffset += 6;
-    
-    // Grand Total - seperti di screenshot
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(40, 40, 40);
-    doc.text('Grand Total:', 125, yOffset);
-    
-    doc.setFontSize(16);
-    doc.setTextColor(253, 126, 20); // Orange untuk total
-    doc.text(formatCurrencyForPDF(grandTotal), 175, yOffset, { align: 'right' });
-    
-    // Footer - sama seperti di screenshot
-    const footerY = Math.max(yOffset + 20, 250);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 100, 100);
-    doc.text('Thank you for choosing TripGO Railway Services!', 105, footerY, { align: 'center' });
-    
-    doc.setFontSize(9);
-    doc.text('Website: railway.tripgo.id | Need help? Contact us on Discord.', 105, footerY + 7, { align: 'center' });
-    
-    // Tambah watermark "PAID" jika sudah lunas
+    doc.setTextColor(150, 150, 150);
+    doc.text(booking.booking_code, 195, 29, { align: 'right' });
+
+    // --- 2. STAMP SECTION ---
     if (isPaid) {
-      doc.setFontSize(80);
-      doc.setTextColor(240, 240, 240);
+      // "PAID & DELIVERED" Stamp (Angled)
+      const stampX = 145;
+      const stampY = 40;
+      const angle = 12; // Degrees
+      const rad = -angle * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      doc.setDrawColor(0, 180, 180); // Teal color
+      doc.setLineWidth(0.8);
+      doc.setTextColor(0, 180, 180);
+      doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc.text('PAID', 105, 140, { align: 'center', angle: 45 });
+
+      // Calculate box corners
+      const w = 45;
+      const h = 8;
+      const cx = stampX + w / 2;
+      const cy = stampY + h / 2;
+
+      const p = [
+        { x: -w / 2, y: -h / 2 },
+        { x: w / 2, y: -h / 2 },
+        { x: w / 2, y: h / 2 },
+        { x: -w / 2, y: h / 2 }
+      ];
+
+      const rp = p.map(pt => ({
+        x: cx + (pt.x * cos - pt.y * sin),
+        y: cy + (pt.x * sin + pt.y * cos)
+      }));
+
+      // Draw box using lines
+      for (let i = 0; i < 4; i++) {
+        doc.line(rp[i].x, rp[i].y, rp[(i + 1) % 4].x, rp[(i + 1) % 4].y);
+      }
+
+      // Draw text with native angle
+      doc.text('PAID & DELIVERED', cx, cy + 1.5, { align: 'center', angle: -angle });
     }
-    
-    // Save PDF dengan nama yang sesuai
-    const fileName = `Invoice-${booking.booking_code}-${Date.now().toString().slice(-6)}.pdf`;
+
+    // --- 3. BILLING INFORMATION ---
+    let y = 60;
+
+    // Bill To (Left)
+    doc.setFontSize(9);
+    doc.setTextColor(140, 140, 140);
+    doc.setFont('helvetica', 'normal');
+    doc.text('BILL TO (PASSENGER):', 15, y);
+
+    doc.setFontSize(14);
+    doc.setTextColor(40, 40, 40);
+    doc.setFont('helvetica', 'bold');
+    doc.text(booking.passenger_name || 'Passenger', 15, y + 8);
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(140, 140, 140);
+    doc.text('Type: Train Passenger', 15, y + 15);
+    doc.text('Server: railway.tripgo.id', 15, y + 21);
+
+    // Payment Info (Right)
+    doc.text('Payment Date:', 120, y);
+    doc.text('Transaction ID:', 120, y + 15);
+    doc.text('Status:', 120, y + 23);
+
+    const paymentDateStr = formatDateForInvoice(booking.created_at || new Date().toISOString());
+    doc.setTextColor(40, 40, 40);
+    doc.setFont('helvetica', 'bold');
+    doc.text(paymentDateStr, 195, y + 5, { align: 'right' });
+    doc.text(booking.booking_code, 195, y + 15, { align: 'right' });
+
+    // Status Badge
+    if (isPaid) {
+      doc.setDrawColor(34, 197, 94); // green-500
+      (doc as any).roundedRect(175, y + 19, 20, 6, 1, 1, 'D');
+      doc.setTextColor(34, 197, 94);
+      doc.setFontSize(9);
+      doc.text('LUNAS', 185, y + 23.2, { align: 'center' });
+    } else {
+      doc.setDrawColor(239, 68, 68); // red-500
+      (doc as any).roundedRect(172, y + 19, 23, 6, 1, 1, 'D');
+      doc.setTextColor(239, 68, 68);
+      doc.setFontSize(9);
+      doc.text('PENDING', 183.5, y + 23.2, { align: 'center' });
+    }
+
+    // --- 4. PRODUCT DESCRIPTION TABLE ---
+    y = 110;
+    doc.setFillColor(248, 250, 252); // Very light blue-grey
+    (doc as any).roundedRect(15, y - 6, 180, 10, 1, 1, 'F');
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139); // slate-500
+    doc.setFont('helvetica', 'bold');
+    doc.text('PRODUCT DESCRIPTION', 20, y);
+    doc.text('QTY', 115, y, { align: 'center' });
+    doc.text('AMOUNT', 190, y, { align: 'right' });
+
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.setLineWidth(0.3);
+    doc.line(15, y + 4, 195, y + 4);
+
+    y += 15;
+    const trainDisplayName = getTrainDisplayName(booking);
+    const trainClassStr = getTrainClassDisplay(booking.train_class, booking.train_type);
+
+    doc.setTextColor(40, 40, 40);
+    doc.setFontSize(11);
+    doc.text(`[ ${trainDisplayName} - ${trainClassStr} ]`, 15, y);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Digital ticket successfully delivered to ${booking.passenger_name}.`, 15, y + 6);
+
+    // QTY and Amount for the item
+    doc.setFontSize(11);
+    doc.setTextColor(40, 40, 40);
+    doc.text(booking.passenger_count.toString(), 115, y, { align: 'center' });
+    doc.text(formatCurrencyForPDF(booking.total_amount || 0), 195, y, { align: 'right' });
+
+    doc.line(15, y + 15, 195, y + 15);
+    y += 25;
+
+    // --- 5. NOTES AND TOTALS ---
+    // Note Box (Left)
+    doc.setDrawColor(220, 220, 220);
+    doc.setFillColor(249, 249, 249);
+    doc.roundedRect(15, y, 90, 25, 1, 1, 'FD');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Note:', 20, y + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('All transactions are final. This receipt serves as official', 20, y + 13);
+    doc.text('proof of purchase for your digital railway ticket.', 20, y + 18);
+
+    // Totals Section (Right)
+    const subtotal = booking.total_amount || 0;
+    const adminFee = booking.convenience_fee || 5000;
+    const grandTotal = (booking.final_amount || booking.total_amount || 0);
+
+    const labelX = 130;
+    const valueX = 195;
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Original Item Price:', labelX, y + 5);
+    doc.setTextColor(40, 40, 40);
+    doc.setFont('helvetica', 'bold');
+    doc.text(formatCurrencyForPDF(subtotal), valueX, y + 5, { align: 'right' });
+
+    y += 8;
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Service Fee:', labelX, y + 5);
+    doc.setTextColor(40, 40, 40);
+    doc.text(formatCurrencyForPDF(adminFee), valueX, y + 5, { align: 'right' });
+
+    y += 15;
+    doc.line(130, y, 195, y);
+
+    y += 10;
+    doc.setFontSize(13);
+    doc.setTextColor(40, 40, 40);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Grand Total:', labelX, y);
+
+    doc.setTextColor(37, 99, 235); // Blue color like in screenshot
+    doc.setFontSize(15);
+    doc.text(formatCurrencyForPDF(grandTotal), valueX, y, { align: 'right' });
+
+    // --- 6. FOOTER ---
+    const footerY = 270;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(150, 150, 150);
+    doc.text('Thank you for supporting TripGo!', 105, footerY, { align: 'center' });
+    doc.text('Website: railway.tripgo.id | Need help? Contact us on Discord.', 105, footerY + 5, { align: 'center' });
+
+    // --- 7. SAVE ---
+    const fileName = `Invoice-${booking.booking_code}.pdf`;
     doc.save(fileName);
-    
     return fileName;
-    
+
   } catch (error) {
     console.error('Error generating invoice PDF:', error);
     alert('Gagal membuat invoice PDF. Silakan coba lagi.');
@@ -604,70 +577,70 @@ const formatDateForTicket = (dateString: string): string => {
 const downloadTicketPDF = async (booking: Booking) => {
   try {
     const doc = new jsPDF();
-    
+
     // Header dengan warna orange
     doc.setFillColor(253, 126, 20);
     doc.rect(0, 0, 210, 30, 'F');
-    
+
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(24);
     doc.text('TRIPGO E-TICKET', 105, 18, { align: 'center' });
-    
+
     doc.setFontSize(12);
     doc.text('Official Digital Railway Ticket', 105, 25, { align: 'center' });
-    
+
     // Ticket Details
     let yPosition = 45;
-    
+
     doc.setTextColor(40, 40, 40);
     doc.setFontSize(10);
     doc.text('Booking Code:', 20, yPosition);
     doc.setFontSize(12);
     doc.text(booking.booking_code, 20, yPosition + 7);
-    
+
     doc.setFontSize(10);
     doc.text('Ticket Number:', 120, yPosition);
     doc.setFontSize(12);
     doc.text(booking.ticket_number || booking.booking_code, 120, yPosition + 7);
-    
+
     yPosition += 20;
-    
+
     doc.setFontSize(10);
     doc.text('Passenger Name:', 20, yPosition);
     doc.setFontSize(14);
     doc.text(booking.passenger_name, 20, yPosition + 7);
-    
+
     yPosition += 20;
-    
+
     // Train Info Box
     doc.setFillColor(240, 240, 240);
     doc.roundedRect(20, yPosition, 170, 30, 3, 3, 'F');
-    
+
     const trainName = getTrainDisplayName(booking);
     const trainClass = getTrainClassDisplay(booking.train_class, booking.train_type);
-    
+
     doc.setFontSize(12);
     doc.setTextColor(253, 126, 20);
     doc.text(trainName, 25, yPosition + 10);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(100, 100, 100);
     doc.text(`${trainClass} Class`, 25, yPosition + 17);
-    
+
     // Route with arrow
     const routeY = yPosition + 10;
     doc.setFontSize(14);
     doc.setTextColor(40, 40, 40);
     doc.text(booking.origin, 100, routeY, { align: 'center' });
-    
+
     doc.setTextColor(253, 126, 20);
     doc.text('→', 115, routeY);
-    
+
     doc.setTextColor(40, 40, 40);
     doc.text(booking.destination, 140, routeY, { align: 'center' });
-    
+
     yPosition += 40;
-    
+
     // Journey Details in table
     autoTable(doc, {
       startY: yPosition,
@@ -684,9 +657,9 @@ const downloadTicketPDF = async (booking: Booking) => {
       styles: { fontSize: 10, cellPadding: 5 },
       margin: { left: 20, right: 20 }
     });
-    
+
     const tableY = (doc as any).lastAutoTable.finalY || yPosition + 30;
-    
+
     // QR Code
     try {
       // Generate QR data
@@ -703,31 +676,31 @@ const downloadTicketPDF = async (booking: Booking) => {
         coach: booking.coach_number || '',
         pnr: booking.pnr_number || ''
       });
-      
+
       const qrCodeURL = generateQRCodeURL(qrData, 120);
-      
+
       // Fetch QR code image
       const response = await fetch(qrCodeURL);
       if (!response.ok) throw new Error('Failed to fetch QR code');
-      
+
       const blob = await response.blob();
       const reader = new FileReader();
-      
+
       reader.onloadend = () => {
         const base64data = reader.result as string;
         doc.addImage(base64data, 'PNG', 145, tableY + 10, 40, 40);
-        
+
         // Footer text under QR
         doc.setFontSize(8);
         doc.setTextColor(100, 100, 100);
         doc.text('Scan for verification', 165, tableY + 55, { align: 'center' });
-        
+
         // Additional Info
         doc.setFontSize(9);
         doc.setTextColor(100, 100, 100);
         doc.text(`PNR: ${booking.pnr_number || 'N/A'} | Coach: ${booking.coach_number || 'N/A'}`, 20, tableY + 60);
         doc.text(`Baggage: ${booking.baggage_allowance || '20kg'} | Platform: ${booking.platform || 'Digital'}`, 20, tableY + 67);
-        
+
         // Terms and Conditions
         doc.setFontSize(7);
         doc.setTextColor(150, 150, 150);
@@ -738,33 +711,33 @@ const downloadTicketPDF = async (booking: Booking) => {
           '• Ticket is non-transferable.',
           '• For assistance, contact: help@railway.tripgo.id'
         ];
-        
+
         terms.forEach((term, index) => {
           doc.text(term, 20, tableY + 80 + (index * 4));
         });
-        
+
         // Save the PDF
         doc.save(`Ticket-${booking.booking_code}.pdf`);
       };
-      
+
       reader.readAsDataURL(blob);
-      
+
     } catch (qrError) {
       console.error('Error loading QR code:', qrError);
       // Jika QR gagal, tetap save PDF tanpa QR
       doc.setFontSize(10);
       doc.setTextColor(200, 0, 0);
       doc.text('QR Code not available', 165, tableY + 30, { align: 'center' });
-      
+
       // Continue with other content
       doc.setFontSize(9);
       doc.setTextColor(100, 100, 100);
       doc.text(`PNR: ${booking.pnr_number || 'N/A'} | Coach: ${booking.coach_number || 'N/A'}`, 20, tableY + 60);
-      
+
       // Save the PDF
       doc.save(`Ticket-${booking.booking_code}.pdf`);
     }
-    
+
   } catch (error) {
     console.error('Error generating ticket PDF:', error);
     alert('Gagal membuat tiket PDF');
@@ -775,7 +748,7 @@ export default function MyBookingsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
-  
+
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -785,7 +758,7 @@ export default function MyBookingsPage() {
   const [trainDetails, setTrainDetails] = useState<Record<string, { name: string; operator: string }>>({});
   const [error, setError] = useState<string | null>(null);
   const [uploadingProof, setUploadingProof] = useState<string | null>(null);
-  
+
   const isLoadingRef = useRef(false);
   const initialLoadDone = useRef(false);
 
@@ -793,7 +766,7 @@ export default function MyBookingsPage() {
   useEffect(() => {
     const justPaidFromUrl = searchParams.get('justPaid');
     const bookingCodeFromUrl = searchParams.get('bookingCode');
-    
+
     if (justPaidFromUrl === 'true' && bookingCodeFromUrl) {
       setJustPaidHighlight(bookingCodeFromUrl);
       window.history.replaceState({}, '', window.location.pathname);
@@ -805,15 +778,15 @@ export default function MyBookingsPage() {
     if (isLoadingRef.current && !forceReload) {
       return;
     }
-    
+
     try {
       isLoadingRef.current = true;
       setLoading(true);
       setError(null);
-      
+
       let allBookings: Booking[] = [];
       const trainCodes: string[] = [];
-      
+
       // 1. Load from localStorage first
       try {
         const savedBookings = localStorage.getItem('myBookings');
@@ -829,7 +802,7 @@ export default function MyBookingsPage() {
       } catch (localStorageError) {
         console.error('Local storage error:', localStorageError);
       }
-      
+
       // 2. Load from database with updated API
       if (user?.id) {
         try {
@@ -839,21 +812,21 @@ export default function MyBookingsPage() {
             .select('*')
             .or(`user_id.eq.${user.id},passenger_email.eq.${user.email}`)
             .order('created_at', { ascending: false });
-          
+
           if (!bookingsError && dbBookings) {
             const validDbBookings = dbBookings
               .map(validateAndCleanBooking)
               .filter((b): b is Booking => b !== null);
-            
+
             // Merge dan hindari duplikat
             const existingCodes = allBookings.map(b => b.booking_code);
             const uniqueDbBookings = validDbBookings.filter(
               (b: Booking) => !existingCodes.includes(b.booking_code)
             );
-            
+
             allBookings = [...allBookings, ...uniqueDbBookings];
           }
-          
+
           // Coba load dari tabel transactions jika ada
           const { data: transactions, error: transactionsError } = await supabase
             .from('transactions')
@@ -861,14 +834,14 @@ export default function MyBookingsPage() {
             .eq('user_id', user.id)
             .eq('type', 'train')
             .order('created_at', { ascending: false });
-          
+
           if (!transactionsError && transactions) {
             const transactionBookings = transactions.map(transaction => {
               try {
-                const bookingData = typeof transaction.metadata === 'string' 
+                const bookingData = typeof transaction.metadata === 'string'
                   ? JSON.parse(transaction.metadata)
                   : transaction.metadata || {};
-                
+
                 return validateAndCleanBooking({
                   ...bookingData,
                   id: transaction.id,
@@ -886,35 +859,35 @@ export default function MyBookingsPage() {
                 return null;
               }
             }).filter((b): b is Booking => b !== null);
-            
+
             // Merge bookings dari transactions
             const existingCodes = allBookings.map(b => b.booking_code);
             const uniqueTransactionBookings = transactionBookings.filter(
               (b: Booking) => !existingCodes.includes(b.booking_code)
             );
-            
+
             allBookings = [...allBookings, ...uniqueTransactionBookings];
           }
         } catch (dbError) {
           console.error('Database fetch error:', dbError);
         }
       }
-      
+
       // 3. Load dari session storage untuk pembayaran baru
       try {
         const justPaid = sessionStorage.getItem('justPaid');
         const lastBookingCode = sessionStorage.getItem('lastBookingCode');
-        
+
         if (justPaid === 'true' && lastBookingCode) {
           setJustPaidHighlight(lastBookingCode);
           sessionStorage.removeItem('justPaid');
           sessionStorage.removeItem('lastBookingCode');
-          
+
           setTimeout(() => {
             setJustPaidHighlight(null);
           }, 5000);
         }
-        
+
         // Load latest booking
         const latestBooking = localStorage.getItem('latestBooking');
         if (latestBooking) {
@@ -938,7 +911,7 @@ export default function MyBookingsPage() {
       } catch (sessionError) {
         console.error('Session storage error:', sessionError);
       }
-      
+
       // 4. Tambah demo data jika kosong
       if (allBookings.length === 0) {
         const today = new Date();
@@ -946,7 +919,7 @@ export default function MyBookingsPage() {
         tomorrow.setDate(today.getDate() + 1);
         const yesterday = new Date(today);
         yesterday.setDate(today.getDate() - 1);
-        
+
         const demoBookings: Booking[] = [
           {
             id: 'demo-1',
@@ -1031,28 +1004,28 @@ export default function MyBookingsPage() {
             final_amount: 144825
           }
         ];
-        
+
         allBookings = [...allBookings, ...demoBookings];
       }
-      
+
       // 5. Sort bookings
       allBookings.sort((a, b) => {
         const dateA = new Date(a.departure_date);
         const dateB = new Date(b.departure_date);
         return dateA.getTime() - dateB.getTime();
       });
-      
+
       // 6. Update state
       setBookings(allBookings);
       applyFilter(activeFilter, allBookings);
-      
+
       // 7. Simpan ke localStorage
       try {
         localStorage.setItem('myBookings', JSON.stringify(allBookings));
       } catch (e) {
         console.error('Failed to save to localStorage:', e);
       }
-      
+
     } catch (error: any) {
       console.error('Error loading bookings:', error);
       setError('Gagal memuat data booking. Silakan refresh halaman.');
@@ -1067,13 +1040,13 @@ export default function MyBookingsPage() {
   const applyFilter = useCallback((filter: FilterStatus, bookingsList: Booking[]) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const filtered = bookingsList.filter(booking => {
       const bookingDate = new Date(booking.departure_date);
       bookingDate.setHours(0, 0, 0, 0);
       const diffTime = bookingDate.getTime() - today.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
+
       switch (filter) {
         case 'paid':
           return booking.payment_status === 'paid' || booking.status === 'confirmed';
@@ -1091,7 +1064,7 @@ export default function MyBookingsPage() {
           return true;
       }
     });
-    
+
     setFilteredBookings(filtered);
   }, []);
 
@@ -1105,12 +1078,12 @@ export default function MyBookingsPage() {
   const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value.toLowerCase();
     setSearchQuery(query);
-    
+
     if (!query) {
       applyFilter(activeFilter, bookings);
       return;
     }
-    
+
     const filtered = bookings.filter(booking =>
       (booking.booking_code?.toLowerCase() || '').includes(query) ||
       (booking.passenger_name?.toLowerCase() || '').includes(query) ||
@@ -1120,7 +1093,7 @@ export default function MyBookingsPage() {
       (booking.ticket_number?.toLowerCase() || '').includes(query) ||
       (booking.pnr_number?.toLowerCase() || '').includes(query)
     );
-    
+
     setFilteredBookings(filtered);
   }, [applyFilter, activeFilter, bookings]);
 
@@ -1161,7 +1134,7 @@ export default function MyBookingsPage() {
   const getStatusBadge = useCallback((status: string, paymentStatus: string) => {
     const lowerStatus = (status || '').toLowerCase();
     const lowerPaymentStatus = (paymentStatus || '').toLowerCase();
-    
+
     if (lowerPaymentStatus === 'paid' || lowerStatus === 'confirmed') {
       return (
         <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
@@ -1196,7 +1169,7 @@ export default function MyBookingsPage() {
         </span>
       );
     }
-    
+
     return (
       <span className="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm font-medium">
         {status?.toUpperCase() || 'PENDING'}
@@ -1215,7 +1188,7 @@ export default function MyBookingsPage() {
       alert('Tiket belum tersedia untuk booking ini');
       return;
     }
-    
+
     await downloadTicketPDF(booking);
   }, []);
 
@@ -1228,26 +1201,26 @@ export default function MyBookingsPage() {
   const handleUploadPaymentProof = useCallback(async (bookingCode: string) => {
     const booking = bookings.find(b => b.booking_code === bookingCode);
     if (!booking) return;
-    
+
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*,.pdf';
-    
+
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-      
+
       if (file.size > 5 * 1024 * 1024) { // 5MB limit
         alert('File terlalu besar. Maksimal 5MB');
         return;
       }
-      
+
       try {
         setUploadingProof(bookingCode);
-        
+
         // Simulate upload (in real app, upload to server)
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         // Update booking with payment proof
         const updatedBookings = bookings.map(b => {
           if (b.booking_code === bookingCode) {
@@ -1259,13 +1232,13 @@ export default function MyBookingsPage() {
           }
           return b;
         });
-        
+
         setBookings(updatedBookings);
         applyFilter(activeFilter, updatedBookings);
-        
+
         // Save to localStorage
         localStorage.setItem('myBookings', JSON.stringify(updatedBookings));
-        
+
         alert('Bukti pembayaran berhasil diunggah. Admin akan memverifikasi.');
       } catch (error) {
         console.error('Upload error:', error);
@@ -1274,7 +1247,7 @@ export default function MyBookingsPage() {
         setUploadingProof(null);
       }
     };
-    
+
     input.click();
   }, [applyFilter, activeFilter, bookings]);
 
@@ -1283,14 +1256,14 @@ export default function MyBookingsPage() {
     if (!confirm(`Apakah Anda yakin ingin membatalkan booking ${bookingCode}? Dana akan dikembalikan sesuai kebijakan.`)) {
       return;
     }
-    
+
     try {
       const bookingToCancel = bookings.find(b => b.booking_code === bookingCode);
       if (!bookingToCancel) return;
-      
+
       // Calculate refund amount (80% refund)
       const refundAmount = Math.floor((bookingToCancel.final_amount || bookingToCancel.total_amount) * 0.8);
-      
+
       // Update booking in database if exists
       if (bookingToCancel.id && !bookingToCancel.id.startsWith('demo-')) {
         try {
@@ -1305,7 +1278,7 @@ export default function MyBookingsPage() {
               updated_at: new Date().toISOString()
             })
             .eq('booking_code', bookingCode);
-            
+
           if (error) {
             console.error('Database update error:', error);
           }
@@ -1313,13 +1286,13 @@ export default function MyBookingsPage() {
           console.error('Error updating database:', dbError);
         }
       }
-      
+
       // Update local state
       const updatedBookings = bookings.map(booking => {
         if (booking.booking_code === bookingCode) {
-          return { 
-            ...booking, 
-            status: 'cancelled', 
+          return {
+            ...booking,
+            status: 'cancelled',
             payment_status: 'refunded',
             refund_amount: refundAmount,
             refund_status: 'processing',
@@ -1329,13 +1302,13 @@ export default function MyBookingsPage() {
         }
         return booking;
       });
-      
+
       setBookings(updatedBookings);
       applyFilter(activeFilter, updatedBookings);
-      
+
       // Save to localStorage
       localStorage.setItem('myBookings', JSON.stringify(updatedBookings));
-      
+
       alert(`Booking ${bookingCode} berhasil dibatalkan. Refund sebesar ${formatCurrency(refundAmount)} akan diproses dalam 3-5 hari kerja.`);
     } catch (error) {
       console.error('Error cancelling booking:', error);
@@ -1348,12 +1321,12 @@ export default function MyBookingsPage() {
     try {
       const booking = bookings.find(b => b.booking_code === bookingCode);
       if (!booking) return;
-      
+
       if (!booking.ticket_number) {
         alert('Tiket belum tersedia untuk check-in');
         return;
       }
-      
+
       // Update check-in status
       const updatedBookings = bookings.map(b => {
         if (b.booking_code === bookingCode) {
@@ -1365,13 +1338,13 @@ export default function MyBookingsPage() {
         }
         return b;
       });
-      
+
       setBookings(updatedBookings);
       applyFilter(activeFilter, updatedBookings);
-      
+
       // Save to localStorage
       localStorage.setItem('myBookings', JSON.stringify(updatedBookings));
-      
+
       alert('Check-in berhasil! Silakan tunjukkan tiket di stasiun.');
     } catch (error) {
       console.error('Check-in error:', error);
@@ -1383,15 +1356,15 @@ export default function MyBookingsPage() {
   const handleSendPaymentLink = useCallback(async (bookingCode: string) => {
     const booking = bookings.find(b => b.booking_code === bookingCode);
     if (!booking) return;
-    
+
     if (!confirm(`Kirim link pembayaran ke ${booking.passenger_email || 'email Anda'}?`)) {
       return;
     }
-    
+
     try {
       // Simulate sending payment link
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       // Update payment status to paid after "payment"
       const updatedBookings = bookings.map(b => {
         if (b.booking_code === bookingCode) {
@@ -1405,13 +1378,13 @@ export default function MyBookingsPage() {
         }
         return b;
       });
-      
+
       setBookings(updatedBookings);
       applyFilter(activeFilter, updatedBookings);
-      
+
       // Save to localStorage
       localStorage.setItem('myBookings', JSON.stringify(updatedBookings));
-      
+
       alert('Link pembayaran telah dikirim. Status booking diperbarui menjadi LUNAS.');
     } catch (error) {
       console.error('Send payment link error:', error);
@@ -1426,23 +1399,23 @@ export default function MyBookingsPage() {
     const pendingBookings = bookings.filter(b => b.payment_status === 'pending').length;
     const cancelledBookings = bookings.filter(b => b.status === 'cancelled' || b.status === 'canceled').length;
     const refundedBookings = bookings.filter(b => b.refund_status === 'processed').length;
-    
+
     const totalSpent = bookings
       .filter(b => b.payment_status === 'paid')
       .reduce((sum, b) => sum + (b.final_amount || b.total_amount || 0), 0);
-    
+
     const pendingAmount = bookings
       .filter(b => b.payment_status === 'pending')
       .reduce((sum, b) => sum + (b.final_amount || b.total_amount || 0), 0);
-    
-    return { 
-      totalBookings, 
-      paidBookings, 
-      pendingBookings, 
+
+    return {
+      totalBookings,
+      paidBookings,
+      pendingBookings,
       cancelledBookings,
       refundedBookings,
-      totalSpent, 
-      pendingAmount 
+      totalSpent,
+      pendingAmount
     };
   }, [bookings]);
 
@@ -1451,7 +1424,7 @@ export default function MyBookingsPage() {
     if (!initialLoadDone.current) {
       loadBookings();
     }
-    
+
     return () => {
       isLoadingRef.current = false;
     };
@@ -1507,7 +1480,7 @@ export default function MyBookingsPage() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-green-600 rounded-xl flex items-center justify-center mr-4">
@@ -1520,7 +1493,7 @@ export default function MyBookingsPage() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center mr-4">
@@ -1533,7 +1506,7 @@ export default function MyBookingsPage() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
             <div className="flex items-center">
               <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-xl flex items-center justify-center mr-4">
@@ -1565,61 +1538,56 @@ export default function MyBookingsPage() {
                 />
               </div>
             </div>
-            
+
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => handleFilterChange('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  activeFilter === 'all'
-                    ? 'bg-[#FD7E14] text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${activeFilter === 'all'
+                  ? 'bg-[#FD7E14] text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 Semua
               </button>
               <button
                 onClick={() => handleFilterChange('paid')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  activeFilter === 'paid'
-                    ? 'bg-[#FD7E14] text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${activeFilter === 'paid'
+                  ? 'bg-[#FD7E14] text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 Lunas
               </button>
               <button
                 onClick={() => handleFilterChange('waiting')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  activeFilter === 'waiting'
-                    ? 'bg-[#FD7E14] text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${activeFilter === 'waiting'
+                  ? 'bg-[#FD7E14] text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 Menunggu
               </button>
               <button
                 onClick={() => handleFilterChange('active')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  activeFilter === 'active'
-                    ? 'bg-[#FD7E14] text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${activeFilter === 'active'
+                  ? 'bg-[#FD7E14] text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 Aktif
               </button>
               <button
                 onClick={() => handleFilterChange('cancelled')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  activeFilter === 'cancelled'
-                    ? 'bg-[#FD7E14] text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${activeFilter === 'cancelled'
+                  ? 'bg-[#FD7E14] text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
               >
                 Dibatalkan
               </button>
             </div>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-4 pt-6 border-t border-gray-100">
             <Link
               href="/search/trains"
@@ -1646,7 +1614,7 @@ export default function MyBookingsPage() {
               {searchQuery ? 'Booking tidak ditemukan' : 'Belum Ada Booking'}
             </h3>
             <p className="text-gray-500 mb-8 max-w-md mx-auto">
-              {searchQuery 
+              {searchQuery
                 ? 'Coba gunakan kata kunci lain atau reset filter pencarian'
                 : 'Silakan lakukan pemesanan tiket kereta api terlebih dahulu'}
             </p>
@@ -1691,22 +1659,21 @@ export default function MyBookingsPage() {
                 </div>
               </div>
             )}
-            
+
             {filteredBookings.map((booking) => {
               const isPaid = booking.payment_status === 'paid';
               const isPending = booking.payment_status === 'pending';
               const isCancelled = booking.status === 'cancelled' || booking.status === 'canceled';
               const tripDuration = booking.trip_duration || calculateTripDuration(booking.departure_time, booking.arrival_time);
-              
+
               return (
                 <div
                   key={`${booking.id}-${booking.updated_at}`}
-                  className={`bg-white rounded-2xl shadow-xl overflow-hidden border-2 ${
-                    isCancelled ? 'border-red-200' :
+                  className={`bg-white rounded-2xl shadow-xl overflow-hidden border-2 ${isCancelled ? 'border-red-200' :
                     isPaid ? 'border-green-200' :
-                    isPending ? 'border-yellow-200' :
-                    'border-gray-200'
-                  }`}
+                      isPending ? 'border-yellow-200' :
+                        'border-gray-200'
+                    }`}
                 >
                   <div className="p-6">
                     {/* Header */}
@@ -1728,14 +1695,14 @@ export default function MyBookingsPage() {
                             </span>
                           )}
                         </div>
-                        
+
                         <h3 className="text-xl font-bold text-gray-800 mb-2">
-                          {getTrainDisplayName(booking)} 
+                          {getTrainDisplayName(booking)}
                           <span className="text-[#FD7E14] text-lg ml-2">
                             ({getTrainClassDisplay(booking.train_class, booking.train_type)})
                           </span>
                         </h3>
-                        
+
                         <div className="flex items-center text-gray-600">
                           <span className="font-semibold">{booking.origin}</span>
                           <ArrowRightIcon className="w-4 h-4 mx-2" />
@@ -1745,7 +1712,7 @@ export default function MyBookingsPage() {
                           </span>
                         </div>
                       </div>
-                      
+
                       <div className="text-right">
                         <div className="text-2xl font-bold text-[#FD7E14]">
                           {formatCurrency(booking.final_amount || booking.total_amount)}
@@ -1772,7 +1739,7 @@ export default function MyBookingsPage() {
                           {formatDate(booking.departure_date)}
                         </p>
                       </div>
-                      
+
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center text-gray-600 mb-2">
                           <ClockIcon className="w-5 h-5 mr-2 text-[#FD7E14]" />
@@ -1790,7 +1757,7 @@ export default function MyBookingsPage() {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center text-gray-600 mb-2">
                           <UserIcon className="w-5 h-5 mr-2 text-[#FD7E14]" />
@@ -1801,7 +1768,7 @@ export default function MyBookingsPage() {
                           <p className="text-sm text-gray-600">{booking.passenger_phone}</p>
                         )}
                       </div>
-                      
+
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center text-gray-600 mb-2">
                           <TicketIcon className="w-5 h-5 mr-2 text-[#FD7E14]" />
@@ -1856,7 +1823,7 @@ export default function MyBookingsPage() {
                           </button>
                         </>
                       )}
-                      
+
                       {isPaid && (booking.ticket_number || booking.booking_code) && (
                         <>
                           <button
@@ -1866,7 +1833,7 @@ export default function MyBookingsPage() {
                             <PrinterIcon className="w-5 h-5 mr-2" />
                             Cetak Tiket (PDF)
                           </button>
-                          
+
                           {!booking.checkin_status && (
                             <button
                               onClick={() => handleCheckIn(booking.booking_code)}
@@ -1875,7 +1842,7 @@ export default function MyBookingsPage() {
                               Check-in
                             </button>
                           )}
-                          
+
                           <button
                             onClick={() => handleDownloadInvoice(booking)}
                             className="px-4 py-2 border border-purple-300 text-purple-600 font-semibold rounded-lg hover:bg-purple-50 transition-all flex items-center"
@@ -1885,14 +1852,14 @@ export default function MyBookingsPage() {
                           </button>
                         </>
                       )}
-                      
+
                       <button
                         onClick={() => handleViewDetails(booking.booking_code)}
                         className="px-4 py-2 border border-blue-500 text-blue-600 font-semibold rounded-lg hover:bg-blue-50 transition-all"
                       >
                         Lihat Detail
                       </button>
-                      
+
                       {!isCancelled && !isPending && (
                         <button
                           onClick={() => handleCancelBooking(booking.booking_code)}
@@ -1901,7 +1868,7 @@ export default function MyBookingsPage() {
                           Batalkan
                         </button>
                       )}
-                      
+
                       <Link
                         href="/search/trains"
                         className="px-4 py-2 border border-gray-700 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-all"
@@ -1909,7 +1876,7 @@ export default function MyBookingsPage() {
                         Pesan Lagi
                       </Link>
                     </div>
-                    
+
                     {/* Additional Info */}
                     {(booking.insurance_amount || booking.convenience_fee || booking.discount_amount) && (
                       <div className="mt-6 pt-6 border-t border-gray-100">
@@ -1936,7 +1903,7 @@ export default function MyBookingsPage() {
                         </div>
                       </div>
                     )}
-                    
+
                     {booking.refund_amount && (
                       <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                         <p className="text-sm font-medium text-blue-800">
@@ -1983,7 +1950,7 @@ export default function MyBookingsPage() {
               </p>
             </div>
           </div>
-          
+
           <div className="mt-8 pt-8 border-t border-gray-200">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               <div>
@@ -1991,14 +1958,14 @@ export default function MyBookingsPage() {
                 <p className="text-gray-600 text-sm">Tim customer service kami siap membantu 24/7</p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <a 
-                  href="tel:1500123" 
+                <a
+                  href="tel:1500123"
                   className="px-4 py-2 bg-[#FD7E14] text-white font-semibold rounded-lg hover:bg-orange-600 transition-all"
                 >
                   📞 1500-123
                 </a>
-                <a 
-                  href="mailto:help@tripgo.com" 
+                <a
+                  href="mailto:help@tripgo.com"
                   className="px-4 py-2 border border-gray-700 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-all"
                 >
                   ✉️ Email Kami

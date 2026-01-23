@@ -38,7 +38,7 @@ export default function AdminStations() {
   useAdminRoute();
   const router = useRouter();
   const { userProfile, loading: authLoading } = useAuth();
-  
+
   const [stations, setStations] = useState<Station[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +62,47 @@ export default function AdminStations() {
   });
 
   const itemsPerPage = 10;
+
+  // Define fetchStats first so it's available for other hooks
+  const fetchStats = useCallback(async () => {
+    try {
+      if (authLoading) return;
+
+      const [totalRes, activeRes, cityRes, typeRes] = await Promise.all([
+        supabase.from('stasiun').select('*', { count: 'exact', head: true }),
+        supabase.from('stasiun')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_active', true),
+        supabase.from('stasiun').select('city'),
+        supabase.from('stasiun').select('type')
+      ]);
+
+      // Count unique cities
+      const uniqueCities = new Set(
+        cityRes.data
+          ?.map(s => s.city)
+          .filter((city): city is string => Boolean(city && typeof city === 'string'))
+      );
+
+      // Count unique types
+      const uniqueTypes = new Set(
+        typeRes.data
+          ?.map(s => s.type)
+          .filter((type): type is string => Boolean(type && typeof type === 'string'))
+      );
+
+      setStats({
+        total: totalRes.count || 0,
+        active: activeRes.count || 0,
+        cities: uniqueCities.size,
+        types: uniqueTypes.size
+      });
+
+    } catch (err) {
+      console.error('Error fetching station stats:', err);
+      // Don't set error for stats, keep default values
+    }
+  }, [authLoading]);
 
   const fetchStations = useCallback(async () => {
     try {
@@ -136,7 +177,7 @@ export default function AdminStations() {
           ?.map(s => s.city)
           .filter((city): city is string => Boolean(city && typeof city === 'string'))
       )];
-      
+
       setCities(uniqueCities);
 
     } catch (err) {
@@ -144,45 +185,21 @@ export default function AdminStations() {
     }
   }, [authLoading]);
 
-  const fetchStats = useCallback(async () => {
-    try {
-      if (authLoading) return;
+  // Realtime subscription
+  useEffect(() => {
+    if (!authLoading) {
+      const channel = supabase.channel('admin-stations-list')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'stasiun' }, () => {
+          fetchStations();
+          fetchStats();
+        })
+        .subscribe();
 
-      const [totalRes, activeRes, cityRes, typeRes] = await Promise.all([
-        supabase.from('stasiun').select('*', { count: 'exact', head: true }),
-        supabase.from('stasiun')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_active', true),
-        supabase.from('stasiun').select('city'),
-        supabase.from('stasiun').select('type')
-      ]);
-
-      // Count unique cities
-      const uniqueCities = new Set(
-        cityRes.data
-          ?.map(s => s.city)
-          .filter((city): city is string => Boolean(city && typeof city === 'string'))
-      );
-      
-      // Count unique types
-      const uniqueTypes = new Set(
-        typeRes.data
-          ?.map(s => s.type)
-          .filter((type): type is string => Boolean(type && typeof type === 'string'))
-      );
-
-      setStats({
-        total: totalRes.count || 0,
-        active: activeRes.count || 0,
-        cities: uniqueCities.size,
-        types: uniqueTypes.size
-      });
-
-    } catch (err) {
-      console.error('Error fetching station stats:', err);
-      // Don't set error for stats, keep default values
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
-  }, [authLoading]);
+  }, [authLoading, fetchStations, fetchStats]);
 
   // Debounce untuk search
   useEffect(() => {
@@ -211,7 +228,7 @@ export default function AdminStations() {
     try {
       const { error } = await supabase
         .from('stasiun')
-        .update({ 
+        .update({
           is_active: !stationToToggle.is_active,
           updated_at: new Date().toISOString()
         })
@@ -221,7 +238,7 @@ export default function AdminStations() {
 
       // Refresh data
       await Promise.all([fetchStations(), fetchStats()]);
-      
+
       setShowToggleModal(false);
       setStationToToggle(null);
 
@@ -257,7 +274,7 @@ export default function AdminStations() {
 
       // Refresh data
       await Promise.all([fetchStations(), fetchStats(), fetchCities()]);
-      
+
       setShowDeleteModal(false);
       setStationToDelete(null);
 
@@ -420,7 +437,7 @@ export default function AdminStations() {
             Clear Filters
           </button>
         </div>
-        
+
         {/* Status Filter */}
         <div className="mt-4">
           <div className="flex items-center space-x-4">
@@ -433,11 +450,10 @@ export default function AdminStations() {
                     setStatusFilter(status);
                     setCurrentPage(1);
                   }}
-                  className={`px-3 py-1 rounded-full text-sm ${
-                    statusFilter === status
+                  className={`px-3 py-1 rounded-full text-sm ${statusFilter === status
                       ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+                    }`}
                 >
                   {status === 'all' ? 'All' : status === 'active' ? 'Active' : 'Inactive'}
                 </button>
@@ -568,7 +584,7 @@ export default function AdminStations() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => router.push(`/admin/stations/${station.id}/edit`)}
                           className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
@@ -576,7 +592,7 @@ export default function AdminStations() {
                         >
                           <Edit className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => {
                             setStationToToggle(station);
@@ -591,7 +607,7 @@ export default function AdminStations() {
                             <CheckCircle className="w-4 h-4" />
                           )}
                         </button>
-                        
+
                         <button
                           onClick={() => {
                             setStationToDelete(station.id);
@@ -630,7 +646,7 @@ export default function AdminStations() {
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
-                
+
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum;
                   if (totalPages <= 5) {
@@ -642,7 +658,7 @@ export default function AdminStations() {
                   } else {
                     pageNum = currentPage - 2 + i;
                   }
-                  
+
                   return (
                     <button
                       key={pageNum}
@@ -653,7 +669,7 @@ export default function AdminStations() {
                     </button>
                   );
                 })}
-                
+
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
@@ -686,14 +702,14 @@ export default function AdminStations() {
                 <p className="text-sm text-gray-600">{stationToToggle.nama_stasiun}</p>
               </div>
             </div>
-            
+
             <p className="text-gray-700 mb-6">
-              {stationToToggle.is_active 
+              {stationToToggle.is_active
                 ? 'Are you sure you want to deactivate this station? It will no longer be available for new routes.'
                 : 'Are you sure you want to activate this station? It will become available for new routes.'
               }
             </p>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -728,11 +744,11 @@ export default function AdminStations() {
                 <p className="text-sm text-gray-600">This action cannot be undone</p>
               </div>
             </div>
-            
+
             <p className="text-gray-700 mb-6">
               Are you sure you want to delete this station? All associated data will be permanently removed.
             </p>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {

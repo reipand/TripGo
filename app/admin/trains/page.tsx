@@ -41,7 +41,7 @@ export default function AdminTrains() {
   useAdminRoute(); // Protect route
   const router = useRouter();
   const { userProfile, loading: authLoading } = useAuth();
-  
+
   const [trains, setTrains] = useState<TrainData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +153,18 @@ export default function AdminTrains() {
     if (!authLoading) {
       fetchTrains();
       fetchStats();
+
+      // Realtime subscription
+      const channel = supabase.channel('admin-trains-list')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'kereta' }, () => {
+          fetchTrains();
+          fetchStats();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [currentPage, typeFilter, statusFilter, searchTerm, authLoading]);
 
@@ -163,7 +175,7 @@ export default function AdminTrains() {
     try {
       const { error } = await supabase
         .from('kereta')
-        .update({ 
+        .update({
           is_active: !trainToToggle.is_active,
           updated_at: new Date().toISOString()
         })
@@ -501,7 +513,7 @@ export default function AdminTrains() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => router.push(`/admin/trains/${train.id}/edit`)}
                           className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
@@ -509,7 +521,7 @@ export default function AdminTrains() {
                         >
                           <Edit className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => router.push(`/admin/trains/${train.id}/schedules`)}
                           className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
@@ -517,7 +529,7 @@ export default function AdminTrains() {
                         >
                           <Calendar className="w-4 h-4" />
                         </button>
-                        
+
                         <button
                           onClick={() => {
                             setTrainToToggle(train);
@@ -532,7 +544,7 @@ export default function AdminTrains() {
                             <CheckCircle className="w-4 h-4" />
                           )}
                         </button>
-                        
+
                         {userProfile?.role === 'super_admin' && (
                           <button
                             onClick={() => {
@@ -573,7 +585,7 @@ export default function AdminTrains() {
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
-                
+
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum;
                   if (totalPages <= 5) {
@@ -585,7 +597,7 @@ export default function AdminTrains() {
                   } else {
                     pageNum = currentPage - 2 + i;
                   }
-                  
+
                   return (
                     <button
                       key={pageNum}
@@ -596,7 +608,7 @@ export default function AdminTrains() {
                     </button>
                   );
                 })}
-                
+
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
@@ -629,14 +641,14 @@ export default function AdminTrains() {
                 <p className="text-sm text-gray-600">{trainToToggle.nama_kereta}</p>
               </div>
             </div>
-            
+
             <p className="text-gray-700 mb-6">
-              {trainToToggle.is_active 
+              {trainToToggle.is_active
                 ? 'Are you sure you want to deactivate this train? It will no longer be available for new bookings.'
                 : 'Are you sure you want to activate this train? It will become available for new bookings.'
               }
             </p>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -671,11 +683,11 @@ export default function AdminTrains() {
                 <p className="text-sm text-gray-600">This action cannot be undone</p>
               </div>
             </div>
-            
+
             <p className="text-gray-700 mb-6">
               Are you sure you want to delete this train? All associated schedules and data will be permanently removed.
             </p>
-            
+
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {

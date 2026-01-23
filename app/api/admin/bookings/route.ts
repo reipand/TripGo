@@ -4,7 +4,7 @@ import { createClient } from '@/app/lib/supabaseServer';
 export async function GET(request: NextRequest) {
   try {
     const supabase = createClient();
-    
+
     // Parse query parameters
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
@@ -103,9 +103,9 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('Bookings API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );
@@ -119,10 +119,10 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     const requiredFields = [
-      'user_id', 'passenger_name', 'passenger_email', 
+      'user_id', 'passenger_name', 'passenger_email',
       'train_code', 'origin', 'destination', 'total_amount'
     ];
-    
+
     for (const field of requiredFields) {
       if (!body[field]) {
         return NextResponse.json(
@@ -166,6 +166,19 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Create booking error:', error);
+
+      // LOGIC: Specific handling for point_transactions constraint violation
+      if (error.message?.includes('point_transactions') && error.message?.includes('user_id')) {
+        return NextResponse.json(
+          {
+            error: 'Gagal memberikan poin (Guest Booking). Silakan jalankan SQL fix di Dashboard Supabase agar booking dapat dibuat.',
+            details: error.message,
+            code: 'POINT_TRANSACTION_FAILED'
+          },
+          { status: 400 }
+        );
+      }
+
       return NextResponse.json(
         { error: error.message },
         { status: 400 }
@@ -181,9 +194,9 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Create booking API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );

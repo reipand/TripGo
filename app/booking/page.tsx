@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { TrainSeatMap } from '@/app/components/TrainSeatMap';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 // --- Tipe Data ---
 interface TransitStation {
@@ -76,9 +77,12 @@ interface Seat {
   price: number;
   wagonNumber?: string;
   wagonClass?: string;
+  kode_kursi?: string;
+  class?: string;
 }
 
 interface Train {
+  id?: string;
   trainId: number;
   trainName: string;
   trainType: string;
@@ -100,6 +104,12 @@ interface Train {
     totalSeats: number;
     seats: Seat[];
   }>;
+  operator?: string;
+  trainNumber?: string;
+  originStation?: string;
+  destinationStation?: string;
+  kode_kereta?: string;
+  nama_kereta?: string;
 }
 
 interface PaymentMethod {
@@ -161,7 +171,7 @@ interface MultiSegmentBooking {
   totalPrice: number;
   totalDuration: string;
   isMultiSegment: boolean;
-  connectionTime?: number; // minutes between segments
+  connectionTime?: number;
 }
 
 // --- Komponen Ikon ---
@@ -293,7 +303,7 @@ const formatDepartureDate = (dateString: string): string => {
     if (isNaN(date.getTime())) {
       throw new Error('Tanggal tidak valid');
     }
-    
+
     return date.toLocaleDateString('id-ID', {
       weekday: 'long',
       year: 'numeric',
@@ -311,15 +321,15 @@ const formatDepartureDate = (dateString: string): string => {
           'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
         ];
         const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-        
+
         const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
         const dayName = dayNames[dateObj.getDay()];
         const monthName = monthNames[dateObj.getMonth()];
-        
+
         return `${dayName}, ${parseInt(day)} ${monthName} ${year}`;
       }
     }
-    
+
     const today = new Date();
     return today.toLocaleDateString('id-ID', {
       weekday: 'long',
@@ -347,17 +357,17 @@ const getRealtimeDepartureDate = (dateFromUrl: string | null): string => {
         const selectedDate = new Date(dateFromUrl);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
+
         const maxDate = new Date();
         maxDate.setMonth(today.getMonth() + 3);
-        
+
         if (selectedDate >= today && selectedDate <= maxDate) {
           return dateFromUrl;
         }
       }
     }
   }
-  
+
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   return tomorrow.toISOString().split('T')[0];
@@ -369,12 +379,12 @@ const autoSelectSeats = (trainData: Train | null, passengerCount: number): Seat[
   }
 
   const selectedSeats: Seat[] = [];
-  
+
   for (const wagon of trainData.wagons) {
     if (selectedSeats.length >= passengerCount) break;
 
     const availableSeats = wagon.seats.filter(seat => seat.available);
-    
+
     const sortedSeats = [...availableSeats].sort((a, b) => {
       if (a.windowSeat !== b.windowSeat) return a.windowSeat ? 1 : -1;
       if (a.forwardFacing !== b.forwardFacing) return a.forwardFacing ? 1 : -1;
@@ -383,7 +393,7 @@ const autoSelectSeats = (trainData: Train | null, passengerCount: number): Seat[
 
     for (const seat of sortedSeats) {
       if (selectedSeats.length >= passengerCount) break;
-      
+
       selectedSeats.push({
         ...seat,
         wagonNumber: wagon.number,
@@ -395,7 +405,7 @@ const autoSelectSeats = (trainData: Train | null, passengerCount: number): Seat[
   return selectedSeats.slice(0, passengerCount);
 };
 
-// DUMMY PROMO - SEMUA KATEGORI KERETA
+// DUMMY PROMO - FALLBACK DATA
 const DUMMY_PROMO_VOUCHERS: PromoVoucher[] = [
   {
     id: '1',
@@ -467,99 +477,192 @@ const DUMMY_PROMO_VOUCHERS: PromoVoucher[] = [
   }
 ];
 
-// Fungsi validasi promo
-const validatePromoCode = (
-  promoCode: string, 
-  basePrice: number, 
-  passengerCount: number, 
+// Fungsi validasi promo realtime
+const validatePromoCode = async (
+  promoCode: string,
+  basePrice: number,
+  passengerCount: number,
   trainType: string,
   departureDate: string
-): { isValid: boolean; promo?: PromoVoucher; discountAmount: number; message: string } => {
-  
-  const promo = DUMMY_PROMO_VOUCHERS.find(p => 
-    p.promo_code.toUpperCase() === promoCode.toUpperCase() && p.is_active
-  );
-  
-  if (!promo) {
-    return {
-      isValid: false,
-      discountAmount: 0,
-      message: 'Kode promo/voucher tidak ditemukan'
-    };
-  }
-  
-  const today = new Date();
-  const startDate = new Date(promo.start_date);
-  const endDate = new Date(promo.end_date);
-  
-  if (today < startDate) {
-    return {
-      isValid: false,
-      discountAmount: 0,
-      message: `Promo akan berlaku mulai ${formatDate(promo.start_date)}`
-    };
-  }
-  
-  if (today > endDate) {
-    return {
-      isValid: false,
-      discountAmount: 0,
-      message: 'Promo/voucher telah kadaluarsa'
-    };
-  }
-  
-  if (promo.usage_limit > 0 && promo.usage_count >= promo.usage_limit) {
-    return {
-      isValid: false,
-      discountAmount: 0,
-      message: 'Kuota promo/voucher telah habis'
-    };
-  }
-  
-  const totalPrice = basePrice * passengerCount;
-  if (totalPrice < promo.min_order_amount) {
-    return {
-      isValid: false,
-      discountAmount: 0,
-      message: `Minimal pembelian Rp ${promo.min_order_amount.toLocaleString('id-ID')}`
-    };
-  }
-  
-  if (promo.applicable_to && promo.applicable_to.length > 0) {
-    if (!promo.applicable_to.includes(trainType)) {
+): Promise<{ isValid: boolean; promo?: PromoVoucher; discountAmount: number; message: string }> => {
+
+  try {
+    const totalPrice = basePrice * passengerCount;
+
+    const response = await fetch('/api/promotions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        promoCode,
+        totalPrice,
+        trainType,
+        passengerCount,
+        departureDate
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
       return {
         isValid: false,
         discountAmount: 0,
-        message: `Promo tidak berlaku untuk kelas ${trainType}`
+        message: result.message || 'Gagal validasi promo'
       };
     }
-  }
-  
-  if (promo.promo_code === 'FAMILY30' && passengerCount < 3) {
+
+    if (result.isValid) {
+      return {
+        isValid: true,
+        promo: result.promo,
+        discountAmount: result.discountAmount,
+        message: result.message
+      };
+    } else {
+      return {
+        isValid: false,
+        discountAmount: 0,
+        message: result.message
+      };
+    }
+
+  } catch (error) {
+    console.error('Error validating promo:', error);
     return {
       isValid: false,
       discountAmount: 0,
-      message: 'Promo keluarga berlaku untuk minimal 3 penumpang'
+      message: 'Terjadi kesalahan saat validasi promo'
     };
   }
-  
-  let discountAmount = 0;
-  
-  if (promo.discount_type === 'percentage') {
-    discountAmount = totalPrice * (promo.discount_value / 100);
-    if (promo.max_discount_amount > 0 && discountAmount > promo.max_discount_amount) {
-      discountAmount = promo.max_discount_amount;
-    }
-  } else if (promo.discount_type === 'fixed') {
-    discountAmount = promo.discount_value;
+};
+
+// Fungsi untuk mencatat penggunaan promo
+const recordPromoUsage = async (promoId: string, bookingId: string, discountAmount: number) => {
+  try {
+    const response = await fetch('/api/promotions/usage', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        promotionId: promoId,
+        bookingId: bookingId,
+        discountAmount: discountAmount
+      }),
+    });
+
+    const result = await response.json();
+    return result.success;
+  } catch (error) {
+    console.error('Error recording promo usage:', error);
+    return false;
   }
-  
-  return {
-    isValid: true,
-    promo,
-    discountAmount,
-    message: `Promo/voucher berhasil diterapkan! Diskon: Rp ${discountAmount.toLocaleString('id-ID')}`
+};
+
+// --- Helper functions ---
+const formatDuration = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}j ${mins}m`;
+};
+
+const isWindowSeat = (seatNumber: string): boolean => {
+  const column = seatNumber.match(/[A-Z]/)?.[0];
+  return column === 'A' || column === 'D';
+};
+
+const calculateSeatPrice = (basePrice: number, wagonClass: string, seatNumber: string): number => {
+  let price = basePrice;
+
+  switch (wagonClass) {
+    case 'executive': price *= 1.5; break;
+    case 'business': price *= 1.2; break;
+    case 'economy': price *= 1.0; break;
+    default: price *= 1.0;
+  }
+
+  if (isWindowSeat(seatNumber)) {
+    price *= 1.1;
+  }
+
+  return Math.round(price);
+};
+
+// Helper function untuk transit stations yang relevan
+const getRelevantTransitStations = (origin: string, destination: string): TransitStation[] => {
+  const relevantStations = {
+    'Bandung → Gambir': [
+      {
+        id: 'transit-1',
+        station_id: 'stasiun-cimahi',
+        station_name: 'Stasiun Cimahi',
+        arrival_time: '06:30',
+        departure_time: '06:45',
+        waiting_minutes: 15,
+        available_seats: 20,
+        additional_price: 25000,
+        previous_station: 'Bandung',
+        next_station: 'Gambir'
+      },
+      {
+        id: 'transit-2',
+        station_id: 'stasiun-purwakarta',
+        station_name: 'Stasiun Purwakarta',
+        arrival_time: '07:15',
+        departure_time: '07:30',
+        waiting_minutes: 15,
+        available_seats: 15,
+        additional_price: 30000,
+        previous_station: 'Bandung',
+        next_station: 'Gambir'
+      }
+    ],
+    'Bandung → Surabaya': [
+      {
+        id: 'transit-3',
+        station_id: 'stasiun-cirebon',
+        station_name: 'Stasiun Cirebon',
+        arrival_time: '10:30',
+        departure_time: '10:45',
+        waiting_minutes: 15,
+        available_seats: 25,
+        additional_price: 35000,
+        previous_station: 'Bandung',
+        next_station: 'Surabaya'
+      },
+      {
+        id: 'transit-4',
+        station_id: 'stasiun-semarang',
+        station_name: 'Stasiun Semarang',
+        arrival_time: '13:15',
+        departure_time: '13:30',
+        waiting_minutes: 15,
+        available_seats: 18,
+        additional_price: 40000,
+        previous_station: 'Bandung',
+        next_station: 'Surabaya'
+      }
+    ],
+    'default': [
+      {
+        id: 'transit-5',
+        station_id: 'stasiun-default',
+        station_name: 'Stasiun Transit',
+        arrival_time: '09:00',
+        departure_time: '09:15',
+        waiting_minutes: 15,
+        available_seats: 10,
+        additional_price: 20000,
+        previous_station: origin,
+        next_station: destination
+      }
+    ]
   };
+
+  const key = `${origin} → ${destination}`;
+  return relevantStations[key as keyof typeof relevantStations] || relevantStations.default;
 };
 
 // --- FUNGSI TRANSIT ---
@@ -571,102 +674,46 @@ const fetchTransitStations = async (
   try {
     if (!scheduleId || !origin || !destination) {
       console.warn('Missing parameters for fetchTransitStations');
-      return [];
+      return getRelevantTransitStations(origin, destination);
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const url = `/api/schedules/${scheduleId}/transit?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    
+    const response = await fetch(`/api/transit-stations?scheduleId=${scheduleId}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`);
+
     if (!response.ok) {
-      console.warn(`Transit API error: ${response.status} ${response.statusText}`);
-      return getDummyTransitStations();
+      return getRelevantTransitStations(origin, destination);
     }
-    
+
     const data = await response.json();
-    
-    if (data.success && data.transitRoutes) {
-      return data.transitRoutes.map((route: any) => ({
-        id: route.id,
-        station_id: route.station_id,
-        station_name: route.station_name,
-        arrival_time: route.arrival_time,
-        departure_time: route.departure_time,
-        waiting_minutes: route.waiting_minutes,
-        available_seats: route.available_seats,
-        additional_price: route.additional_price || 0,
-        previous_station: route.previous_station,
-        next_station: route.next_station
+
+    if (data.success && data.transitStations) {
+      return data.transitStations.map((station: any) => ({
+        id: station.id,
+        station_id: station.station_id,
+        station_name: station.station_name,
+        arrival_time: station.arrival_time,
+        departure_time: station.departure_time,
+        waiting_minutes: station.waiting_minutes,
+        available_seats: station.available_seats,
+        additional_price: station.additional_price || 0,
+        previous_station: station.previous_station,
+        next_station: station.next_station
       }));
     }
-    
-    return getDummyTransitStations();
-    
+
+    return getRelevantTransitStations(origin, destination);
+
   } catch (error: any) {
     console.error('Error fetching transit stations:', error);
-    return getDummyTransitStations();
+    return getRelevantTransitStations(origin, destination);
   }
 };
 
-const getDummyTransitStations = (): TransitStation[] => {
-  return [
-    {
-      id: 'transit-1',
-      station_id: 'stasiun-cirebon',
-      station_name: 'Stasiun Cirebon',
-      arrival_time: '07:30',
-      departure_time: '07:45',
-      waiting_minutes: 15,
-      available_seats: 20,
-      additional_price: 50000,
-      previous_station: 'Bandung',
-      next_station: 'Jakarta Gambir'
-    },
-    {
-      id: 'transit-2',
-      station_id: 'stasiun-tasikmalaya',
-      station_name: 'Stasiun Tasikmalaya',
-      arrival_time: '06:30',
-      departure_time: '06:45',
-      waiting_minutes: 15,
-      available_seats: 15,
-      additional_price: 30000,
-      previous_station: 'Bandung',
-      next_station: 'Yogyakarta'
-    }
-  ];
-};
-
-const createTransitBooking = async (bookingData: any) => {
-  try {
-    const response = await fetch('/api/bookings/transit', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(bookingData),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to create booking');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error creating transit booking:', error);
-    throw error;
+const getDummyTransitStations = (origin?: string, destination?: string): TransitStation[] => {
+  if (origin && destination) {
+    return getRelevantTransitStations(origin, destination);
   }
+
+  return getRelevantTransitStations('Bandung', 'Gambir');
 };
 
 // --- FUNGSI MULTI SEGMEN ---
@@ -677,80 +724,178 @@ const fetchMultiSegmentOptions = async (
   passengerCount: number
 ): Promise<MultiSegmentBooking[]> => {
   try {
-    // Simulasi data multi-segmen
-    const dummySegments: MultiSegmentBooking[] = [
-      {
-        segments: [
-          {
-            segmentId: 'segment-1',
-            trainId: 101,
-            trainName: 'Parahyangan',
-            trainType: 'Executive',
-            departureTime: '08:00',
-            arrivalTime: '12:00',
-            duration: '4j 0m',
-            origin: 'Bandung',
-            destination: 'Cirebon',
-            price: 150000,
-            availableSeats: 20,
-            departureDate: departureDate,
-            scheduleId: 'sched-1',
-            selectedSeats: [],
-            transitStations: getDummyTransitStations()
-          },
-          {
-            segmentId: 'segment-2',
-            trainId: 102,
-            trainName: 'Argo Bromo',
-            trainType: 'Executive',
-            departureTime: '14:00',
-            arrivalTime: '18:00',
-            duration: '4j 0m',
-            origin: 'Cirebon',
-            destination: 'Surabaya',
-            price: 200000,
-            availableSeats: 15,
-            departureDate: departureDate,
-            scheduleId: 'sched-2',
-            selectedSeats: [],
-            transitStations: getDummyTransitStations()
-          }
-        ],
-        totalPrice: 350000,
-        totalDuration: '8j 0m',
-        isMultiSegment: true,
-        connectionTime: 120 // 2 jam
-      },
-      {
-        segments: [
-          {
-            segmentId: 'segment-3',
-            trainId: 103,
-            trainName: 'Gajayana',
-            trainType: 'Luxury',
-            departureTime: '10:00',
-            arrivalTime: '18:00',
-            duration: '8j 0m',
-            origin: 'Jakarta',
-            destination: 'Surabaya',
-            price: 500000,
-            availableSeats: 10,
-            departureDate: departureDate,
-            scheduleId: 'sched-3',
-            selectedSeats: [],
-            transitStations: getDummyTransitStations()
-          }
-        ],
-        totalPrice: 500000,
-        totalDuration: '8j 0m',
-        isMultiSegment: false
-      }
-    ];
-    
-    return dummySegments;
+    const response = await fetch(`/api/multi-segment?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&date=${departureDate}&passengers=${passengerCount}`);
+
+    if (!response.ok) {
+      throw new Error('Gagal mengambil data multi-segmen');
+    }
+
+    const data = await response.json();
+
+    if (data.success && data.options) {
+      return data.options.map((option: any) => ({
+        segments: option.segments.map((seg: any) => ({
+          segmentId: seg.id,
+          trainId: seg.trainId,
+          trainName: seg.trainName,
+          trainType: seg.trainType,
+          departureTime: seg.departureTime,
+          arrivalTime: seg.arrivalTime,
+          duration: seg.duration,
+          origin: seg.origin,
+          destination: seg.destination,
+          price: seg.price,
+          availableSeats: seg.availableSeats,
+          departureDate: seg.departureDate,
+          scheduleId: seg.scheduleId,
+          selectedSeats: [],
+          transitStations: seg.transitStations || []
+        })),
+        totalPrice: option.totalPrice,
+        totalDuration: option.totalDuration,
+        isMultiSegment: option.segments.length > 1,
+        connectionTime: option.connectionTime
+      }));
+    }
+
+    return [];
   } catch (error) {
     console.error('Error fetching multi-segment options:', error);
     return [];
+  }
+};
+
+// Fungsi untuk mengambil data kursi dari database
+const loadSeatData = async (scheduleId: string, passengerCount: number, trainDetail?: TrainDetail, origin?: string, destination?: string) => {
+  try {
+    const queryParams = new URLSearchParams();
+    if (origin) queryParams.set('departure', origin);
+    if (destination) queryParams.set('arrival', destination);
+
+    const response = await fetch(`/api/schedules/${scheduleId}/seats?${queryParams.toString()}`);
+
+    if (response.ok) {
+      const seatData = await response.json();
+
+      if (seatData.success) {
+        const wagons = seatData.data.wagons.map((wagon: any) => ({
+          number: wagon.coach_code,
+          name: `Gerbong ${wagon.coach_code}`,
+          class: wagon.class_type,
+          facilities: wagon.facilities || [],
+          availableSeats: wagon.available_seats,
+          totalSeats: wagon.total_seats,
+          seats: wagon.seats.map((seat: any) => ({
+            id: seat.id,
+            number: seat.seat_number,
+            row: parseInt(seat.seat_number.match(/\d+/)?.[0] || '0'),
+            column: seat.seat_number.match(/[A-Z]/)?.[0] || 'A',
+            available: seat.status === 'available',
+            windowSeat: isWindowSeat(seat.seat_number),
+            forwardFacing: Math.random() > 0.5,
+            price: calculateSeatPrice(trainDetail?.price || 265000, wagon.class_type, seat.seat_number),
+            wagonNumber: wagon.coach_code,
+            wagonClass: wagon.class_type
+          }))
+        }));
+
+        const totalAvailableSeats = wagons.reduce((sum: number, wagon: any) => sum + wagon.availableSeats, 0);
+
+        return {
+          wagons,
+          totalAvailableSeats
+        };
+      }
+    }
+
+    // Fallback ke data dummy
+    const generateSeatData = () => {
+      const trainType = trainDetail?.trainType || 'Executive';
+      const price = trainDetail?.price || 265000;
+
+      const wagonsConfig = {
+        'Executive': [
+          { number: '1', name: 'Gerbong 1', class: 'executive', seats: 40, facilities: ['AC', 'Toilet', 'Power Outlet', 'WiFi'] },
+          { number: '2', name: 'Gerbong 2', class: 'executive', seats: 40, facilities: ['AC', 'Toilet', 'Power Outlet'] },
+        ],
+        'Business': [
+          { number: '1', name: 'Gerbong 1', class: 'business', seats: 50, facilities: ['AC', 'Toilet', 'Power Outlet'] },
+          { number: '2', name: 'Gerbong 2', class: 'business', seats: 50, facilities: ['AC', 'Toilet'] },
+        ],
+        'Economy': [
+          { number: '1', name: 'Gerbong 1', class: 'economy', seats: 60, facilities: ['AC', 'Toilet'] },
+          { number: '2', name: 'Gerbong 2', class: 'economy', seats: 60, facilities: ['AC', 'Toilet'] },
+        ]
+      };
+
+      const selectedWagons = wagonsConfig[trainType as keyof typeof wagonsConfig] || wagonsConfig.Executive;
+
+      const wagons = selectedWagons.map(wagonConfig => {
+        const rows = wagonConfig.class === 'executive' ? 10 :
+          wagonConfig.class === 'business' ? 10 : 12;
+        const columns = wagonConfig.class === 'executive' ? ['A', 'B', 'C', 'D'] :
+          ['A', 'B', 'C', 'D'];
+
+        const seats: Seat[] = [];
+        for (let row = 1; row <= rows; row++) {
+          columns.forEach((column, colIndex) => {
+            const seatNumber = `${column}${row}`;
+            const id = `${wagonConfig.number}-${seatNumber}`;
+
+            const available = Math.random() > 0.3;
+            const windowSeat = colIndex === 0 || colIndex === columns.length - 1;
+            const forwardFacing = row % 2 === 1;
+
+            let calculatedPrice = price;
+            if (wagonConfig.class === 'executive') calculatedPrice *= 1.5;
+            if (wagonConfig.class === 'business') calculatedPrice *= 1.2;
+            if (windowSeat) calculatedPrice *= 1.1;
+            if (forwardFacing) calculatedPrice *= 1.05;
+
+            seats.push({
+              id,
+              number: seatNumber,
+              row,
+              column,
+              available,
+              windowSeat,
+              forwardFacing,
+              price: Math.round(calculatedPrice),
+              wagonNumber: wagonConfig.number,
+              wagonClass: wagonConfig.class
+            });
+          });
+        }
+
+        const availableSeats = seats.filter(seat => seat.available).length;
+
+        return {
+          number: wagonConfig.number,
+          name: wagonConfig.name,
+          class: wagonConfig.class,
+          facilities: wagonConfig.facilities,
+          availableSeats,
+          totalSeats: seats.length,
+          seats
+        };
+      });
+
+      const totalAvailableSeats = wagons.reduce((sum, wagon) => sum + wagon.availableSeats, 0);
+
+      return {
+        wagons,
+        totalAvailableSeats
+      };
+    };
+
+    return generateSeatData();
+
+  } catch (error) {
+    console.error('Error loading seat data:', error);
+    return {
+      wagons: [],
+      totalAvailableSeats: 0
+    };
   }
 };
 
@@ -817,7 +962,7 @@ const TransitSelector = ({
         </div>
         <div className="bg-gray-50 rounded-lg p-4">
           <p className="text-sm text-gray-600">
-            Untuk rute {origin} → {destination} saat ini tidak tersedia pilihan transit. 
+            Untuk rute {origin} → {destination} saat ini tidak tersedia pilihan transit.
             Anda dapat melanjutkan dengan tiket langsung.
           </p>
         </div>
@@ -871,25 +1016,21 @@ const TransitSelector = ({
             Pilih stasiun transit jika ingin turun di tengah perjalanan.
           </p>
 
-          
-          
           {transitOptions.map((transit) => (
             <div
               key={transit.id}
-              className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                selectedTransit?.id === transit.id
-                  ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-100'
-                  : 'border-gray-300 hover:border-purple-300 hover:bg-purple-50/50'
-              }`}
+              className={`border rounded-lg p-4 cursor-pointer transition-all ${selectedTransit?.id === transit.id
+                ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-100'
+                : 'border-gray-300 hover:border-purple-300 hover:bg-purple-50/50'
+                }`}
               onClick={() => transit.available_seats >= passengerCount ? onSelect(transit) : null}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center">
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${
-                    selectedTransit?.id === transit.id
-                      ? 'border-purple-500 bg-purple-500'
-                      : 'border-gray-400'
-                  }`}>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${selectedTransit?.id === transit.id
+                    ? 'border-purple-500 bg-purple-500'
+                    : 'border-gray-400'
+                    }`}>
                     {selectedTransit?.id === transit.id && (
                       <div className="w-2 h-2 rounded-full bg-white"></div>
                     )}
@@ -918,7 +1059,7 @@ const TransitSelector = ({
                   )}
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 ml-9">
                 <div><span className="font-medium">Tiba:</span> {transit.arrival_time}</div>
                 <div><span className="font-medium">Berangkat:</span> {transit.departure_time}</div>
@@ -980,20 +1121,18 @@ const MultiSegmentSelector = ({
         {multiSegmentOptions.map((option, index) => (
           <div
             key={`multi-segment-${index}`}
-            className={`border rounded-lg p-4 cursor-pointer transition-all ${
-              selectedMultiSegment?.segments[0]?.segmentId === option.segments[0]?.segmentId
-                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
-                : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50/50'
-            }`}
+            className={`border rounded-lg p-4 cursor-pointer transition-all ${selectedMultiSegment?.segments[0]?.segmentId === option.segments[0]?.segmentId
+              ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
+              : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50/50'
+              }`}
             onClick={() => onSelect(option)}
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center">
-                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${
-                  selectedMultiSegment?.segments[0]?.segmentId === option.segments[0]?.segmentId
-                    ? 'border-blue-500 bg-blue-500'
-                    : 'border-gray-400'
-                }`}>
+                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-3 ${selectedMultiSegment?.segments[0]?.segmentId === option.segments[0]?.segmentId
+                  ? 'border-blue-500 bg-blue-500'
+                  : 'border-gray-400'
+                  }`}>
                   {selectedMultiSegment?.segments[0]?.segmentId === option.segments[0]?.segmentId && (
                     <div className="w-2 h-2 rounded-full bg-white"></div>
                   )}
@@ -1016,7 +1155,7 @@ const MultiSegmentSelector = ({
                 </div>
               </div>
             </div>
-            
+
             <div className="ml-9 space-y-3">
               {option.segments.map((segment, segIndex) => (
                 <div key={`segment-${segIndex}`} className="text-sm text-gray-600">
@@ -1038,7 +1177,7 @@ const MultiSegmentSelector = ({
                   </div>
                 </div>
               ))}
-              
+
               {option.isMultiSegment && option.connectionTime && (
                 <div className="ml-6 flex items-center text-yellow-600 text-sm">
                   <ConnectionIcon />
@@ -1051,7 +1190,7 @@ const MultiSegmentSelector = ({
           </div>
         ))}
       </div>
-      
+
       {selectedMultiSegment && (
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center justify-between mb-3">
@@ -1079,11 +1218,196 @@ const MultiSegmentSelector = ({
   );
 };
 
+// --- Komponen PromoListModal dengan data realtime ---
+const PromoListModal = ({
+  trainDetail,
+  passengerCount,
+  onClose,
+  onSelectPromo
+}: {
+  trainDetail: TrainDetail | null;
+  passengerCount: number;
+  onClose: () => void;
+  onSelectPromo: (promo: PromoVoucher) => void;
+}) => {
+  const [loading, setLoading] = useState(false);
+  const [availablePromosList, setAvailablePromosList] = useState<PromoVoucher[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadPromos = async () => {
+      if (!trainDetail) return;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const totalPrice = trainDetail.price * passengerCount;
+
+        const response = await fetch(
+          `/api/promotions?trainType=${trainDetail.trainType}&totalPrice=${totalPrice}&passengerCount=${passengerCount}`
+        );
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+          setAvailablePromosList(result.data);
+        } else {
+          setError(result.error || 'Gagal memuat promo');
+          // Fallback ke data dummy
+          setAvailablePromosList(DUMMY_PROMO_VOUCHERS);
+        }
+      } catch (error) {
+        console.error('Error loading promotions:', error);
+        setError('Terjadi kesalahan saat memuat promo');
+        setAvailablePromosList(DUMMY_PROMO_VOUCHERS);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPromos();
+  }, [trainDetail, passengerCount]);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-2xl font-bold text-gray-800">Daftar Promo & Voucher</h3>
+              <p className="text-gray-600">Pilih promo yang sesuai dengan perjalanan Anda</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 text-2xl"
+            >
+              ✕
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FD7E14] mx-auto mb-4"></div>
+              <p className="text-gray-500">Memuat promo...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <InfoIcon />
+              </div>
+              <p className="text-gray-500 mb-2">{error}</p>
+              <p className="text-sm text-gray-400">
+                Menampilkan promo standar
+              </p>
+            </div>
+          ) : availablePromosList.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <TagIcon />
+              </div>
+              <p className="text-gray-500">Tidak ada promo yang tersedia saat ini</p>
+              <p className="text-sm text-gray-400 mt-2">
+                Coba lagi nanti atau gunakan kode promo lainnya
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {availablePromosList.map((promo) => (
+                <div key={promo.id} className="border border-gray-200 rounded-xl p-5 hover:border-orange-300 transition-colors">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between">
+                    <div className="mb-4 md:mb-0">
+                      <div className="flex items-center mb-2">
+                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+                          <TagIcon />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-lg text-gray-800">{promo.name}</h4>
+                          <div className="flex items-center mt-1">
+                            <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full font-medium">
+                              {promo.promo_code}
+                            </span>
+                            <span className="mx-2 text-gray-400">•</span>
+                            <span className="text-sm text-gray-600">
+                              {promo.usage_count}/{promo.usage_limit} digunakan
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="text-gray-600 mb-3">{promo.description}</p>
+
+                      <div className="flex flex-wrap gap-2">
+                        <div className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+                          {promo.discount_type === 'percentage' ? `${promo.discount_value}%` : `Rp ${promo.discount_value.toLocaleString('id-ID')}`}
+                        </div>
+                        <div className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full">
+                          Min. beli Rp {promo.min_order_amount.toLocaleString('id-ID')}
+                        </div>
+                        {promo.max_discount_amount > 0 && promo.discount_type === 'percentage' && (
+                          <div className="px-3 py-1 bg-purple-100 text-purple-800 text-sm rounded-full">
+                            Maks. Rp {promo.max_discount_amount.toLocaleString('id-ID')}
+                          </div>
+                        )}
+                        <div className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
+                          {!promo.applicable_to || (Array.isArray(promo.applicable_to) && promo.applicable_to.length === 0)
+                            ? 'Berlaku untuk semua kelas'
+                            : `Berlaku untuk: ${Array.isArray(promo.applicable_to)
+                              ? promo.applicable_to.join(', ')
+                              : typeof promo.applicable_to === 'string'
+                                ? promo.applicable_to
+                                : JSON.stringify(promo.applicable_to)}`}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end">
+                      <button
+                        onClick={() => onSelectPromo(promo)}
+                        className="px-4 py-2 bg-[#FD7E14] text-white rounded-lg hover:bg-[#E06700] font-medium"
+                      >
+                        Pakai Promo
+                      </button>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Berlaku hingga {formatDate(promo.end_date)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {promo.promo_code === 'FAMILY30' && passengerCount < 3 && (
+                    <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">
+                        📢 <span className="font-medium">Promo khusus:</span> Diskon {promo.discount_value}% berlaku untuk minimal 3 penumpang
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-6 pt-6 border-t">
+            <div className="text-center">
+              <button
+                onClick={onClose}
+                className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Komponen Utama ---
 const BookingPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+  const { user } = useAuth();
+
   // State utama
   const [trainDetail, setTrainDetail] = useState<TrainDetail | null>(null);
   const [trainData, setTrainData] = useState<Train | null>(null);
@@ -1108,7 +1432,7 @@ const BookingPageContent = () => {
   const [autoSelectEnabled, setAutoSelectEnabled] = useState(true);
   const [passengerDataFilled, setPassengerDataFilled] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  
+
   // State untuk promo
   const [promoCodeInput, setPromoCodeInput] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<PromoVoucher | null>(null);
@@ -1118,7 +1442,7 @@ const BookingPageContent = () => {
   const [showPromoList, setShowPromoList] = useState(false);
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const [availablePromos, setAvailablePromos] = useState<PromoVoucher[]>(DUMMY_PROMO_VOUCHERS);
-  
+
   // State untuk transit
   const [transitStations, setTransitStations] = useState<TransitStation[]>([]);
   const [selectedTransit, setSelectedTransit] = useState<TransitStation | null>(null);
@@ -1145,29 +1469,6 @@ const BookingPageContent = () => {
   const departureDateFromUrl = searchParams.get('departureDate');
 
   const realtimeDepartureDate = getRealtimeDepartureDate(departureDateFromUrl);
-
-  // Perhitungan harga
-  const basePrice = trainDetail ? trainDetail.price * passengerCount : 0;
-  const adminFee = 5000;
-  const insuranceFee = 10000;
-  const selectedPaymentMethod = PAYMENT_METHODS.find(method => method.id === selectedPayment);
-  const paymentFee = selectedPaymentMethod?.fees || 0;
-  
-  const seatPriceAdjustment = selectedSeats.reduce((sum, seat) => {
-    const basePrice = trainDetail?.price || 265000;
-    return sum + (seat.price - basePrice);
-  }, 0);
-  
-  const transitDiscount = selectedTransit ? basePrice * 0.1 : 0;
-  
-  // Adjust price calculation for multi-segment
-  const totalSegmentPrice = selectedMultiSegment 
-    ? selectedMultiSegment.totalPrice * passengerCount
-    : basePrice;
-  
-  const subtotal = totalSegmentPrice + seatPriceAdjustment - transitDiscount + transitAdditionalPrice;
-  const totalBeforeDiscount = subtotal + adminFee + insuranceFee + paymentFee;
-  const grandTotal = totalBeforeDiscount - discountAmount;
 
   // Generate booking code
   useEffect(() => {
@@ -1196,41 +1497,111 @@ const BookingPageContent = () => {
     return initialPassengers;
   };
 
-  // Load data kereta
+  // Load data kereta dari database
   useEffect(() => {
     let isMounted = true;
 
     const loadTrainData = async () => {
       if (!isMounted) return;
-      
+
       setLoading(true);
       setError(null);
 
       try {
+        if (scheduleId && scheduleId !== 'dummy-schedule-1') {
+          const response = await fetch(`/api/schedules/${scheduleId}`);
+
+          if (response.ok) {
+            const scheduleData = await response.json();
+
+            if (scheduleData.success) {
+              const data = scheduleData.data;
+
+              const trainDetail: TrainDetail = {
+                trainId: data.train_id,
+                trainName: data.kereta.nama_kereta,
+                trainType: data.kereta.tipe_kereta,
+                departureTime: data.departure_time,
+                arrivalTime: data.arrival_time,
+                duration: formatDuration(data.duration_minutes),
+                origin: data.origin_station?.nama_stasiun || origin,
+                destination: data.destination_station?.nama_stasiun || destination,
+                price: data.price || price,
+                availableSeats: data.available_seats || 25,
+                departureDate: data.travel_date || realtimeDepartureDate,
+                scheduleId: data.id,
+                trainCode: data.kereta.kode_kereta,
+                originCity: data.origin_station?.city,
+                destinationCity: data.destination_station?.city
+              };
+
+              if (isMounted) {
+                setTrainDetail(trainDetail);
+
+                const urlPassengerCount = Math.max(1, Math.min(urlPassengers, 9));
+                setPassengerCount(urlPassengerCount);
+
+                const initialPassengers = initializePassengers(urlPassengerCount);
+                setPassengers(initialPassengers);
+
+                const seatData = await loadSeatData(data.id, urlPassengerCount, trainDetail, origin, destination);
+
+                const trainDataObj: Train = {
+                  trainId: trainDetail.trainId,
+                  trainName: trainDetail.trainName,
+                  trainType: trainDetail.trainType,
+                  departureTime: trainDetail.departureTime,
+                  arrivalTime: trainDetail.arrivalTime,
+                  duration: trainDetail.duration,
+                  origin: trainDetail.origin,
+                  destination: trainDetail.destination,
+                  price: trainDetail.price,
+                  availableSeats: seatData.totalAvailableSeats,
+                  departureDate: trainDetail.departureDate,
+                  scheduleId: data.id,
+                  wagons: seatData.wagons
+                };
+
+                setTrainData(trainDataObj);
+
+                if (autoSelectEnabled) {
+                  const autoSelectedSeats = autoSelectSeats(trainDataObj, urlPassengerCount);
+                  setSelectedSeats(autoSelectedSeats);
+                }
+
+                loadMultiSegmentOptions();
+
+                return;
+              }
+            }
+          }
+        }
+
+        // Fallback ke data dummy jika database tidak tersedia
         const calculateArrivalTime = (depTime: string, duration: string): string => {
           try {
             const [hours, minutes] = depTime.split(':').map(Number);
             const [durHours, durMinutes] = duration.split(/[jh\s]/).map(Number).filter(n => !isNaN(n));
-            
+
             const depDate = new Date();
             depDate.setHours(hours, minutes, 0, 0);
-            
-            const arrivalDate = new Date(depDate.getTime() + 
-              (durHours * 60 * 60 * 1000) + 
+
+            const arrivalDate = new Date(depDate.getTime() +
+              (durHours * 60 * 60 * 1000) +
               (durMinutes * 60 * 1000));
-            
+
             const arrivalHours = arrivalDate.getHours().toString().padStart(2, '0');
             const arrivalMinutes = arrivalDate.getMinutes().toString().padStart(2, '0');
-            
+
             return `${arrivalHours}:${arrivalMinutes}`;
           } catch {
             return '10:00';
           }
         };
-        
+
         const duration = '5j 0m';
         const arrivalTime = calculateArrivalTime(departureTime, duration);
-        
+
         const dummyData: TrainDetail = {
           trainId,
           trainName,
@@ -1247,94 +1618,18 @@ const BookingPageContent = () => {
           originStationId: 'stasiun-bandung',
           destinationStationId: 'stasiun-gambir'
         };
-        
+
         if (isMounted) {
           setTrainDetail(dummyData);
-          
+
           const urlPassengerCount = Math.max(1, Math.min(urlPassengers, 9));
           setPassengerCount(urlPassengerCount);
-          
+
           const initialPassengers = initializePassengers(urlPassengerCount);
           setPassengers(initialPassengers);
-          
-          // Generate seat data
-          const generateSeatData = () => {
-            const wagonsConfig = {
-              'Executive': [
-                { number: '1', name: 'Gerbong 1', class: 'executive', seats: 40, facilities: ['AC', 'Toilet', 'Power Outlet', 'WiFi'] },
-                { number: '2', name: 'Gerbong 2', class: 'executive', seats: 40, facilities: ['AC', 'Toilet', 'Power Outlet'] },
-              ],
-              'Business': [
-                { number: '1', name: 'Gerbong 1', class: 'business', seats: 50, facilities: ['AC', 'Toilet', 'Power Outlet'] },
-                { number: '2', name: 'Gerbong 2', class: 'business', seats: 50, facilities: ['AC', 'Toilet'] },
-              ],
-              'Economy': [
-                { number: '1', name: 'Gerbong 1', class: 'economy', seats: 60, facilities: ['AC', 'Toilet'] },
-                { number: '2', name: 'Gerbong 2', class: 'economy', seats: 60, facilities: ['AC', 'Toilet'] },
-              ]
-            };
-            
-            const selectedWagons = wagonsConfig[trainType as keyof typeof wagonsConfig] || wagonsConfig.Executive;
-            
-            const wagons = selectedWagons.map(wagonConfig => {
-              const rows = wagonConfig.class === 'executive' ? 10 : 
-                           wagonConfig.class === 'business' ? 10 : 12;
-              const columns = wagonConfig.class === 'executive' ? ['A', 'B', 'C', 'D'] :
-                             ['A', 'B', 'C', 'D'];
-              
-              const seats: Seat[] = [];
-              for (let row = 1; row <= rows; row++) {
-                columns.forEach((column, colIndex) => {
-                  const seatNumber = `${column}${row}`;
-                  const id = `${wagonConfig.number}-${seatNumber}`;
-                  
-                  const available = Math.random() > 0.3;
-                  const windowSeat = colIndex === 0 || colIndex === columns.length - 1;
-                  const forwardFacing = row % 2 === 1;
-                  
-                  let calculatedPrice = price;
-                  if (wagonConfig.class === 'executive') calculatedPrice *= 1.5;
-                  if (wagonConfig.class === 'business') calculatedPrice *= 1.2;
-                  if (windowSeat) calculatedPrice *= 1.1;
-                  if (forwardFacing) calculatedPrice *= 1.05;
-                  
-                  seats.push({
-                    id,
-                    number: seatNumber,
-                    row,
-                    column,
-                    available,
-                    windowSeat,
-                    forwardFacing,
-                    price: Math.round(calculatedPrice),
-                    wagonNumber: wagonConfig.number,
-                    wagonClass: wagonConfig.class
-                  });
-                });
-              }
-              
-              const availableSeats = seats.filter(seat => seat.available).length;
-              
-              return {
-                number: wagonConfig.number,
-                name: wagonConfig.name,
-                class: wagonConfig.class,
-                facilities: wagonConfig.facilities,
-                availableSeats,
-                totalSeats: seats.length,
-                seats
-              };
-            });
 
-            const totalAvailableSeats = wagons.reduce((sum, wagon) => sum + wagon.availableSeats, 0);
-            
-            return {
-              wagons,
-              totalAvailableSeats
-            };
-          };
+          const seatData = await loadSeatData('dummy-schedule-1', urlPassengerCount, dummyData);
 
-          const seatData = generateSeatData();
           const trainDataObj: Train = {
             trainId: dummyData.trainId,
             trainName: dummyData.trainName,
@@ -1350,16 +1645,14 @@ const BookingPageContent = () => {
             scheduleId: scheduleId || 'dummy-schedule-1',
             wagons: seatData.wagons
           };
-          
+
           setTrainData(trainDataObj);
-          
-          // Auto-select kursi
+
           if (autoSelectEnabled) {
             const autoSelectedSeats = autoSelectSeats(trainDataObj, urlPassengerCount);
             setSelectedSeats(autoSelectedSeats);
           }
 
-          // Load multi-segment options
           loadMultiSegmentOptions();
         }
       } catch (error: any) {
@@ -1375,7 +1668,7 @@ const BookingPageContent = () => {
     };
 
     loadTrainData();
-    
+
     return () => {
       isMounted = false;
     };
@@ -1392,8 +1685,7 @@ const BookingPageContent = () => {
         passengerCount
       );
       setMultiSegmentOptions(options);
-      
-      // Set default to first option
+
       if (options.length > 0) {
         setSelectedMultiSegment(options[0]);
       }
@@ -1411,31 +1703,31 @@ const BookingPageContent = () => {
     const loadTransitStations = async () => {
       if (!trainDetail?.scheduleId || !origin || !destination) {
         if (isMounted) {
-          setTransitStations(getDummyTransitStations());
+          setTransitStations(getDummyTransitStations(origin, destination));
         }
         return;
       }
 
       if (!isMounted) return;
-      
+
       setTransitLoading(true);
       setTransitError(null);
-      
+
       try {
         const stations = await fetchTransitStations(
           trainDetail.scheduleId,
           origin,
           destination
         );
-        
+
         if (isMounted) {
-          setTransitStations(stations.length > 0 ? stations : getDummyTransitStations());
+          setTransitStations(stations.length > 0 ? stations : getDummyTransitStations(origin, destination));
         }
       } catch (error: any) {
         if (isMounted) {
           console.error('Error loading transit:', error);
           setTransitError('Gagal memuat data stasiun transit');
-          setTransitStations(getDummyTransitStations());
+          setTransitStations(getDummyTransitStations(origin, destination));
         }
       } finally {
         if (isMounted) {
@@ -1447,16 +1739,70 @@ const BookingPageContent = () => {
     if (trainDetail) {
       loadTransitStations();
     }
-    
+
     return () => {
       isMounted = false;
     };
   }, [trainDetail, origin, destination]);
 
+  // Fungsi untuk mengambil promo yang tersedia
+  const fetchAvailablePromos = async () => {
+    if (!trainDetail) return;
+
+    try {
+      const totalPrice = trainDetail.price * passengerCount;
+
+      const response = await fetch(
+        `/api/promotions?trainType=${trainDetail.trainType}&totalPrice=${totalPrice}&passengerCount=${passengerCount}`
+      );
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setAvailablePromos(result.data);
+      } else {
+        console.error('Failed to fetch promotions:', result.error);
+        setAvailablePromos(DUMMY_PROMO_VOUCHERS);
+      }
+    } catch (error) {
+      console.error('Error fetching promotions:', error);
+      setAvailablePromos(DUMMY_PROMO_VOUCHERS);
+    }
+  };
+
+  // Load available promos saat trainDetail berubah
+  useEffect(() => {
+    if (trainDetail) {
+      fetchAvailablePromos();
+    }
+  }, [trainDetail, passengerCount]);
+
+  // Perhitungan harga
+  const basePrice = trainDetail ? trainDetail.price * passengerCount : 0;
+  const adminFee = 5000;
+  const insuranceFee = 10000;
+  const selectedPaymentMethod = PAYMENT_METHODS.find(method => method.id === selectedPayment);
+  const paymentFee = selectedPaymentMethod?.fees || 0;
+
+  const seatPriceAdjustment = selectedSeats.reduce((sum, seat) => {
+    const basePrice = trainDetail?.price || 265000;
+    return sum + (seat.price - basePrice);
+  }, 0);
+
+  const transitDiscount = selectedTransit ? basePrice * 0.1 : 0;
+
+  const totalSegmentPrice = selectedMultiSegment
+    ? selectedMultiSegment.totalPrice * passengerCount
+    : basePrice;
+
+  const subtotal = totalSegmentPrice + seatPriceAdjustment - transitDiscount + transitAdditionalPrice;
+  const totalBeforeDiscount = subtotal + adminFee + insuranceFee + paymentFee;
+  const grandTotal = totalBeforeDiscount - discountAmount;
+
   // Update jumlah penumpang
   useEffect(() => {
     const maxPassengers = Math.max(1, Math.min(passengerCount, 9));
-    
+
     if (passengers.length < maxPassengers) {
       const newPassengers = [...passengers];
       for (let i = passengers.length; i < maxPassengers; i++) {
@@ -1465,12 +1811,12 @@ const BookingPageContent = () => {
         newPassengers.push(newPassenger);
       }
       setPassengers(newPassengers);
-    } 
+    }
     else if (passengers.length > maxPassengers) {
       const newPassengers = passengers.slice(0, maxPassengers);
       setPassengers(newPassengers);
     }
-    
+
     if (passengerCount < 1) {
       setPassengerCount(1);
     } else if (passengerCount > 9) {
@@ -1482,7 +1828,6 @@ const BookingPageContent = () => {
       setSelectedSeats(autoSelectedSeats);
     }
 
-    // Reload multi-segment options when passenger count changes
     if (trainDetail) {
       loadMultiSegmentOptions();
     }
@@ -1490,32 +1835,32 @@ const BookingPageContent = () => {
 
   // Cek kelengkapan data
   useEffect(() => {
-    const allPassengersFilled = passengers.every(passenger => 
+    const allPassengersFilled = passengers.every(passenger =>
       passenger.fullName.trim() !== '' &&
       passenger.idNumber.trim() !== '' &&
       (passenger.useContactDetail || (passenger.phoneNumber.trim() !== '' && passenger.email.trim() !== '' && passenger.email.includes('@')))
     );
-    
-    const contactDetailFilled = 
+
+    const contactDetailFilled =
       contactDetail.fullName.trim() !== '' &&
       contactDetail.email.trim() !== '' &&
       contactDetail.email.includes('@') &&
       contactDetail.phoneNumber.trim() !== '';
-    
+
     setPassengerDataFilled(allPassengersFilled && contactDetailFilled);
   }, [passengers, contactDetail]);
 
   // Update kursi penumpang
   useEffect(() => {
     const updatedPassengers = [...passengers];
-    
+
     updatedPassengers.forEach(passenger => {
       passenger.seatNumber = '';
       passenger.seatId = '';
       passenger.wagonNumber = '';
       passenger.wagonClass = '';
     });
-    
+
     selectedSeats.forEach((seat, index) => {
       if (updatedPassengers[index]) {
         updatedPassengers[index].seatNumber = seat.number;
@@ -1524,7 +1869,7 @@ const BookingPageContent = () => {
         updatedPassengers[index].wagonClass = seat.wagonClass || '';
       }
     });
-    
+
     setPassengers(updatedPassengers);
   }, [selectedSeats]);
 
@@ -1539,7 +1884,7 @@ const BookingPageContent = () => {
       setSelectedTransit(transit);
       const additionalPrice = transit.waiting_minutes * 500;
       setTransitAdditionalPrice(additionalPrice);
-      
+
       const updatedPassengers = passengers.map(passenger => ({
         ...passenger,
         transit_station: transit.station_name,
@@ -1550,7 +1895,7 @@ const BookingPageContent = () => {
     } else {
       setSelectedTransit(null);
       setTransitAdditionalPrice(0);
-      
+
       const updatedPassengers = passengers.map(passenger => ({
         ...passenger,
         transit_station: undefined,
@@ -1564,9 +1909,8 @@ const BookingPageContent = () => {
   // Handle multi-segment selection
   const handleMultiSegmentSelect = (segment: MultiSegmentBooking | null) => {
     setSelectedMultiSegment(segment);
-    
+
     if (segment) {
-      // Update train detail with first segment
       const firstSegment = segment.segments[0];
       if (firstSegment) {
         setTrainDetail({
@@ -1613,8 +1957,8 @@ const BookingPageContent = () => {
     const updatedPassengers = passengers.map(passenger => {
       if (passenger.useContactDetail) {
         const updatedPassenger = { ...passenger };
-        
-        switch(field) {
+
+        switch (field) {
           case 'fullName':
             updatedPassenger.fullName = value;
             break;
@@ -1628,7 +1972,7 @@ const BookingPageContent = () => {
             updatedPassenger.title = value;
             break;
         }
-        
+
         return updatedPassenger;
       }
       return passenger;
@@ -1653,14 +1997,14 @@ const BookingPageContent = () => {
   // Handle pilih kursi
   const handleSeatSelect = (seat: Seat) => {
     const isAlreadySelected = selectedSeats.some(s => s.id === seat.id);
-    
+
     if (isAlreadySelected) {
       setSelectedSeats(prev => prev.filter(s => s.id !== seat.id));
     } else {
       if (selectedSeats.length >= passengerCount) {
         return;
       }
-      
+
       setSelectedSeats(prev => [...prev, seat]);
       setAutoSelectEnabled(false);
     }
@@ -1681,7 +2025,7 @@ const BookingPageContent = () => {
   // Validasi form
   const validateStep1 = (): { isValid: boolean; errors: string[] } => {
     const validationErrors: string[] = [];
-    
+
     if (!contactDetail.fullName.trim()) {
       validationErrors.push('Nama lengkap kontak utama harus diisi');
     }
@@ -1702,7 +2046,7 @@ const BookingPageContent = () => {
       if (passenger.idType === 'ID' && passenger.idNumber.length < 16) {
         validationErrors.push(`Nomor KTP/NIK penumpang ${index + 1} harus 16 digit`);
       }
-      
+
       if (!passenger.useContactDetail) {
         if (!passenger.phoneNumber.trim() || passenger.phoneNumber.length < 10) {
           validationErrors.push(`Nomor telepon penumpang ${index + 1} tidak valid`);
@@ -1712,7 +2056,7 @@ const BookingPageContent = () => {
         }
       }
     });
-    
+
     setValidationErrors(validationErrors);
     return {
       isValid: validationErrors.length === 0,
@@ -1737,10 +2081,10 @@ const BookingPageContent = () => {
     setPromoMessage('');
 
     try {
-      const validation = validatePromoCode(
-        promoCodeInput, 
-        trainDetail.price, 
-        passengerCount, 
+      const validation = await validatePromoCode(
+        promoCodeInput,
+        trainDetail.price,
+        passengerCount,
         trainDetail.trainType,
         trainDetail.departureDate
       );
@@ -1776,6 +2120,10 @@ const BookingPageContent = () => {
   const handleSelectPromo = (promo: PromoVoucher) => {
     setPromoCodeInput(promo.promo_code);
     setShowPromoList(false);
+    // Langsung apply promo saat dipilih dari list
+    setTimeout(() => {
+      handleApplyPromo();
+    }, 100);
   };
 
   const handleContinueToPayment = () => {
@@ -1784,7 +2132,7 @@ const BookingPageContent = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    
+
     setBookingStep(2);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1792,7 +2140,7 @@ const BookingPageContent = () => {
   // Handle pembayaran
   const handlePayment = async () => {
     if (isProcessing) return;
-    
+
     console.log('💳 Starting payment process...');
     setIsProcessing(true);
     setError(null);
@@ -1802,157 +2150,178 @@ const BookingPageContent = () => {
         throw new Error('Data perjalanan atau penumpang tidak lengkap');
       }
 
-      // Prepare segment data
-      const segmentData = selectedMultiSegment 
+      const segmentData = selectedMultiSegment
         ? selectedMultiSegment.segments.map(segment => ({
-            scheduleId: segment.scheduleId,
-            origin: segment.origin,
-            destination: segment.destination,
-            departureTime: segment.departureTime,
-            arrivalTime: segment.arrivalTime,
-            trainName: segment.trainName,
-            trainType: segment.trainType,
-            price: segment.price
-          }))
+          scheduleId: segment.scheduleId,
+          origin: segment.origin,
+          destination: segment.destination,
+          departureTime: segment.departureTime,
+          arrivalTime: segment.arrivalTime,
+          trainName: segment.trainName,
+          trainType: segment.trainType,
+          price: segment.price
+        }))
         : [{
-            scheduleId: trainDetail.scheduleId,
-            origin: trainDetail.origin,
-            destination: trainDetail.destination,
-            departureTime: trainDetail.departureTime,
-            arrivalTime: trainDetail.arrivalTime,
-            trainName: trainDetail.trainName,
-            trainType: trainDetail.trainType,
-            price: trainDetail.price
-          }];
+          scheduleId: trainDetail.scheduleId,
+          origin: trainDetail.origin,
+          destination: trainDetail.destination,
+          departureTime: trainDetail.departureTime,
+          arrivalTime: trainDetail.arrivalTime,
+          trainName: trainDetail.trainName,
+          trainType: trainDetail.trainType,
+          price: trainDetail.price
+        }];
 
       const bookingData = {
-        scheduleId: trainDetail.scheduleId || 'dummy-schedule-1',
-        originStationId: trainDetail.originStationId || 'stasiun-bandung',
-        destinationStationId: trainDetail.destinationStationId || 'stasiun-gambir',
-        transitStationId: selectedTransit?.station_id,
-        transitStationName: selectedTransit?.station_name,
-        transitArrival: selectedTransit?.arrival_time,
-        transitDeparture: selectedTransit?.departure_time,
-        passengerCount,
-        passengerDetails: passengers.map(p => ({
+        bookingCode: generatedBookingCode,
+        orderId: generatedOrderId,
+        customerName: contactDetail.fullName,
+        customerEmail: contactDetail.email,
+        customerPhone: contactDetail.phoneNumber,
+        totalAmount: grandTotal,
+        passengerCount: passengerCount,
+        user_id: user?.id || null,
+        contactDetail: contactDetail,
+        passengers: passengers.map(p => ({
           fullName: p.fullName,
           idNumber: p.idNumber,
           email: p.email,
           phoneNumber: p.phoneNumber,
-          seatId: p.seatId,
-          transitStation: p.transit_station,
-          transitArrival: p.transit_arrival,
-          transitDeparture: p.transit_departure
+          seatNumber: p.seatNumber,
+          wagonNumber: p.wagonNumber,
+          wagonClass: p.wagonClass,
+          title: p.title
         })),
-        contactDetails: contactDetail,
+        trainDetail: {
+          ...trainDetail,
+          scheduleId: trainDetail.scheduleId || 'dummy-schedule-1'
+        },
         selectedSeats: selectedSeats.map(seat => ({
-          id: seat.id,
-          number: seat.number,
-          price_adjustment: seat.price - (trainDetail?.price || 0)
+          seatId: seat.id,
+          seatNumber: seat.number,
+          wagonNumber: seat.wagonNumber,
+          wagonClass: seat.wagonClass,
+          price: seat.price
         })),
         paymentMethod: selectedPayment,
-        promoCode: appliedPromo?.promo_code,
-        totalAmount: grandTotal,
-        discountAmount: discountAmount,
-        seatPremium: seatPriceAdjustment,
-        transitDiscount: transitDiscount,
-        transitAdditionalPrice: transitAdditionalPrice,
-        bookingCode: generatedBookingCode,
-        orderId: generatedOrderId,
-        // Multi-segment data
         isMultiSegment: selectedMultiSegment?.isMultiSegment || false,
         segments: segmentData,
-        totalSegments: segmentData.length,
-        connectionTime: selectedMultiSegment?.connectionTime
+        promoCode: appliedPromo?.promo_code || null,
+        discountAmount: discountAmount
       };
 
       console.log('📦 Sending booking data to API...');
-      
-      // Step 1: Buat booking
-      const bookingResponse = await createTransitBooking(bookingData);
+
+      const bookingResponse = await fetch('/api/bookings/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookingData)
+      }).then(res => res.json());
+
       console.log('📥 Booking response:', bookingResponse);
 
-      let finalBookingData;
-      if (bookingResponse.success) {
-        finalBookingData = bookingResponse.booking || bookingResponse;
-      } else if (bookingResponse.booking) {
-        finalBookingData = bookingResponse.booking;
-      } else {
+      if (!bookingResponse.success) {
         throw new Error(bookingResponse.error || 'Gagal membuat booking');
       }
 
-      console.log('✅ Booking created:', finalBookingData.booking_code);
-      
-      // Step 2: Simpan data untuk pembayaran
+      const finalBookingCode = bookingResponse.data.bookingCode;
+      const finalOrderId = bookingResponse.data.orderId;
+      const bookingId = bookingResponse.data.bookingId;
+
+      console.log('✅ Booking created:', finalBookingCode);
+
+      // Catat penggunaan promo jika ada
+      if (appliedPromo && bookingId) {
+        await recordPromoUsage(appliedPromo.id, bookingId, discountAmount);
+      }
+
+      // Simpan data untuk pembayaran
       const paymentData = {
-        bookingCode: finalBookingData.booking_code || generatedBookingCode,
-        orderId: finalBookingData.order_id || generatedOrderId,
-        amount: finalBookingData.total_amount || grandTotal,
+        bookingCode: finalBookingCode,
+        orderId: finalOrderId,
+        amount: grandTotal,
         name: contactDetail.fullName,
         email: contactDetail.email,
         phone: contactDetail.phoneNumber,
         passengerCount: passengerCount,
         paymentMethod: selectedPayment,
-        paymentFee: paymentFee,
-        seatPremium: seatPriceAdjustment,
-        discountAmount: discountAmount,
-        promoCode: appliedPromo?.promo_code,
-        promoName: appliedPromo?.name,
         trainName: trainDetail.trainName,
         trainType: trainDetail.trainType,
         origin: trainDetail.origin,
         destination: trainDetail.destination,
         departureDate: trainDetail.departureDate,
         departureTime: trainDetail.departureTime,
-        transitStation: selectedTransit?.station_name,
-        transitArrival: selectedTransit?.arrival_time,
-        transitDeparture: selectedTransit?.departure_time,
-        transitDiscount: transitDiscount,
-        transitAdditionalPrice: transitAdditionalPrice,
-        adminFee: adminFee,
-        insuranceFee: insuranceFee,
-        // Multi-segment data
+        bookingId: bookingId,
         isMultiSegment: selectedMultiSegment?.isMultiSegment || false,
-        totalSegments: segmentData.length,
-        segments: segmentData
+        segments: segmentData,
+        passengerDetails: passengers.map(p => ({
+          fullName: p.fullName,
+          email: p.email,
+          phoneNumber: p.phoneNumber,
+          seatNumber: p.seatNumber
+        }))
       };
 
-      // Simpan ke sessionStorage
       sessionStorage.setItem('currentBooking', JSON.stringify(paymentData));
-      sessionStorage.setItem('currentPayment', JSON.stringify(paymentData));
-      
-      console.log('💾 Payment data saved:', paymentData.bookingCode);
-      
-      // Step 3: Redirect ke halaman pembayaran
+
+      console.log('💾 Payment data saved for redirect');
+
+      // Redirect ke halaman pembayaran
       const queryParams = new URLSearchParams();
-      Object.entries(paymentData).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          queryParams.append(key, value.toString());
-        }
-      });
-      
+      queryParams.append('bookingCode', finalBookingCode);
+      queryParams.append('orderId', finalOrderId);
+      queryParams.append('amount', grandTotal.toString());
+      queryParams.append('name', contactDetail.fullName);
+      queryParams.append('email', contactDetail.email);
+      queryParams.append('phone', contactDetail.phoneNumber);
+      queryParams.append('passengerCount', passengerCount.toString());
+      queryParams.append('paymentMethod', selectedPayment);
+
+      // Train details
+      queryParams.append('trainName', trainDetail.trainName || 'Parahyangan');
+      queryParams.append('trainType', trainDetail.trainType || 'Executive');
+      queryParams.append('origin', trainDetail.origin || 'Bandung');
+      queryParams.append('destination', trainDetail.destination || 'Gambir');
+      queryParams.append('departureDate', trainDetail.departureDate || new Date().toISOString().split('T')[0]);
+      queryParams.append('departureTime', trainDetail.departureTime || '05:00');
+
+      // Pricing breakdown - Use average segment price as basePrice for payment page consistency
+      const consolidatedBasePrice = selectedMultiSegment
+        ? Math.round(selectedMultiSegment.totalPrice)
+        : (trainDetail.price || 265000);
+
+      queryParams.append('basePrice', consolidatedBasePrice.toString());
+      queryParams.append('seatPremium', seatPriceAdjustment.toString());
+      queryParams.append('adminFee', adminFee.toString());
+      queryParams.append('insuranceFee', insuranceFee.toString());
+      queryParams.append('isMultiSegment', (selectedMultiSegment?.isMultiSegment || false).toString());
+
+      // Promo data if applicable
+      if (appliedPromo) {
+        queryParams.append('promoCode', appliedPromo.promo_code);
+        queryParams.append('promoName', appliedPromo.name);
+        queryParams.append('discountAmount', discountAmount.toString());
+      }
+
+      // Transit data if applicable
+      if (selectedTransit) {
+        queryParams.append('transitStation', selectedTransit.station_name);
+        queryParams.append('transitArrival', selectedTransit.arrival_time);
+        queryParams.append('transitDeparture', selectedTransit.departure_time);
+        queryParams.append('transitDiscount', transitDiscount.toString());
+        queryParams.append('transitAdditionalPrice', transitAdditionalPrice.toString());
+      }
+
+      router.push(`/payment?${queryParams.toString()}`);
+
       const paymentUrl = `/payment?${queryParams.toString()}`;
       console.log('🔗 Redirecting to:', paymentUrl);
-      
+
       router.push(paymentUrl);
-      
+
     } catch (error: any) {
       console.error('💥 Error in payment process:', error);
-      
-      let errorMessage = 'Terjadi kesalahan saat memproses booking. ';
-      
-      if (error.message.includes('network') || error.message.includes('Network')) {
-        errorMessage += 'Koneksi internet terputus. Silakan coba lagi.';
-      } else if (error.message.includes('timeout')) {
-        errorMessage += 'Waktu permintaan habis. Silakan coba lagi.';
-      } else if (error.message.includes('JSON')) {
-        errorMessage += 'Format data tidak valid.';
-      } else {
-        errorMessage += error.message || 'Silakan coba beberapa saat lagi.';
-      }
-      
-      setError(errorMessage);
-      
+      setError(error.message || 'Terjadi kesalahan saat memproses booking.');
     } finally {
       setIsProcessing(false);
     }
@@ -1961,7 +2330,7 @@ const BookingPageContent = () => {
   // Modal komponen
   const SeatMapModal = () => {
     if (!trainData) return null;
-    
+
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
@@ -1986,14 +2355,14 @@ const BookingPageContent = () => {
                   </label>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setShowSeatMap(false)}
                 className="text-gray-500 hover:text-gray-700 text-2xl"
               >
                 ✕
               </button>
             </div>
-            
+
             {trainData && (
               <TrainSeatMap
                 train={trainData}
@@ -2003,12 +2372,12 @@ const BookingPageContent = () => {
                 maxSeats={passengerCount}
               />
             )}
-            
+
             <div className="mt-8 p-6 bg-white rounded-xl border border-gray-200">
               <h4 className="font-bold text-lg text-gray-800 mb-4">
                 Kursi Terpilih ({selectedSeats.length} dari {passengerCount})
               </h4>
-              
+
               {selectedSeats.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {selectedSeats.map((seat, index) => (
@@ -2043,7 +2412,7 @@ const BookingPageContent = () => {
                   <p className="text-sm text-gray-400 mt-1">Kursi akan dialokasikan otomatis saat check-in</p>
                 </div>
               )}
-              
+
               <div className="flex justify-end gap-3 mt-6 pt-6 border-t">
                 <button
                   onClick={() => setShowSeatMap(false)}
@@ -2056,118 +2425,6 @@ const BookingPageContent = () => {
                   className="px-6 py-3 bg-[#FD7E14] text-white rounded-lg hover:bg-[#E06700] font-medium"
                 >
                   Simpan Pilihan
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const PromoListModal = () => {    
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-800">Daftar Promo & Voucher</h3>
-                <p className="text-gray-600">Pilih promo yang sesuai dengan perjalanan Anda</p>
-              </div>
-              <button 
-                onClick={() => setShowPromoList(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
-              >
-                ✕
-              </button>
-            </div>
-          
-            {availablePromos.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <TagIcon />
-                </div>
-                <p className="text-gray-500">Tidak ada promo yang tersedia saat ini</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {availablePromos.map((promo) => (
-                  <div key={promo.id} className="border border-gray-200 rounded-xl p-5 hover:border-orange-300 transition-colors">
-                    <div className="flex flex-col md:flex-row md:items-start justify-between">
-                      <div className="mb-4 md:mb-0">
-                        <div className="flex items-center mb-2">
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-                            <TagIcon />
-                          </div>
-                          <div>
-                            <h4 className="font-bold text-lg text-gray-800">{promo.name}</h4>
-                            <div className="flex items-center mt-1">
-                              <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full font-medium">
-                                {promo.promo_code}
-                              </span>
-                              <span className="mx-2 text-gray-400">•</span>
-                              <span className="text-sm text-gray-600">
-                                {promo.usage_count}/{promo.usage_limit} digunakan
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <p className="text-gray-600 mb-3">{promo.description}</p>
-                        
-                        <div className="flex flex-wrap gap-2">
-                          <div className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
-                            {promo.discount_type === 'percentage' ? `${promo.discount_value}%` : `Rp ${promo.discount_value.toLocaleString('id-ID')}`}
-                          </div>
-                          <div className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full">
-                            Min. beli Rp {promo.min_order_amount.toLocaleString('id-ID')}
-                          </div>
-                          {promo.max_discount_amount > 0 && promo.discount_type === 'percentage' && (
-                            <div className="px-3 py-1 bg-purple-100 text-purple-800 text-sm rounded-full">
-                              Maks. Rp {promo.max_discount_amount.toLocaleString('id-ID')}
-                            </div>
-                          )}
-                          <div className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                            {!promo.applicable_to || promo.applicable_to.length === 0 
-                              ? 'Berlaku untuk semua kelas' 
-                              : `Berlaku untuk: ${promo.applicable_to.join(', ')}`}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-col items-end">
-                        <button
-                          onClick={() => handleSelectPromo(promo)}
-                          className="px-4 py-2 bg-[#FD7E14] text-white rounded-lg hover:bg-[#E06700] font-medium"
-                        >
-                          Pakai Promo
-                        </button>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Berlaku hingga {formatDate(promo.end_date)}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {promo.promo_code === 'FAMILY30' && (
-                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <p className="text-sm text-yellow-800">
-                          📢 <span className="font-medium">Promo khusus:</span> Diskon {promo.discount_value}% berlaku untuk minimal 3 penumpang
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            <div className="mt-6 pt-6 border-t">
-              <div className="text-center">
-                <button
-                  onClick={() => setShowPromoList(false)}
-                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
-                >
-                  Tutup
                 </button>
               </div>
             </div>
@@ -2192,7 +2449,7 @@ const BookingPageContent = () => {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-4">
-          <button 
+          <button
             onClick={() => router.back()}
             className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
           >
@@ -2230,9 +2487,9 @@ const BookingPageContent = () => {
                 </div>
                 <span className="mt-2 font-medium">Data Penumpang</span>
               </div>
-              
+
               <div className={`h-1 w-32 ${bookingStep >= 2 ? 'bg-[#FD7E14]' : 'bg-gray-300'}`}></div>
-              
+
               <div className={`flex flex-col items-center ${bookingStep >= 2 ? 'text-[#FD7E14]' : 'text-gray-400'}`}>
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${bookingStep >= 2 ? 'bg-[#FD7E14] text-white' : 'bg-gray-200'}`}>
                   {bookingStep >= 2 ? <CheckIcon /> : '2'}
@@ -2241,13 +2498,13 @@ const BookingPageContent = () => {
               </div>
             </div>
           </div>
-          
+
           <h1 className="text-3xl font-bold text-gray-800 text-center mb-2">
             {bookingStep === 1 ? 'Data Penumpang' : 'Pembayaran'}
           </h1>
           <p className="text-gray-600 text-center">
-            {bookingStep === 1 
-              ? 'Lengkapi data penumpang dengan benar' 
+            {bookingStep === 1
+              ? 'Lengkapi data penumpang dengan benar'
               : 'Pilih metode pembayaran yang tersedia'}
           </p>
         </div>
@@ -2255,29 +2512,37 @@ const BookingPageContent = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Multi Segment Toggle */}
-            {multiSegmentOptions.length > 1 && bookingStep === 1 && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <div className="flex items-center justify-between">
+            {/* Tipe Perjalanan Selector */}
+            {multiSegmentOptions.length > 0 && bookingStep === 1 && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center">
-                    <SegmentIcon />
-                    <div className="ml-3">
-                      <h3 className="font-bold text-gray-800">Perjalanan Multi-Segmen</h3>
-                      <p className="text-sm text-gray-600">
-                        {multiSegmentOptions.length} opsi perjalanan tersedia
-                      </p>
+                    <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                      <SegmentIcon />
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="font-bold text-gray-800 text-lg">Tipe Perjalanan</h3>
+                      <p className="text-sm text-gray-600">Pilih rute langsung atau multi-segmen dengan transit</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setShowMultiSegment(!showMultiSegment)}
-                    className={`px-4 py-2 rounded-lg font-medium ${
-                      showMultiSegment
-                        ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                        : 'bg-gray-100 text-gray-700 border border-gray-300'
-                    }`}
-                  >
-                    {showMultiSegment ? 'Sembunyikan Opsi' : 'Lihat Opsi'}
-                  </button>
+                  <div className="flex bg-gray-100 p-1.5 rounded-xl border border-gray-200">
+                    <button
+                      onClick={() => setShowMultiSegment(false)}
+                      className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${!showMultiSegment
+                        ? 'bg-white text-[#FD7E14] shadow-md border border-orange-100 scale-105'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      Penuh (Tanpa Transit)
+                    </button>
+                    <button
+                      onClick={() => setShowMultiSegment(true)}
+                      className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${showMultiSegment
+                        ? 'bg-[#FD7E14] text-white shadow-md scale-105'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      Multi-Segmen (Seat-Reuse)
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2296,7 +2561,7 @@ const BookingPageContent = () => {
             {/* Train Summary */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">Detail Perjalanan</h2>
-              
+
               {selectedMultiSegment?.isMultiSegment ? (
                 // Multi-segment display
                 <div className="space-y-6">
@@ -2311,11 +2576,10 @@ const BookingPageContent = () => {
                             <div className="ml-4">
                               <h3 className="font-bold text-lg text-gray-800">{segment.trainName}</h3>
                               <div className="flex items-center mt-1">
-                                <span className={`px-2 py-1 text-xs rounded font-medium ${
-                                  segment.trainType === 'Executive' ? 'bg-blue-100 text-blue-800' :
+                                <span className={`px-2 py-1 text-xs rounded font-medium ${segment.trainType === 'Executive' ? 'bg-blue-100 text-blue-800' :
                                   segment.trainType === 'Business' ? 'bg-green-100 text-green-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
                                   {segment.trainType}
                                 </span>
                                 <span className="mx-2 text-gray-400">•</span>
@@ -2326,7 +2590,7 @@ const BookingPageContent = () => {
                             </div>
                           </div>
                         </div>
-                        
+
                         <div className="mt-4 md:mt-0 text-right">
                           <p className="text-2xl font-bold text-[#FD7E14]">
                             Rp {(segment.price).toLocaleString('id-ID')}
@@ -2334,14 +2598,14 @@ const BookingPageContent = () => {
                           <p className="text-sm text-gray-500">per penumpang</p>
                         </div>
                       </div>
-                      
+
                       <div className="py-4 border-y">
                         <div className="flex items-center justify-between">
                           <div className="text-center">
                             <p className="text-2xl font-bold text-gray-800">{segment.departureTime}</p>
                             <p className="text-gray-600 mt-1">{segment.origin}</p>
                           </div>
-                          
+
                           <div className="text-center flex-1 mx-8">
                             <div className="relative">
                               <div className="h-0.5 bg-gray-300 w-full"></div>
@@ -2355,14 +2619,14 @@ const BookingPageContent = () => {
                             </div>
                             <p className="text-xs text-gray-500 mt-2">{segment.duration}</p>
                           </div>
-                          
+
                           <div className="text-center">
                             <p className="text-2xl font-bold text-gray-800">{segment.arrivalTime}</p>
                             <p className="text-gray-600 mt-1">{segment.destination}</p>
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="grid grid-cols-3 gap-4 pt-4">
                         <div>
                           <div className="flex items-center text-gray-600 mb-1">
@@ -2373,7 +2637,7 @@ const BookingPageContent = () => {
                             {formatDepartureDate(segment.departureDate)}
                           </p>
                         </div>
-                        
+
                         <div className="text-center">
                           <div className="flex items-center justify-center text-gray-600 mb-1">
                             <ClockIcon />
@@ -2381,7 +2645,7 @@ const BookingPageContent = () => {
                           </div>
                           <p className="font-semibold text-gray-800">{segment.duration}</p>
                         </div>
-                        
+
                         <div className="text-right">
                           <div className="flex items-center justify-end text-gray-600 mb-1">
                             <UserIcon />
@@ -2392,7 +2656,7 @@ const BookingPageContent = () => {
                       </div>
                     </div>
                   ))}
-                  
+
                   {selectedMultiSegment.connectionTime && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                       <div className="flex items-center">
@@ -2419,11 +2683,10 @@ const BookingPageContent = () => {
                         <div className="ml-4">
                           <h3 className="font-bold text-lg text-gray-800">{trainDetail?.trainName}</h3>
                           <div className="flex items-center mt-1">
-                            <span className={`px-2 py-1 text-xs rounded font-medium ${
-                              trainDetail?.trainType === 'Executive' ? 'bg-blue-100 text-blue-800' :
+                            <span className={`px-2 py-1 text-xs rounded font-medium ${trainDetail?.trainType === 'Executive' ? 'bg-blue-100 text-blue-800' :
                               trainDetail?.trainType === 'Business' ? 'bg-green-100 text-green-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
+                                'bg-gray-100 text-gray-800'
+                              }`}>
                               {trainDetail?.trainType}
                             </span>
                             <span className="mx-2 text-gray-400">•</span>
@@ -2434,7 +2697,7 @@ const BookingPageContent = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="mt-4 md:mt-0 text-right">
                       <p className="text-2xl font-bold text-[#FD7E14]">
                         Rp {(trainDetail?.price || 0).toLocaleString('id-ID')}
@@ -2442,7 +2705,7 @@ const BookingPageContent = () => {
                       <p className="text-sm text-gray-500">per penumpang</p>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-3 gap-4 py-6 border-y">
                     <div>
                       <div className="flex items-center text-gray-600 mb-1">
@@ -2453,7 +2716,7 @@ const BookingPageContent = () => {
                         {formatDepartureDate(trainDetail?.departureDate || '')}
                       </p>
                     </div>
-                    
+
                     <div className="text-center">
                       <div className="flex items-center justify-center text-gray-600 mb-1">
                         <ClockIcon />
@@ -2461,7 +2724,7 @@ const BookingPageContent = () => {
                       </div>
                       <p className="font-semibold text-gray-800">{trainDetail?.duration || '5j 0m'}</p>
                     </div>
-                    
+
                     <div className="text-right">
                       <div className="flex items-center justify-end text-gray-600 mb-1">
                         <UserIcon />
@@ -2470,14 +2733,14 @@ const BookingPageContent = () => {
                       <p className="font-semibold text-gray-800">{passengerCount} orang</p>
                     </div>
                   </div>
-                  
+
                   <div className="pt-6">
                     <div className="flex items-center justify-between">
                       <div className="text-center">
                         <p className="text-2xl font-bold text-gray-800">{trainDetail?.departureTime || '05:00'}</p>
                         <p className="text-gray-600 mt-1">{trainDetail?.origin}</p>
                       </div>
-                      
+
                       <div className="text-center flex-1 mx-8">
                         <div className="relative">
                           <div className="h-0.5 bg-gray-300 w-full"></div>
@@ -2491,7 +2754,7 @@ const BookingPageContent = () => {
                         </div>
                         <p className="text-xs text-gray-500 mt-2">{trainDetail?.duration || '5j 0m'}</p>
                       </div>
-                      
+
                       <div className="text-center">
                         <p className="text-2xl font-bold text-gray-800">{trainDetail?.arrivalTime || '10:00'}</p>
                         <p className="text-gray-600 mt-1">{trainDetail?.destination}</p>
@@ -2500,26 +2763,25 @@ const BookingPageContent = () => {
                   </div>
                 </div>
               )}
-              
+
               {/* Pilihan Kursi */}
               <div className="mt-6 pt-6 border-t">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-1">Pilih Kursi (Opsional)</h4>
                     <p className="text-sm text-gray-500">
-                      {selectedSeats.length > 0 
-                        ? `${selectedSeats.length} kursi dipilih` 
+                      {selectedSeats.length > 0
+                        ? `${selectedSeats.length} kursi dipilih`
                         : 'Kursi akan dialokasikan otomatis'}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={toggleAutoSelect}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center ${
-                        autoSelectEnabled 
-                          ? 'bg-green-100 text-green-700 border border-green-300' 
-                          : 'bg-gray-100 text-gray-700 border border-gray-300'
-                      }`}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center ${autoSelectEnabled
+                        ? 'bg-green-100 text-green-700 border border-green-300'
+                        : 'bg-gray-100 text-gray-700 border border-gray-300'
+                        }`}
                     >
                       {autoSelectEnabled ? '✓ Auto-select' : 'Auto-select'}
                     </button>
@@ -2534,12 +2796,12 @@ const BookingPageContent = () => {
                     </button>
                   </div>
                 </div>
-                
+
                 {selectedSeats.length > 0 && (
                   <div className="mt-4">
                     <div className="flex flex-wrap gap-2">
                       {selectedSeats.map((seat) => (
-                        <div key={`seat-badge-${seat.id}`} 
+                        <div key={`seat-badge-${seat.id}`}
                           className="px-3 py-2 bg-orange-50 text-orange-800 rounded-lg border border-orange-200 flex items-center">
                           <span className="font-bold">{seat.number}</span>
                           <span className="ml-2 text-sm">(Gerbong {seat.wagonNumber})</span>
@@ -2577,11 +2839,11 @@ const BookingPageContent = () => {
                     <h2 className="text-2xl font-bold text-gray-800">Data Penumpang</h2>
                     <p className="text-gray-600 mt-1">Pastikan data sesuai dengan identitas</p>
                   </div>
-                  
+
                   <div className="mt-4 sm:mt-0 flex items-center">
                     <label className="mr-3 text-gray-700 font-medium">Jumlah Penumpang:</label>
                     <div className="relative">
-                      <select 
+                      <select
                         value={passengerCount}
                         onChange={(e) => setPassengerCount(Number(e.target.value))}
                         className="border rounded-lg px-4 py-2.5 text-gray-800 appearance-none bg-white pr-10"
@@ -2598,14 +2860,14 @@ const BookingPageContent = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Contact Details Section */}
                 <div className="mb-10 border-b pb-10">
                   <h3 className="text-xl font-bold text-gray-800 mb-6">Contact Details</h3>
                   <p className="text-gray-600 mb-6 text-sm">
                     The contact details will be used to send the e-ticket and for refund purposes.
                   </p>
-                  
+
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-3">
                       Title
@@ -2616,17 +2878,15 @@ const BookingPageContent = () => {
                           key={`contact-title-${title}`}
                           type="button"
                           onClick={() => handleContactDetailChange('title', title)}
-                          className={`flex items-center px-4 py-2.5 border rounded-lg transition-colors ${
-                            contactDetail.title === title
-                              ? 'border-[#FD7E14] bg-orange-50 text-[#FD7E14]'
-                              : 'border-gray-300 text-gray-700 hover:border-gray-400'
-                          }`}
+                          className={`flex items-center px-4 py-2.5 border rounded-lg transition-colors ${contactDetail.title === title
+                            ? 'border-[#FD7E14] bg-orange-50 text-[#FD7E14]'
+                            : 'border-gray-300 text-gray-700 hover:border-gray-400'
+                            }`}
                         >
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 ${
-                            contactDetail.title === title
-                              ? 'border-[#FD7E14] bg-[#FD7E14]'
-                              : 'border-gray-400'
-                          }`}>
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 ${contactDetail.title === title
+                            ? 'border-[#FD7E14] bg-[#FD7E14]'
+                            : 'border-gray-400'
+                            }`}>
                             {contactDetail.title === title && (
                               <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -2638,12 +2898,12 @@ const BookingPageContent = () => {
                       ))}
                     </div>
                   </div>
-                  
+
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Full Name According to ID/Passport *
                     </label>
-                    <input 
+                    <input
                       type="text"
                       placeholder="Enter full name"
                       value={contactDetail.fullName}
@@ -2652,12 +2912,12 @@ const BookingPageContent = () => {
                       required
                     />
                   </div>
-                  
+
                   <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Mobile Number *
                     </label>
-                    <input 
+                    <input
                       type="tel"
                       placeholder="+62 81234567890"
                       value={contactDetail.phoneNumber}
@@ -2666,12 +2926,12 @@ const BookingPageContent = () => {
                       required
                     />
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Email Address *
                     </label>
-                    <input 
+                    <input
                       type="email"
                       placeholder="email@example.com"
                       value={contactDetail.email}
@@ -2684,14 +2944,14 @@ const BookingPageContent = () => {
                     </p>
                   </div>
                 </div>
-                
+
                 {/* Passenger Details Section */}
                 <div>
                   <h3 className="text-xl font-bold text-gray-800 mb-6">Passenger Details</h3>
                   <p className="text-gray-600 mb-6 text-sm">
                     Make sure the data are correct. Please contact PT KAI if there's incorrect data.
                   </p>
-                  
+
                   <div className="space-y-8">
                     {passengers.map((passenger, index) => (
                       <div key={`passenger-${passenger.id}`} className="border rounded-xl p-6">
@@ -2725,7 +2985,7 @@ const BookingPageContent = () => {
                             </button>
                           )}
                         </div>
-                        
+
                         <div className="mb-6 p-4 bg-gray-50 rounded-lg">
                           <div className="flex items-center justify-between">
                             <div>
@@ -2751,7 +3011,7 @@ const BookingPageContent = () => {
                                 </p>
                               )}
                             </div>
-                            
+
                             {!passenger.useContactDetail && (
                               <button
                                 onClick={() => copyContactDetailToPassenger(index)}
@@ -2762,7 +3022,7 @@ const BookingPageContent = () => {
                             )}
                           </div>
                         </div>
-                        
+
                         {/* Passenger Info fields */}
                         <div className="mb-6">
                           <h5 className="font-medium text-gray-700 mb-3">Passenger Info</h5>
@@ -2772,18 +3032,16 @@ const BookingPageContent = () => {
                                 key={`passenger-${index}-title-${title}`}
                                 type="button"
                                 onClick={() => handlePassengerChange(index, 'title', title)}
-                                className={`flex items-center px-4 py-2.5 border rounded-lg transition-colors ${
-                                  passenger.title === title
-                                    ? 'border-[#FD7E14] bg-orange-50 text-[#FD7E14]'
-                                    : 'border-gray-300 text-gray-700 hover:border-gray-400'
-                                }`}
+                                className={`flex items-center px-4 py-2.5 border rounded-lg transition-colors ${passenger.title === title
+                                  ? 'border-[#FD7E14] bg-orange-50 text-[#FD7E14]'
+                                  : 'border-gray-300 text-gray-700 hover:border-gray-400'
+                                  }`}
                                 disabled={passenger.useContactDetail && title !== contactDetail.title}
                               >
-                                <div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 ${
-                                  passenger.title === title
-                                    ? 'border-[#FD7E14] bg-[#FD7E14]'
-                                    : 'border-gray-400'
-                                }`}>
+                                <div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 ${passenger.title === title
+                                  ? 'border-[#FD7E14] bg-[#FD7E14]'
+                                  : 'border-gray-400'
+                                  }`}>
                                   {passenger.title === title && (
                                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -2795,25 +3053,24 @@ const BookingPageContent = () => {
                             ))}
                           </div>
                         </div>
-                        
+
                         {/* Full Name */}
                         <div className="mb-6">
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Full Name According to ID/Passport *
                           </label>
-                          <input 
+                          <input
                             type="text"
                             placeholder="According to ID/Passport (without punctuation and degree)"
                             value={passenger.fullName}
                             onChange={(e) => handlePassengerChange(index, 'fullName', e.target.value)}
-                            className={`w-full border rounded-lg px-4 py-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent ${
-                              passenger.useContactDetail ? 'bg-gray-100' : ''
-                            }`}
+                            className={`w-full border rounded-lg px-4 py-3 text-gray-800 focus:ring-2 focus:ring-orange-500 focus:border-transparent ${passenger.useContactDetail ? 'bg-gray-100' : ''
+                              }`}
                             required
                             disabled={passenger.useContactDetail}
                           />
                         </div>
-                        
+
                         {/* Identity Info */}
                         <div className="mb-6">
                           <h5 className="font-medium text-gray-700 mb-3">Identity Info</h5>
@@ -2823,17 +3080,15 @@ const BookingPageContent = () => {
                                 key={`passenger-${index}-doctype-${docType}`}
                                 type="button"
                                 onClick={() => handlePassengerChange(index, 'idType', docType)}
-                                className={`flex items-center px-4 py-2.5 border rounded-lg transition-colors ${
-                                  passenger.idType === docType
-                                    ? 'border-[#FD7E14] bg-orange-50 text-[#FD7E14]'
-                                    : 'border-gray-300 text-gray-700 hover:border-gray-400'
-                                }`}
+                                className={`flex items-center px-4 py-2.5 border rounded-lg transition-colors ${passenger.idType === docType
+                                  ? 'border-[#FD7E14] bg-orange-50 text-[#FD7E14]'
+                                  : 'border-gray-300 text-gray-700 hover:border-gray-400'
+                                  }`}
                               >
-                                <div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 ${
-                                  passenger.idType === docType
-                                    ? 'border-[#FD7E14] bg-[#FD7E14]'
-                                    : 'border-gray-400'
-                                }`}>
+                                <div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 ${passenger.idType === docType
+                                  ? 'border-[#FD7E14] bg-[#FD7E14]'
+                                  : 'border-gray-400'
+                                  }`}>
                                   {passenger.idType === docType && (
                                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -2845,13 +3100,13 @@ const BookingPageContent = () => {
                             ))}
                           </div>
                         </div>
-                        
+
                         {/* ID Number */}
                         <div className="mb-6">
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             {passenger.idType === 'Passport' ? 'Passport Number *' : 'ID Number (16 digit) *'}
                           </label>
-                          <input 
+                          <input
                             type="text"
                             placeholder={passenger.idType === 'Passport' ? "Passport Number" : "16 digit ID number"}
                             value={passenger.idNumber}
@@ -2860,7 +3115,7 @@ const BookingPageContent = () => {
                             required
                           />
                         </div>
-                        
+
                         {/* Email & Phone (jika tidak menggunakan contact detail) */}
                         {!passenger.useContactDetail && (
                           <div className="mt-6 pt-6 border-t grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2868,7 +3123,7 @@ const BookingPageContent = () => {
                               <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Email Penumpang *
                               </label>
-                              <input 
+                              <input
                                 type="email"
                                 placeholder="email@example.com"
                                 value={passenger.email}
@@ -2877,12 +3132,12 @@ const BookingPageContent = () => {
                                 required
                               />
                             </div>
-                            
+
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Telepon Penumpang *
                               </label>
-                              <input 
+                              <input
                                 type="tel"
                                 placeholder="+62 81234567890"
                                 value={passenger.phoneNumber}
@@ -2893,7 +3148,7 @@ const BookingPageContent = () => {
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Transit Info */}
                         {selectedTransit && passenger.transit_station && (
                           <div className="mt-6 pt-6 border-t">
@@ -2918,7 +3173,7 @@ const BookingPageContent = () => {
                         )}
                       </div>
                     ))}
-                    
+
                     {passengerCount < 9 && (
                       <div className="text-center">
                         <button
@@ -2934,11 +3189,11 @@ const BookingPageContent = () => {
                     )}
                   </div>
                 </div>
-                
+
                 {/* Agreement */}
                 <div className="mt-8 p-6 bg-gray-50 rounded-xl">
                   <div className="flex items-start">
-                    <input 
+                    <input
                       type="checkbox"
                       id="agreement"
                       checked={agreement}
@@ -2950,22 +3205,21 @@ const BookingPageContent = () => {
                         Saya menyetujui syarat dan ketentuan
                       </label>
                       <p className="text-sm text-gray-600">
-                        Dengan melanjutkan, saya menyetujui bahwa data yang saya berikan adalah benar 
+                        Dengan melanjutkan, saya menyetujui bahwa data yang saya berikan adalah benar
                         dan memahami bahwa pembatalan tiket akan dikenakan biaya sesuai ketentuan.
                       </p>
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Continue Button */}
-                <button 
+                <button
                   onClick={handleContinueToPayment}
                   disabled={!passengerDataFilled || !agreement}
-                  className={`mt-8 w-full py-4 text-lg font-semibold rounded-lg transition-all ${
-                    !passengerDataFilled || !agreement
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                      : 'bg-[#FD7E14] text-white hover:bg-[#E06700] shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-                  }`}
+                  className={`mt-8 w-full py-4 text-lg font-semibold rounded-lg transition-all ${!passengerDataFilled || !agreement
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-[#FD7E14] text-white hover:bg-[#E06700] shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+                    }`}
                 >
                   Lanjut ke Pembayaran
                 </button>
@@ -2984,29 +3238,27 @@ const BookingPageContent = () => {
                     <p className="text-gray-600">Pilih metode pembayaran yang tersedia</p>
                   </div>
                 </div>
-                
+
                 {/* Payment Methods */}
                 <div className="space-y-4 mb-8">
                   {PAYMENT_METHODS.map(method => (
-                    <div 
+                    <div
                       key={`payment-${method.id}`}
-                      className={`border rounded-xl p-5 cursor-pointer transition-all hover:border-orange-300 ${
-                        selectedPayment === method.id 
-                          ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-100' 
-                          : 'border-gray-300'
-                      }`}
+                      className={`border rounded-xl p-5 cursor-pointer transition-all hover:border-orange-300 ${selectedPayment === method.id
+                        ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-100'
+                        : 'border-gray-300'
+                        }`}
                       onClick={() => setSelectedPayment(method.id)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center">
-                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 ${
-                            selectedPayment === method.id ? 'border-orange-500 bg-orange-500' : 'border-gray-400'
-                          }`}>
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 ${selectedPayment === method.id ? 'border-orange-500 bg-orange-500' : 'border-gray-400'
+                            }`}>
                             {selectedPayment === method.id && (
                               <div className="w-2 h-2 rounded-full bg-white"></div>
                             )}
                           </div>
-                          
+
                           <div className="flex items-center">
                             <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mr-4">
                               <span className="text-2xl">{method.icon}</span>
@@ -3017,7 +3269,7 @@ const BookingPageContent = () => {
                             </div>
                           </div>
                         </div>
-                        
+
                         {method.fees && method.fees > 0 ? (
                           <span className="text-gray-600 font-medium">
                             +Rp {method.fees.toLocaleString('id-ID')}
@@ -3029,23 +3281,22 @@ const BookingPageContent = () => {
                     </div>
                   ))}
                 </div>
-                
+
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <button 
+                  <button
                     onClick={() => setBookingStep(1)}
                     className="flex-1 border-2 border-gray-300 text-gray-700 font-semibold py-3.5 rounded-xl hover:bg-gray-50 transition-colors"
                   >
                     Kembali ke Data Penumpang
                   </button>
-                  <button 
+                  <button
                     onClick={handlePayment}
                     disabled={isProcessing}
-                    className={`flex-1 bg-[#FD7E14] text-white font-semibold py-3.5 rounded-xl transition-all ${
-                      isProcessing 
-                        ? 'opacity-50 cursor-not-allowed' 
-                        : 'hover:bg-[#E06700] shadow-lg hover:shadow-xl'
-                    }`}
+                    className={`flex-1 bg-[#FD7E14] text-white font-semibold py-3.5 rounded-xl transition-all ${isProcessing
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'hover:bg-[#E06700] shadow-lg hover:shadow-xl'
+                      }`}
                   >
                     {isProcessing ? (
                       <div className="flex items-center justify-center">
@@ -3065,7 +3316,7 @@ const BookingPageContent = () => {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-6">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Ringkasan Pemesanan</h2>
-              
+
               {/* Multi Segment Info */}
               {selectedMultiSegment?.isMultiSegment && (
                 <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -3080,7 +3331,7 @@ const BookingPageContent = () => {
                   </div>
                 </div>
               )}
-              
+
               {/* Transit Info */}
               {selectedTransit && (
                 <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
@@ -3101,7 +3352,7 @@ const BookingPageContent = () => {
                   </div>
                 </div>
               )}
-              
+
               {/* Promo/Voucher Section */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
@@ -3113,7 +3364,7 @@ const BookingPageContent = () => {
                     Lihat Promo
                   </button>
                 </div>
-                
+
                 {/* Applied Promo */}
                 {appliedPromo ? (
                   <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -3152,22 +3403,21 @@ const BookingPageContent = () => {
                       <button
                         onClick={handleApplyPromo}
                         disabled={isApplyingPromo || !promoCodeInput.trim()}
-                        className={`px-4 py-2.5 bg-[#FD7E14] text-white rounded-lg font-medium ${
-                          isApplyingPromo || !promoCodeInput.trim()
-                            ? 'opacity-50 cursor-not-allowed'
-                            : 'hover:bg-[#E06700]'
-                        }`}
+                        className={`px-4 py-2.5 bg-[#FD7E14] text-white rounded-lg font-medium ${isApplyingPromo || !promoCodeInput.trim()
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:bg-[#E06700]'
+                          }`}
                       >
                         {isApplyingPromo ? '...' : 'Pakai'}
                       </button>
                     </div>
-                    
+
                     {promoMessage && (
                       <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-sm text-green-700">{promoMessage}</p>
                       </div>
                     )}
-                    
+
                     {promoError && (
                       <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                         <p className="text-sm text-red-700">{promoError}</p>
@@ -3176,20 +3426,20 @@ const BookingPageContent = () => {
                   </div>
                 )}
               </div>
-              
+
               {/* Fare Breakdown */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">
-                    {selectedMultiSegment?.isMultiSegment 
-                      ? `Tiket (${selectedMultiSegment.segments.length} segmen × ${passengerCount} orang)` 
+                    {selectedMultiSegment?.isMultiSegment
+                      ? `Tiket (${selectedMultiSegment.segments.length} segmen × ${passengerCount} orang)`
                       : `Tiket (${passengerCount} orang)`}
                   </span>
                   <span className="font-semibold text-gray-800">
                     Rp {totalSegmentPrice.toLocaleString('id-ID')}
                   </span>
                 </div>
-                
+
                 {seatPriceAdjustment > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Tambahan kursi premium</span>
@@ -3198,7 +3448,7 @@ const BookingPageContent = () => {
                     </span>
                   </div>
                 )}
-                
+
                 {selectedTransit && (
                   <>
                     <div className="flex justify-between items-center">
@@ -3207,7 +3457,7 @@ const BookingPageContent = () => {
                         -Rp {transitDiscount.toLocaleString('id-ID')}
                       </span>
                     </div>
-                    
+
                     {transitAdditionalPrice > 0 && (
                       <div className="flex justify-between items-center">
                         <span className="text-gray-600">Biaya tambahan transit</span>
@@ -3218,7 +3468,7 @@ const BookingPageContent = () => {
                     )}
                   </>
                 )}
-                
+
                 {discountAmount > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Diskon Promo</span>
@@ -3227,17 +3477,17 @@ const BookingPageContent = () => {
                     </span>
                   </div>
                 )}
-                
+
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Biaya Admin</span>
                   <span className="font-semibold text-gray-800">Rp {adminFee.toLocaleString('id-ID')}</span>
                 </div>
-                
+
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Asuransi Perjalanan</span>
                   <span className="font-semibold text-gray-800">Rp {insuranceFee.toLocaleString('id-ID')}</span>
                 </div>
-                
+
                 {paymentFee > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Biaya Pembayaran</span>
@@ -3246,7 +3496,7 @@ const BookingPageContent = () => {
                     </span>
                   </div>
                 )}
-                
+
                 <div className="border-t pt-4">
                   <div className="flex justify-between items-center">
                     <span className="text-lg font-bold text-gray-800">Total</span>
@@ -3264,7 +3514,7 @@ const BookingPageContent = () => {
                   )}
                 </div>
               </div>
-              
+
               {/* Booking Info */}
               <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                 <div className="space-y-2">
@@ -3307,7 +3557,14 @@ const BookingPageContent = () => {
 
       {/* Modals */}
       {showSeatMap && <SeatMapModal />}
-      {showPromoList && <PromoListModal />}
+      {showPromoList && (
+        <PromoListModal
+          trainDetail={trainDetail}
+          passengerCount={passengerCount}
+          onClose={() => setShowPromoList(false)}
+          onSelectPromo={handleSelectPromo}
+        />
+      )}
 
       <footer className="bg-gray-800 text-white mt-12">
         <div className="max-w-6xl mx-auto px-4 py-8">

@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth, useAdminRoute } from '@/app/contexts/AuthContext';
-import AdminLayout from '@/app/admin/layout';
-import { supabase } from '@/app/lib/supabaseClient';
 import {
   Save,
   Settings,
@@ -141,16 +139,16 @@ export default function AdminSettings() {
 
   if (loading) {
     return (
-      <AdminLayout>
+      
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
-      </AdminLayout>
+      
     );
   }
 
   return (
-    <AdminLayout>
+   
       <div className="p-6">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">System Settings</h1>
@@ -741,6 +739,5 @@ export default function AdminSettings() {
           </div>
         </div>
       </div>
-    </AdminLayout>
   );
 }
