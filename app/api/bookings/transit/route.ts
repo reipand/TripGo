@@ -1,298 +1,227 @@
-import { createClient } from '@/app/lib/supabaseClient';
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🚀 Transit booking API called');
-    
-    // Create Supabase client
-    const supabase = createClient();
-    
-    // Get request body
-    const body = await request.json();
-    console.log('📦 Request body received');
-    
-    const {
-      scheduleId = 'schedule-1',
-      originStationId = 'stasiun-bandung',
-      destinationStationId = 'stasiun-gambir',
-      transitStationId,
-      passengerCount = 1,
-      passengerDetails = [],
-      contactDetails = {},
-      selectedSeats = [],
-      paymentMethod = 'e-wallet',
-      totalAmount = 265000,
-      discountAmount = 0,
-      seatPremium = 0,
-      transitDiscount = 0,
-      transitAdditionalPrice = 0
-    } = body;
+    const bookingData = await request.json();
 
     // Validate required fields
-    if (!contactDetails?.fullName || !contactDetails?.email || !contactDetails?.phoneNumber) {
+    const requiredFields = [
+      'passengerDetails',
+      'contactDetails',
+      'transitRouteId',
+      'transitSegments',
+      'totalAmount'
+    ];
+
+    for (const field of requiredFields) {
+      if (!bookingData[field]) {
+        return NextResponse.json(
+          { error: `Missing required field: ${field}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const bookingId = uuidv4();
+    const bookingCode = `TRANSIT-${Date.now().toString(36).toUpperCase()}`;
+    const orderId = `ORDER-TRANSIT-${Date.now()}`;
+
+    // Start database transaction
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings_kereta')
+      .insert({
+        id: bookingId,
+        booking_code: bookingCode,
+        order_id: orderId,
+        transit_route_id: bookingData.transitRouteId,
+        transit_segments: bookingData.transitSegments,
+        transit_stations: bookingData.transitStations || [],
+        transit_total_adjustment: bookingData.transitTotalAdjustment || 0,
+        transit_discount: bookingData.transitDiscount || 0,
+        passenger_count: bookingData.passengerCount,
+        passenger_details: JSON.stringify(bookingData.passengerDetails),
+        customer_email: bookingData.contactDetails.email,
+        passenger_name: bookingData.contactDetails.fullName,
+        passenger_email: bookingData.contactDetails.email,
+        passenger_phone: bookingData.contactDetails.phoneNumber,
+        total_amount: bookingData.totalAmount,
+        status: 'pending',
+        payment_status: 'pending',
+        payment_method: bookingData.paymentMethod || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (bookingError) {
+      console.error('Booking creation error:', bookingError);
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Data kontak tidak lengkap. Nama, email, dan nomor telepon wajib diisi.' 
-        },
-        { status: 400 }
+        { error: 'Failed to create booking' },
+        { status: 500 }
       );
     }
 
-    // Generate unique IDs
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const bookingCode = `DEV${timestamp.toString().slice(-6)}${randomSuffix}`;
-    const orderId = `ORDER-${timestamp}-${randomSuffix}`;
-    const ticketNumber = `TICKET-${timestamp.toString().slice(-10)}`;
-
-    console.log('📝 Generated booking info:', { bookingCode, orderId });
-
-    // Calculate total with all components
-    const basePrice = totalAmount || 265000;
-    const total = Math.max(0, 
-      basePrice + 
-      (seatPremium || 0) + 
-      (transitAdditionalPrice || 0) - 
-      (discountAmount || 0) - 
-      (transitDiscount || 0)
-    );
-
-    // Prepare booking data for bookings_kereta
-    const bookingData = {
-      booking_code: bookingCode,
-      order_id: orderId,
-      passenger_name: contactDetails.fullName,
-      passenger_email: contactDetails.email,
-      passenger_phone: contactDetails.phoneNumber,
-      train_name: body.trainName || 'Parahyangan',
-      train_type: body.trainType || 'Executive',
-      origin: body.origin || 'Bandung',
-      destination: body.destination || 'Gambir',
-      departure_date: body.departureDate || new Date().toISOString().split('T')[0],
-      departure_time: body.departureTime || '08:00',
-      arrival_time: body.arrivalTime || '12:00',
-      total_amount: total,
-      status: 'pending',
-      payment_status: 'pending',
-      payment_method: paymentMethod,
-      passenger_count: passengerCount,
+    // 2. Create passenger records
+    const passengers = bookingData.passengerDetails.map((passenger: any, index: number) => ({
+      id: uuidv4(),
+      booking_id: bookingId,
+      nama: passenger.fullName,
+      nik: passenger.idNumber,
+      email: passenger.email,
+      phone: passenger.phoneNumber,
+      passenger_order: index + 1,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      transit_station: transitStationId ? 
-        (passengerDetails[0]?.transitStation || 'Stasiun Transit') : null,
-      transit_arrival: transitStationId ? passengerDetails[0]?.transitArrival : null,
-      transit_departure: transitStationId ? passengerDetails[0]?.transitDeparture : null
-    };
+      updated_at: new Date().toISOString()
+    }));
 
-    console.log('💾 Saving booking to database...');
+    const { error: passengersError } = await supabase
+      .from('penumpang')
+      .insert(passengers);
 
-    // Attempt to save to database
-    try {
-      // Save to bookings_kereta table
-      const { data: booking, error: bookingError } = await supabase
-        .from('bookings_kereta')
-        .insert([bookingData])
-        .select()
-        .single();
-
-      if (bookingError) {
-        console.error('❌ Error saving to bookings_kereta:', bookingError);
-        
-        // Fallback: Try with minimal columns
-        const minimalData = {
-          booking_code: bookingCode,
-          order_id: orderId,
-          passenger_name: contactDetails.fullName,
-          total_amount: total,
-          status: 'pending'
-        };
-        
-        const { data: fallbackBooking } = await supabase
-          .from('bookings_kereta')
-          .insert([minimalData])
-          .select()
-          .single();
-        
-        console.log('📦 Used fallback booking save');
-        
-        return NextResponse.json({
-          success: true,
-          booking: fallbackBooking || {
-            id: `temp-${timestamp}`,
-            ...minimalData,
-            passenger_email: contactDetails.email,
-            passenger_phone: contactDetails.phoneNumber,
-            train_name: body.trainName || 'Parahyangan'
-          },
-          message: 'Booking created with fallback'
-        });
-      }
-
-      console.log('✅ Booking saved to database:', bookingCode);
-
-      // Prepare response data
-      const responseBooking = {
-        id: booking.id,
-        booking_code: booking.booking_code,
-        order_id: booking.order_id,
-        passenger_name: booking.passenger_name,
-        passenger_email: booking.passenger_email,
-        passenger_phone: booking.passenger_phone,
-        train_name: booking.train_name || body.trainName || 'Parahyangan',
-        train_type: booking.train_type || body.trainType || 'Executive',
-        origin: booking.origin || body.origin || 'Bandung',
-        destination: booking.destination || body.destination || 'Gambir',
-        departure_date: booking.departure_date || body.departureDate || new Date().toISOString().split('T')[0],
-        departure_time: booking.departure_time || body.departureTime || '08:00',
-        arrival_time: booking.arrival_time || '12:00',
-        total_amount: booking.total_amount,
-        status: booking.status,
-        payment_status: booking.payment_status,
-        payment_method: booking.payment_method,
-        passenger_count: booking.passenger_count,
-        created_at: booking.created_at,
-        has_transit: !!transitStationId,
-        transit_info: transitStationId ? {
-          transit_station: passengerDetails[0]?.transitStation || 'Stasiun Transit',
-          transit_arrival: passengerDetails[0]?.transitArrival || '10:30',
-          transit_departure: passengerDetails[0]?.transitDeparture || '10:45',
-          transit_duration: '15 menit'
-        } : null
-      };
-
-      // Also save to payment_transactions
-      const paymentData = {
-        order_id: orderId,
-        customer_email: contactDetails.email,
-        customer_name: contactDetails.fullName,
-        amount: total,
-        payment_method: paymentMethod,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-        booking_id: booking.id
-      };
-
-      try {
-        await supabase
-          .from('payment_transactions')
-          .insert([paymentData]);
-        console.log('💰 Payment transaction saved');
-      } catch (paymentError) {
-        console.log('⚠️ Could not save payment transaction:', paymentError);
-      }
-
-      return NextResponse.json({
-        success: true,
-        booking: responseBooking,
-        message: 'Transit booking created successfully',
-        database_saved: true
-      });
-
-    } catch (dbError: any) {
-      console.error('❌ Database error:', dbError);
-      
-      // Fallback: return mock data but also save to localStorage
-      const mockBooking = {
-        id: `fallback-${timestamp}`,
-        booking_code: bookingCode,
-        order_id: orderId,
-        passenger_name: contactDetails.fullName,
-        passenger_email: contactDetails.email,
-        passenger_phone: contactDetails.phoneNumber,
-        train_name: body.trainName || 'Parahyangan',
-        train_type: body.trainType || 'Executive',
-        origin: body.origin || 'Bandung',
-        destination: body.destination || 'Gambir',
-        departure_date: body.departureDate || new Date().toISOString().split('T')[0],
-        departure_time: body.departureTime || '08:00',
-        arrival_time: body.arrivalTime || '12:00',
-        total_amount: total,
-        status: 'pending',
-        payment_status: 'pending',
-        payment_method: paymentMethod,
-        passenger_count: passengerCount,
-        created_at: new Date().toISOString(),
-        has_transit: !!transitStationId,
-        transit_info: transitStationId ? {
-          transit_station: passengerDetails[0]?.transitStation || 'Stasiun Transit',
-          transit_arrival: passengerDetails[0]?.transitArrival || '10:30',
-          transit_departure: passengerDetails[0]?.transitDeparture || '10:45',
-          transit_duration: '15 menit'
-        } : null
-      };
-
-      // Save mock booking to localStorage (for my-bookings page)
-      if (typeof window === 'undefined') {
-        // Server-side: just return the mock
-        return NextResponse.json({
-          success: true,
-          booking: mockBooking,
-          message: 'Booking created (fallback mode)',
-          database_saved: false,
-          fallback: true
-        });
-      }
-
-      // In client-side rendering, this won't execute, but we'll return the data
-      return NextResponse.json({
-        success: true,
-        booking: mockBooking,
-        message: 'Booking created (fallback mode)',
-        database_saved: false,
-        fallback: true
-      });
+    if (passengersError) {
+      console.error('Passengers creation error:', passengersError);
+      // Rollback booking
+      await supabase.from('bookings_kereta').delete().eq('id', bookingId);
+      return NextResponse.json(
+        { error: 'Failed to create passenger records' },
+        { status: 500 }
+      );
     }
 
-  } catch (error: any) {
-    console.error('❌ Error in transit booking API:', error);
-    
-    // Generate fallback data
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const bookingCode = `ERR${timestamp.toString().slice(-6)}${randomSuffix}`;
-    const orderId = `ORDER-${timestamp}-${randomSuffix}`;
-    
-    const fallbackBooking = {
-      id: `error-${timestamp}`,
-      booking_code: bookingCode,
-      order_id: orderId,
-      passenger_name: 'Penumpang',
-      passenger_email: 'guest@example.com',
-      passenger_phone: '081234567890',
-      train_name: 'Parahyangan',
-      train_type: 'Executive',
-      origin: 'Bandung',
-      destination: 'Gambir',
-      departure_date: new Date().toISOString().split('T')[0],
-      departure_time: '08:00',
-      arrival_time: '12:00',
-      total_amount: 265000,
-      status: 'pending',
-      payment_status: 'pending',
-      payment_method: 'e-wallet',
-      passenger_count: 1,
-      created_at: new Date().toISOString()
-    };
-    
+    // 3. Reserve seats for each transit segment
+    const seatReservations = [];
+    for (const segment of bookingData.transitSegments) {
+      const { data: availableSeats, error: seatsError } = await supabase
+        .from('train_seats')
+        .select('id, seat_number, coach_id')
+        .eq('schedule_id', segment.train_schedule_id)
+        .eq('status', 'available')
+        .limit(bookingData.passengerCount);
+
+      if (seatsError || !availableSeats || availableSeats.length < bookingData.passengerCount) {
+        console.error('Insufficient seats for segment:', segment.id);
+        // Rollback all operations
+        await supabase.from('bookings_kereta').delete().eq('id', bookingId);
+        await supabase.from('penumpang').delete().eq('booking_id', bookingId);
+        return NextResponse.json(
+          { error: `Insufficient seats for segment ${segment.segment_order}` },
+          { status: 409 }
+        );
+      }
+
+      // Update seat status
+      const seatUpdates = availableSeats.map(seat => ({
+        id: seat.id,
+        status: 'reserved',
+        booking_id: bookingId,
+        updated_at: new Date().toISOString()
+      }));
+
+      const { error: updateError } = await supabase
+        .from('train_seats')
+        .upsert(seatUpdates);
+
+      if (updateError) {
+        console.error('Seat update error:', updateError);
+        await supabase.from('bookings_kereta').delete().eq('id', bookingId);
+        await supabase.from('penumpang').delete().eq('booking_id', bookingId);
+        return NextResponse.json(
+          { error: 'Failed to reserve seats' },
+          { status: 500 }
+        );
+      }
+
+      // Create transit seat records
+      const transitSeats = availableSeats.map((seat, index) => ({
+        id: uuidv4(),
+        booking_id: bookingId,
+        transit_segment_id: segment.id,
+        seat_id: seat.id,
+        seat_number: seat.seat_number,
+        coach_number: `Coach-${seat.coach_id?.slice(0, 8)}`,
+        passenger_name: bookingData.passengerDetails[index]?.fullName || 'Penumpang',
+        from_station_id: segment.origin_station_id,
+        to_station_id: segment.destination_station_id,
+        price_adjustment: segment.price_adjustment || 0,
+        status: 'reserved',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
+
+      seatReservations.push(...transitSeats);
+    }
+
+    // 4. Insert all transit seat records
+    if (seatReservations.length > 0) {
+      const { error: transitSeatsError } = await supabase
+        .from('transit_seats')
+        .insert(seatReservations);
+
+      if (transitSeatsError) {
+        console.error('Transit seats error:', transitSeatsError);
+        // Rollback all operations
+        await supabase.from('bookings_kereta').delete().eq('id', bookingId);
+        await supabase.from('penumpang').delete().eq('booking_id', bookingId);
+        // Release reserved seats
+        await supabase
+          .from('train_seats')
+          .update({ status: 'available', booking_id: null })
+          .in('id', seatReservations.map(s => s.seat_id));
+        return NextResponse.json(
+          { error: 'Failed to create transit seat records' },
+          { status: 500 }
+        );
+      }
+    }
+
+    // 5. Create booking history
+    const { error: historyError } = await supabase
+      .from('transit_booking_history')
+      .insert({
+        id: uuidv4(),
+        booking_id: bookingId,
+        transit_route_id: bookingData.transitRouteId,
+        action: 'booked',
+        details: {
+          segments: bookingData.transitSegments.length,
+          passengers: bookingData.passengerCount,
+          total_amount: bookingData.totalAmount
+        },
+        performed_at: new Date().toISOString()
+      });
+
+    if (historyError) {
+      console.error('History creation error:', historyError);
+      // Continue anyway - this is non-critical
+    }
+
     return NextResponse.json({
       success: true,
-      booking: fallbackBooking,
-      message: 'Booking created (error fallback mode)',
-      database_saved: false,
-      fallback: true,
-      error: error.message
+      booking: {
+        id: bookingId,
+        booking_code: bookingCode,
+        order_id: orderId,
+        total_amount: bookingData.totalAmount,
+        passenger_count: bookingData.passengerCount,
+        transit_segments: bookingData.transitSegments.length,
+        created_at: new Date().toISOString(),
+        payment_url: `/payment/transit/${bookingCode}`
+      }
     });
-  }
-}
 
-// GET method for debugging
-export async function GET(request: NextRequest) {
-  return NextResponse.json({
-    message: 'Transit booking API is running',
-    status: 'active',
-    environment: process.env.NODE_ENV,
-    timestamp: new Date().toISOString()
-  });
+  } catch (error: any) {
+    console.error('Transit booking error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
 }

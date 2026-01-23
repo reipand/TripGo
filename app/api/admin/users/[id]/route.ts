@@ -12,16 +12,26 @@ export async function GET(
   request: NextRequest,
   { params }: RouteParams
 ) {
-  const { user, error: authError } = await requireAdmin(request);
+  console.log('=== /api/admin/users/[id] GET called ===');
   
-  if (authError) {
-    return NextResponse.json(
-      { success: false, error: authError }, 
-      { status: authError === 'Unauthorized' ? 401 : 403 }
-    );
-  }
-
   try {
+    const { user: adminUser, error: authError } = await requireAdmin(request);
+    
+    console.log('Auth check result:', { 
+      hasUser: !!adminUser, 
+      authError,
+      userRole: adminUser?.role,
+      userId: adminUser?.id 
+    });
+    
+    if (authError) {
+      console.log('Auth error:', authError);
+      return NextResponse.json(
+        { success: false, error: authError }, 
+        { status: authError === 'Unauthorized' ? 401 : 403 }
+      );
+    }
+
     const supabase = createClient();
     const { id } = await params;
 
@@ -32,93 +42,102 @@ export async function GET(
       );
     }
 
-    // Fetch user with detailed information
+    console.log('Fetching user with ID:', id);
+
+    // Fetch user basic info only - avoid complex joins
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select(`
-        *,
-        bookings:bookings_kereta(
-          id,
-          booking_number,
-          train_id,
-          departure_date,
-          return_date,
-          total_passengers,
-          total_price,
-          status,
-          payment_status,
-          created_at,
-          train:trains(name, class)
-        ),
-        transactions(
-          id,
-          transaction_number,
-          amount,
-          payment_method,
-          status,
-          created_at
-        ),
-        user_preferences(*)
-      `)
+      .select('*')
       .eq('id', id)
       .single();
 
     if (userError || !userData) {
       console.error('User query error:', userError);
       return NextResponse.json(
-        { success: false, error: 'User not found' },
+        { 
+          success: false, 
+          error: 'User not found',
+          details: userError?.message 
+        },
         { status: 404 }
       );
     }
 
-    // Calculate statistics
-    const bookings = userData.bookings || [];
-    const transactions = userData.transactions || [];
+    console.log('User found:', { id: userData.id, email: userData.email });
 
-    const bookingStats = {
-      total: bookings.length,
-      confirmed: bookings.filter((b: any) => b.status === 'confirmed').length,
-      pending: bookings.filter((b: any) => b.status === 'pending').length,
-      cancelled: bookings.filter((b: any) => b.status === 'cancelled').length,
-      completed: bookings.filter((b: any) => b.status === 'completed').length,
-      total_spent: bookings.reduce((sum: number, b: any) => sum + (b.total_price || 0), 0)
+    // Try to fetch bookings separately to avoid foreign key errors
+    let bookings: any[] = [];
+    let bookingStats = {
+      total: 0,
+      confirmed: 0,
+      pending: 0,
+      cancelled: 0,
+      completed: 0,
+      total_spent: 0
     };
 
-    const transactionStats = {
-      total: transactions.length,
-      total_amount: transactions.reduce((sum: number, t: any) => sum + (t.amount || 0), 0),
-      completed: transactions.filter((t: any) => t.status === 'completed').length,
-      pending: transactions.filter((t: any) => t.status === 'pending').length,
-      failed: transactions.filter((t: any) => t.status === 'failed').length
+    try {
+      // Check if bookings_kereta table has user_id column
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from('bookings_kereta')
+        .select('id, total_amount, status, created_at, booking_date')
+        .eq('user_id', id);
+
+      if (!bookingsError && bookingsData) {
+        bookings = bookingsData;
+        console.log('Bookings found:', bookings.length);
+        
+        // Calculate booking stats
+        bookingStats = {
+          total: bookings.length,
+          confirmed: bookings.filter((b: any) => b.status === 'confirmed').length,
+          pending: bookings.filter((b: any) => b.status === 'pending').length,
+          cancelled: bookings.filter((b: any) => b.status === 'cancelled').length,
+          completed: bookings.filter((b: any) => b.status === 'completed').length,
+          total_spent: bookings.reduce((sum: number, b: any) => sum + (b.total_amount || 0), 0)
+        };
+      } else {
+        console.log('No bookings found or error:', bookingsError?.message);
+      }
+    } catch (bookingsErr) {
+      console.warn('Error fetching bookings:', bookingsErr);
+    }
+
+    // Try to fetch payment transactions
+    let transactions: any[] = [];
+    let transactionStats = {
+      total: 0,
+      total_amount: 0,
+      completed: 0,
+      pending: 0,
+      failed: 0
     };
 
-    // Get recent activity (last 5 bookings)
-    const recentBookings = bookings
-      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 5)
-      .map((booking: any) => ({
-        id: booking.id,
-        booking_number: booking.booking_number,
-        train_name: booking.train?.name || 'Unknown',
-        class: booking.train?.class || 'Unknown',
-        departure_date: booking.departure_date,
-        status: booking.status,
-        total_price: booking.total_price,
-        created_at: booking.created_at
-      }));
+    try {
+      // Check if payment_transactions table exists and has customer_email column
+      const { data: transactionsData, error: transactionsError } = await supabase
+        .from('payment_transactions')
+        .select('id, amount, payment_method, status, created_at')
+        .eq('customer_email', userData.email);
 
-    // Get recent transactions (last 5)
-    const recentTransactions = transactions
-      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 5)
-      .map((transaction: any) => ({
-        id: transaction.id,
-        transaction_number: transaction.transaction_number,
-        amount: transaction.amount,
-        payment_method: transaction.payment_method,
-        status: transaction.status,
-        created_at: transaction.created_at
-      }));
+      if (!transactionsError && transactionsData) {
+        transactions = transactionsData;
+        console.log('Transactions found:', transactions.length);
+        
+        // Calculate transaction stats
+        transactionStats = {
+          total: transactions.length,
+          total_amount: transactions.reduce((sum: number, t: any) => sum + (t.amount || 0), 0),
+          completed: transactions.filter((t: any) => t.status === 'completed' || t.status === 'settlement').length,
+          pending: transactions.filter((t: any) => t.status === 'pending').length,
+          failed: transactions.filter((t: any) => t.status === 'failed' || t.status === 'cancel').length
+        };
+      } else {
+        console.log('No transactions found or error:', transactionsError?.message);
+      }
+    } catch (transactionsErr) {
+      console.warn('Error fetching transactions:', transactionsErr);
+    }
 
     // Remove sensitive data
     const { password, refresh_token, ...safeUserData } = userData;
@@ -132,10 +151,6 @@ export async function GET(
         booking_count: bookingStats.total,
         total_spent: bookingStats.total_spent,
         transaction_count: transactionStats.total
-      },
-      recent_activity: {
-        bookings: recentBookings,
-        transactions: recentTransactions
       },
       formatted_dates: {
         created_at: new Date(safeUserData.created_at).toLocaleDateString('id-ID', {
@@ -171,6 +186,8 @@ export async function GET(
       }
     };
 
+    console.log('User data prepared successfully');
+    
     return NextResponse.json({
       success: true,
       data: responseData
@@ -181,7 +198,8 @@ export async function GET(
     return NextResponse.json(
       { 
         success: false, 
-        error: error.message || 'Internal server error' 
+        error: error.message || 'Internal server error',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
     );

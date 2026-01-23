@@ -5,106 +5,225 @@ import { requireAdmin } from '@/app/lib/api-auth';
 
 // GET - List users with pagination, filtering, and sorting
 export async function GET(request: NextRequest) {
-  const { user, error: authError } = await requireAdmin(request);
+  console.log('=== /api/admin/users GET called ===');
   
-  if (authError) {
-    return NextResponse.json(
-      { success: false, error: authError }, 
-      { status: authError === 'Unauthorized' ? 401 : 403 }
-    );
-  }
-
   try {
+    const { user: adminUser, error: authError } = await requireAdmin(request);
+    
+    console.log('Auth check result:', { 
+      hasUser: !!adminUser, 
+      authError, 
+      userRole: adminUser?.role,
+      userId: adminUser?.id 
+    });
+    
+    if (authError) {
+      // Provide more specific error messages
+      if (authError === 'Unauthorized') {
+        console.log('Returning 401 - Unauthorized');
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Authentication required. Please login.',
+            code: 'UNAUTHORIZED'
+          }, 
+          { status: 401 }
+        );
+      } else if (authError === 'Forbidden') {
+        console.log('Returning 403 - Forbidden');
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: `Access denied. Your role (${adminUser?.role || 'unknown'}) does not have admin privileges.`,
+            code: 'FORBIDDEN',
+            userRole: adminUser?.role
+          }, 
+          { status: 403 }
+        );
+      }
+      
+      // Fallback
+      return NextResponse.json(
+        { success: false, error: authError }, 
+        { status: 403 }
+      );
+    }
+
+    console.log('User is authorized, proceeding with query...');
+    
     const supabase = createClient();
     const searchParams = request.nextUrl.searchParams;
 
-    // Pagination
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    // Log the request parameters
+    console.log('Request params:', Object.fromEntries(searchParams.entries()));
+
+    // Pagination dengan default values
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '10')));
     const offset = (page - 1) * limit;
 
-    // Filters
-    const search = searchParams.get('search') || '';
+    // Filters - handle both naming conventions
+    const search = searchParams.get('search') || searchParams.get('q') || '';
     const role = searchParams.get('role') || '';
-    const isActive = searchParams.get('is_active');
+    const isActive = searchParams.get('is_active') || searchParams.get('isActive');
     const emailVerified = searchParams.get('email_verified');
-    const dateFrom = searchParams.get('date_from');
-    const dateTo = searchParams.get('date_to');
+    const dateFrom = searchParams.get('date_from') || searchParams.get('startDate');
+    const dateTo = searchParams.get('date_to') || searchParams.get('endDate');
 
-    // Sorting
-    const sortBy = searchParams.get('sort_by') || 'created_at';
-    const sortOrder = searchParams.get('sort_order') || 'desc';
+    // Sorting - handle both naming conventions
+    const sortBy = searchParams.get('sort_by') || searchParams.get('sortBy') || 'created_at';
+    const sortOrder = searchParams.get('sort_order') || searchParams.get('sortOrder') || 'desc';
 
-    // Build query
+    console.log('Processed params:', { 
+      page, limit, offset, search, role, 
+      isActive, emailVerified, dateFrom, dateTo, sortBy, sortOrder 
+    });
+
+    // Build base query (without bookings join to avoid foreign key error)
     let query = supabase
       .from('users')
       .select(`
-        *,
-        bookings:bookings_kereta(
-          id,
-          total_price,
-          status
-        )
+        id,
+        email,
+        name,
+        phone,
+        role,
+        is_active,
+        email_verified,
+        phone_verified,
+        last_login,
+        created_at,
+        updated_at,
+        metadata
       `, { count: 'exact' });
 
     // Apply search filter
-    if (search) {
+    if (search && search.trim()) {
       query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
     // Apply role filter
-    if (role) {
+    if (role && role !== 'all' && role !== '') {
       query = query.eq('role', role);
     }
 
     // Apply status filters
-    if (isActive !== null) {
-      query = query.eq('is_active', isActive === 'true');
+    if (isActive !== null && isActive !== undefined) {
+      const isActiveBool = isActive === 'true' || isActive === true;
+      query = query.eq('is_active', isActiveBool);
     }
 
-    if (emailVerified !== null) {
-      query = query.eq('email_verified', emailVerified === 'true');
+    if (emailVerified !== null && emailVerified !== undefined) {
+      const emailVerifiedBool = emailVerified === 'true' || emailVerified === true;
+      query = query.eq('email_verified', emailVerifiedBool);
     }
 
     // Apply date filters
     if (dateFrom) {
-      query = query.gte('created_at', dateFrom);
+      try {
+        const fromDate = new Date(dateFrom);
+        if (!isNaN(fromDate.getTime())) {
+          query = query.gte('created_at', fromDate.toISOString());
+        }
+      } catch (e) {
+        console.warn('Invalid date_from format:', dateFrom);
+      }
     }
 
     if (dateTo) {
-      query = query.lte('created_at', dateTo);
+      try {
+        const toDate = new Date(dateTo);
+        if (!isNaN(toDate.getTime())) {
+          query = query.lte('created_at', toDate.toISOString());
+        }
+      } catch (e) {
+        console.warn('Invalid date_to format:', dateTo);
+      }
     }
 
-    // Apply sorting
-    if (['created_at', 'updated_at', 'last_login', 'name'].includes(sortBy)) {
-      query = query.order(sortBy, { ascending: sortOrder === 'asc' });
-    }
+    // Apply sorting dengan field mapping
+    let sortField = 'created_at';
+    if (sortBy === 'name') sortField = 'name';
+    else if (sortBy === 'email') sortField = 'email';
+    else if (sortBy === 'last_login') sortField = 'last_login';
+    else if (sortBy === 'updated_at') sortField = 'updated_at';
+    else if (sortBy === 'role') sortField = 'role';
+    
+    query = query.order(sortField, { 
+      ascending: sortOrder.toLowerCase() === 'asc',
+      nullsFirst: sortField === 'last_login' // Handle null last_login
+    });
 
     // Apply pagination
     query = query.range(offset, offset + limit - 1);
 
-    // Execute query
+    console.log('Executing Supabase query...');
+    
+    // Execute query to get users
     const { data: users, count, error } = await query;
 
     if (error) {
       console.error('Users query error:', error);
       return NextResponse.json(
-        { success: false, error: 'Failed to fetch users' },
+        { 
+          success: false, 
+          error: 'Failed to fetch users from database',
+          details: error.message,
+          code: 'DATABASE_ERROR'
+        },
         { status: 500 }
       );
     }
 
+    console.log(`Query successful: ${users?.length || 0} users found, total count: ${count}`);
+
+    // If we have users, fetch their bookings separately
+    const usersWithBookings = [];
+    if (users && users.length > 0) {
+      for (const user of users) {
+        try {
+          // Fetch bookings for each user
+          const { data: bookings } = await supabase
+            .from('bookings_kereta')
+            .select('id, total_price, status')
+            .eq('user_id', user.id); // Assuming this column exists
+          
+          // Add bookings to user object
+          const userWithBookings = {
+            ...user,
+            bookings: bookings || []
+          };
+          usersWithBookings.push(userWithBookings);
+        } catch (bookingError) {
+          console.warn(`Failed to fetch bookings for user ${user.id}:`, bookingError);
+          // If booking fetch fails, add user without bookings
+          usersWithBookings.push({
+            ...user,
+            bookings: []
+          });
+        }
+      }
+    }
+
     // Transform data
-    const transformedUsers = (users || []).map(user => {
-      const { password, refresh_token, ...safeUserData } = user;
+    const transformedUsers = usersWithBookings.map(user => {
+      // Remove sensitive data
+      const { password, refresh_token, ...safeUserData } = user as any;
       
       // Calculate booking stats
       const bookings = user.bookings || [];
       const bookingStats = {
         count: bookings.length,
         total_spent: bookings.reduce((sum: number, b: any) => sum + (b.total_price || 0), 0),
-        confirmed: bookings.filter((b: any) => b.status === 'confirmed').length,
-        pending: bookings.filter((b: any) => b.status === 'pending').length
+        completed: bookings.filter((b: any) => 
+          b.status === 'completed' || b.status === 'confirmed' || b.status === 'success'
+        ).length,
+        pending: bookings.filter((b: any) => 
+          b.status === 'pending' || b.status === 'processing'
+        ).length,
+        cancelled: bookings.filter((b: any) => 
+          b.status === 'cancelled' || b.status === 'failed'
+        ).length
       };
 
       return {
@@ -125,7 +244,17 @@ export async function GET(request: NextRequest) {
                 hour: '2-digit',
                 minute: '2-digit'
               })
-            : 'Never'
+            : 'Never',
+          updated_at: new Date(user.updated_at).toLocaleDateString('id-ID', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+        },
+        statistics: {
+          bookings: bookingStats
         }
       };
     });
@@ -143,6 +272,8 @@ export async function GET(request: NextRequest) {
 
     const totalPages = Math.ceil((count || 0) / limit);
 
+    console.log('Returning successful response');
+    
     return NextResponse.json({
       success: true,
       data: transformedUsers,
@@ -150,7 +281,10 @@ export async function GET(request: NextRequest) {
         page,
         limit,
         total: count || 0,
+        totalPages,
         total_pages: totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
         has_next_page: page < totalPages,
         has_prev_page: page > 1
       },
@@ -162,6 +296,13 @@ export async function GET(request: NextRequest) {
         email_verified: emailVerified,
         date_from: dateFrom,
         date_to: dateTo
+      },
+      meta: {
+        currentAdmin: {
+          id: adminUser?.id,
+          email: adminUser?.email,
+          role: adminUser?.role
+        }
       }
     }, { status: 200 });
 
@@ -170,145 +311,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false, 
-        error: error.message || 'Internal server error' 
-      },
-      { status: 500 }
-    );
-  }
-}
-
-// POST - Create new user
-export async function POST(request: NextRequest) {
-  const { user: adminUser, error: authError } = await requireAdmin(request);
-  
-  if (authError) {
-    return NextResponse.json(
-      { success: false, error: authError }, 
-      { status: authError === 'Unauthorized' ? 401 : 403 }
-    );
-  }
-
-  try {
-    const supabase = createClient();
-    const body = await request.json();
-
-    // Validate required fields
-    const { email, name, role = 'user', phone, password } = body;
-
-    if (!email || !name) {
-      return NextResponse.json(
-        { success: false, error: 'Email and name are required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid email format' },
-        { status: 400 }
-      );
-    }
-
-    // Validate role
-    if (!['super_admin', 'admin', 'staff', 'user'].includes(role)) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid role specified' },
-        { status: 400 }
-      );
-    }
-
-    // Check if email already exists
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .single();
-
-    if (existingUser) {
-      return NextResponse.json(
-        { success: false, error: 'Email already in use' },
-        { status: 409 }
-      );
-    }
-
-    // Create user data
-    const userData: any = {
-      email,
-      name,
-      phone: phone || null,
-      role,
-      is_active: true,
-      email_verified: false,
-      phone_verified: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    // In a real application, you would:
-    // 1. Hash the password properly
-    // 2. Use Supabase Auth API for user creation
-    // 3. Send verification email
-    if (password && password.length >= 6) {
-      // Note: This is just for demo. In production, use proper password hashing
-      userData.password = password; // Should be hashed
-    }
-
-    // Insert user
-    const { data, error } = await supabase
-      .from('users')
-      .insert(userData)
-      .select(`
-        id,
-        email,
-        name,
-        phone,
-        role,
-        is_active,
-        email_verified,
-        phone_verified,
-        created_at,
-        updated_at
-      `)
-      .single();
-
-    if (error) {
-      console.error('Create user error:', error);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 400 }
-      );
-    }
-
-    // Log the creation activity
-    await supabase
-      .from('admin_activities')
-      .insert({
-        admin_id: adminUser?.id,
-        action: 'CREATE_USER',
-        target_type: 'user',
-        target_id: data.id,
-        details: {
-          user_email: data.email,
-          role: data.role,
-          timestamp: new Date().toISOString()
-        },
-        created_at: new Date().toISOString()
-      });
-
-    return NextResponse.json({
-      success: true,
-      data,
-      message: 'User created successfully'
-    }, { status: 201 });
-
-  } catch (error: any) {
-    console.error('Create user API error:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+        error: error.message || 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
     );

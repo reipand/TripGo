@@ -13,22 +13,18 @@ import {
   CheckCircle,
   XCircle,
   Edit,
-  Ticket,
-  DollarSign,
-  Clock,
-  TrendingUp,
-  ExternalLink,
+  RefreshCw,
   AlertCircle,
-  RefreshCw
+  Clock // ADD THIS
 } from 'lucide-react';
 
 // Interfaces
 interface UserDetail {
   id: string;
   email: string;
-  name: string;
+  name: string | null;
   phone: string | null;
-  role: 'super_admin' | 'admin' | 'staff' | 'user';
+  role: string;
   is_active: boolean;
   email_verified: boolean;
   phone_verified: boolean;
@@ -36,41 +32,11 @@ interface UserDetail {
   created_at: string;
   updated_at: string;
   metadata?: Record<string, any>;
-  booking_count?: number;
-  total_spent?: number;
-  formatted_dates?: {
-    created_at: string;
-    last_login: string;
-  };
-}
-
-interface Booking {
-  id: string;
-  booking_number: string;
-  status: string;
-  total_price: number;
-  departure_date: string;
-  created_at: string;
-}
-
-interface BookingStats {
-  total: number;
-  completed: number;
-  pending: number;
-  cancelled: number;
-  totalSpent: number;
-  averageSpent: number;
 }
 
 interface ApiResponse {
   success: boolean;
   data?: UserDetail;
-  error?: string;
-}
-
-interface BookingsApiResponse {
-  success: boolean;
-  data?: Booking[];
   error?: string;
 }
 
@@ -81,139 +47,206 @@ export default function UserDetailPage() {
   const { userProfile, getToken } = useAuth();
   
   const [user, setUser] = useState<UserDetail | null>(null);
-  const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'activity' | 'settings'>('overview');
-  const [bookingStats, setBookingStats] = useState<BookingStats>({
-    total: 0,
-    completed: 0,
-    pending: 0,
-    cancelled: 0,
-    totalSpent: 0,
-    averageSpent: 0
-  });
+  const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
 
   const userId = params.id as string;
 
   const fetchUserDetails = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  try {
+    setLoading(true);
+    setError(null);
 
-      // Get authentication token
-      const token = getToken?.();
-      
-      if (!token) {
-        throw new Error('Authentication required');
-      }
+    console.log('Fetching user details for ID:', userId);
 
-      // Fetch user data from API
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Unauthorized access. Please login again.');
-        } else if (response.status === 404) {
-          throw new Error('User not found');
-        } else {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-      }
-
-      const result: ApiResponse = await response.json();
-
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Failed to load user details');
-      }
-
-      setUser(result.data);
-
-      // Fetch user bookings from API
-      const bookingsResponse = await fetch(`/api/admin/bookings?user_id=${userId}&limit=10`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!bookingsResponse.ok) {
-        console.warn('Failed to fetch bookings:', bookingsResponse.status);
-        setBookings([]);
-        setBookingStats({
-          total: 0,
-          completed: 0,
-          pending: 0,
-          cancelled: 0,
-          totalSpent: 0,
-          averageSpent: 0
-        });
-      } else {
-        const bookingsResult: BookingsApiResponse = await bookingsResponse.json();
-        if (bookingsResult.success && bookingsResult.data) {
-          const processedBookings: Booking[] = bookingsResult.data.map(booking => ({
-            id: booking.id,
-            booking_number: booking.booking_number || `BOOK-${booking.id.substring(0, 8)}`,
-            status: booking.status || 'pending',
-            total_price: booking.total_price || 0,
-            departure_date: booking.departure_date || booking.created_at,
-            created_at: booking.created_at
-          }));
-          setBookings(processedBookings);
-          calculateBookingStats(processedBookings);
-        } else {
-          setBookings([]);
-          setBookingStats({
-            total: 0,
-            completed: 0,
-            pending: 0,
-            cancelled: 0,
-            totalSpent: 0,
-            averageSpent: 0
-          });
-        }
-      }
-
-    } catch (err: any) {
-      console.error('Error fetching user details:', err);
-      setError(err.message || 'Failed to load user details');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [userId, getToken]);
-
-  const calculateBookingStats = (bookingsData: Booking[]) => {
-    const stats: BookingStats = {
-      total: bookingsData.length,
-      completed: bookingsData.filter(b => 
-        b.status === 'completed' || b.status === 'success' || b.status === 'confirmed'
-      ).length,
-      pending: bookingsData.filter(b => b.status === 'pending' || b.status === 'processing').length,
-      cancelled: bookingsData.filter(b => b.status === 'cancelled' || b.status === 'failed').length,
-      totalSpent: bookingsData.reduce((sum, b) => sum + (b.total_price || 0), 0),
-      averageSpent: 0
-    };
+    // Try multiple ways to get the token
+    let token: string | null = null;
     
-    stats.averageSpent = stats.total > 0 ? stats.totalSpent / stats.total : 0;
-    setBookingStats(stats);
-  };
+    // Method 1: Use getToken from AuthContext
+    if (typeof getToken === 'function') {
+      token = await getToken();
+      console.log('Token from getToken:', token ? `Found (length: ${token.length})` : 'Not found');
+    }
+    
+    // Method 2: Try localStorage with different keys
+    if (!token) {
+      console.log('Trying to get token from localStorage...');
+      
+      // Try multiple possible storage keys
+      const possibleKeys = [
+        'supabase.auth.token',
+        'sb-auth-token',
+        'auth-token',
+        'access_token',
+        'token'
+      ];
+      
+      for (const key of possibleKeys) {
+        try {
+          const stored = localStorage.getItem(key);
+          console.log(`Key "${key}":`, stored ? 'Exists' : 'Not found');
+          
+          if (stored) {
+            // Try to parse as JSON
+            try {
+              const parsed = JSON.parse(stored);
+              console.log(`Parsed ${key}:`, { 
+                type: typeof parsed,
+                hasCurrentSession: !!parsed?.currentSession,
+                hasAccessToken: !!parsed?.access_token,
+                hasCurrentAccessToken: !!parsed?.currentSession?.access_token,
+                hasToken: !!parsed?.token,
+                keys: Object.keys(parsed || {})
+              });
+              
+              // Extract token from various possible structures
+              token = parsed?.currentSession?.access_token || 
+                      parsed?.access_token || 
+                      parsed?.token ||
+                      parsed;
+                      
+              if (token && typeof token === 'string') {
+                console.log(`Token found from ${key}, length: ${token.length}`);
+                break;
+              }
+            } catch (parseError) {
+              // If it's not JSON, it might be a plain token string
+              if (typeof stored === 'string' && stored.length > 100) {
+                token = stored;
+                console.log(`Plain token found from ${key}, length: ${token.length}`);
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`Error reading key ${key}:`, e);
+          continue;
+        }
+      }
+    }
+    
+    // Method 3: Try to get from cookies as last resort
+    if (!token) {
+      console.log('Checking cookies...');
+      const cookies = document.cookie.split(';');
+      for (const cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name.includes('token') || name.includes('access')) {
+          token = value;
+          console.log(`Token found in cookie ${name}, length: ${token.length}`);
+          break;
+        }
+      }
+    }
+
+    // If still no token, check if we're in a valid session
+    if (!token) {
+      console.error('No token found after all attempts');
+      
+      // Check if user is actually logged in
+      if (userProfile) {
+        console.log('User profile exists but no token found:', userProfile);
+        // Try to redirect to refresh token
+        window.location.href = `/auth/refresh?redirect=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+      
+      // Redirect to login
+      localStorage.removeItem('supabase.auth.token');
+      localStorage.removeItem('sb-auth-token');
+      localStorage.removeItem('auth-token');
+      
+      router.push('/auth/login?redirect=' + encodeURIComponent(`/admin/users/${userId}`));
+      return;
+    }
+
+    console.log('Making API call with token length:', token.length);
+    
+    // Fetch user data dari API dengan Authorization header
+    const response = await fetch(`/api/admin/users/${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      cache: 'no-store',
+      credentials: 'include' // Include cookies if using cookie-based auth
+    });
+
+    console.log('API Response status:', response.status);
+    
+    if (!response.ok) {
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        console.log('API error data:', errorData);
+        errorMessage = errorData.error || errorData.message || errorMessage;
+        
+        // If token is invalid/expired, clear and redirect
+        if (response.status === 401 || errorData.code === 'UNAUTHORIZED') {
+          localStorage.removeItem('supabase.auth.token');
+          localStorage.removeItem('sb-auth-token');
+          localStorage.removeItem('auth-token');
+          
+          // Clear all localStorage items starting with supabase or sb
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('supabase') || key.startsWith('sb-')) {
+              localStorage.removeItem(key);
+            }
+          });
+          
+          router.push('/auth/login?redirect=' + encodeURIComponent(`/admin/users/${userId}`));
+          return;
+        }
+      } catch (e) {
+        console.log('Could not read error response as JSON');
+      }
+      
+      if (response.status === 403) {
+        throw new Error('You do not have permission to view this user.');
+      } else if (response.status === 404) {
+        throw new Error('User not found');
+      } else {
+        throw new Error(errorMessage);
+      }
+    }
+
+    const result: ApiResponse = await response.json();
+    console.log('API result success:', result.success);
+
+    if (!result.success || !result.data) {
+      throw new Error(result.error || 'Failed to load user details');
+    }
+
+    setUser(result.data);
+    console.log('User data set successfully');
+
+  } catch (err: any) {
+    console.error('Error fetching user details:', err);
+    
+    // Don't set error if we're redirecting
+    if (err.message.includes('redirect')) {
+      return;
+    }
+    
+    setError(err.message || 'Failed to load user details');
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+}, [userId, getToken, router, userProfile]); // Added userProfile to dependencies
 
   useEffect(() => {
     if (userId) {
+      console.log('Component mounted, fetching user details...');
       fetchUserDetails();
     }
   }, [userId, fetchUserDetails]);
 
   const handleRefresh = () => {
+    console.log('Refreshing user details...');
     setRefreshing(true);
     fetchUserDetails();
   };
@@ -233,14 +266,6 @@ export default function UserDetailPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(amount);
-  };
-
   const getRoleColor = (role: string) => {
     switch (role) {
       case 'super_admin':
@@ -256,85 +281,16 @@ export default function UserDetailPage() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'completed':
-      case 'success':
-      case 'confirmed':
-        return 'bg-green-100 text-green-800';
-      case 'pending':
-      case 'processing':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'cancelled':
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'completed':
-      case 'success':
-      case 'confirmed':
-        return 'Completed';
-      case 'pending':
-      case 'processing':
-        return 'Pending';
-      case 'cancelled':
-      case 'failed':
-        return 'Cancelled';
-      default:
-        return status;
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      const token = getToken?.();
-      if (!token) {
-        alert('Authentication required');
-        return;
-      }
-      
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (response.ok) {
-        alert('User deleted successfully');
-        router.push('/admin/users');
-      } else {
-        const result = await response.json();
-        alert(result.error || 'Failed to delete user');
-      }
-    } catch (err: any) {
-      alert(err.message || 'Error deleting user');
-    }
-  };
-
-  // Calculate display stats using both API data and calculated stats
-  const displayStats = {
-    total: user?.booking_count || bookingStats.total,
-    totalSpent: user?.total_spent || bookingStats.totalSpent,
-    averageSpent: bookingStats.averageSpent,
-    completed: bookingStats.completed,
-    pending: bookingStats.pending,
-    cancelled: bookingStats.cancelled
+  const getRoleDisplay = (role: string) => {
+    return role?.replace('_', ' ').toUpperCase() || 'USER';
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+        <p className="text-gray-600">Loading user details...</p>
+        {refreshing && <p className="text-sm text-gray-500 mt-2">Refreshing...</p>}
       </div>
     );
   }
@@ -354,12 +310,20 @@ export default function UserDetailPage() {
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-red-800 mb-2">Error Loading User</h2>
           <p className="text-red-600 mb-4">{error}</p>
-          <button
-            onClick={fetchUserDetails}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
-          >
-            Try Again
-          </button>
+          <div className="space-y-3">
+            <button
+              onClick={fetchUserDetails}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg mx-2"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => router.push('/auth/login?redirect=' + encodeURIComponent(`/admin/users/${userId}`))}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg mx-2"
+            >
+              Login Again
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -380,6 +344,12 @@ export default function UserDetailPage() {
           <User className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-yellow-800 mb-2">User Not Found</h2>
           <p className="text-yellow-600">The user you're looking for doesn't exist.</p>
+          <button
+            onClick={() => router.push('/admin/users')}
+            className="mt-4 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg"
+          >
+            Return to Users List
+          </button>
         </div>
       </div>
     );
@@ -401,16 +371,16 @@ export default function UserDetailPage() {
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
               <span className="text-2xl font-bold text-blue-600">
-                {user.name?.charAt(0).toUpperCase() || 'U'}
+                {user.name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || 'U'}
               </span>
             </div>
             <div>
               <div className="flex items-center space-x-3">
-                <h1 className="text-2xl font-bold text-gray-800">{user.name || 'No Name'}</h1>
+                <h1 className="text-2xl font-bold text-gray-800">{user.name || user.email || 'No Name'}</h1>
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Refresh"
                 >
                   <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -419,7 +389,7 @@ export default function UserDetailPage() {
               <p className="text-gray-600">{user.email}</p>
               <div className="flex items-center space-x-2 mt-2">
                 <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${getRoleColor(user.role)}`}>
-                  {user.role?.replace('_', ' ').toUpperCase() || 'USER'}
+                  {getRoleDisplay(user.role)}
                 </span>
                 <div className="flex items-center">
                   <div className={`w-2 h-2 rounded-full mr-1 ${user.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -441,72 +411,7 @@ export default function UserDetailPage() {
                 <span>Edit User</span>
               </button>
             )}
-            
-            <button
-              onClick={() => router.push(`/admin/bookings?userId=${userId}`)}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              <Ticket className="w-4 h-4" />
-              <span>View Bookings</span>
-            </button>
           </div>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-lg bg-blue-100">
-              <Ticket className="w-6 h-6 text-blue-600" />
-            </div>
-            <span className="text-sm text-gray-500">Total</span>
-          </div>
-          <h3 className="text-2xl font-bold text-gray-800 mb-1">{displayStats.total}</h3>
-          <p className="text-gray-600 text-sm">Bookings</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-lg bg-green-100">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-            <span className="text-sm text-gray-500">Spent</span>
-          </div>
-          <h3 className="text-2xl font-bold text-gray-800 mb-1">
-            {formatCurrency(displayStats.totalSpent)}
-          </h3>
-          <p className="text-gray-600 text-sm">Total Amount</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-lg bg-purple-100">
-              <TrendingUp className="w-6 h-6 text-purple-600" />
-            </div>
-            <span className="text-sm text-gray-500">Average</span>
-          </div>
-          <h3 className="text-2xl font-bold text-gray-800 mb-1">
-            {formatCurrency(displayStats.averageSpent)}
-          </h3>
-          <p className="text-gray-600 text-sm">Per Booking</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-lg bg-orange-100">
-              <Clock className="w-6 h-6 text-orange-600" />
-            </div>
-            <span className="text-sm text-gray-500">Last Activity</span>
-          </div>
-          <h3 className="text-xl font-bold text-gray-800 mb-1">
-            {user.formatted_dates?.last_login 
-              ? user.formatted_dates.last_login.split(',')[0] 
-              : user.last_login 
-                ? formatDate(user.last_login).split(',')[0] 
-                : 'Never'}
-          </h3>
-          <p className="text-gray-600 text-sm">Last Login</p>
         </div>
       </div>
 
@@ -518,12 +423,6 @@ export default function UserDetailPage() {
             className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'overview' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
             Overview
-          </button>
-          <button
-            onClick={() => setActiveTab('bookings')}
-            className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'bookings' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            Recent Bookings ({bookings.length || 0})
           </button>
           <button
             onClick={() => setActiveTab('settings')}
@@ -602,114 +501,21 @@ export default function UserDetailPage() {
               </div>
             </div>
 
-            {/* Booking Stats */}
+            {/* Additional Info */}
             <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Booking Statistics</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Completed</span>
-                    <span className="text-lg font-bold text-green-600">{displayStats.completed}</span>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Additional Information</h3>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">User ID</p>
+                    <p className="font-mono text-sm">{user.id}</p>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-green-500 rounded-full h-2" 
-                      style={{ width: `${displayStats.total > 0 ? (displayStats.completed / displayStats.total) * 100 : 0}%` }}
-                    ></div>
-                  </div>
-                </div>
-                
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Pending</span>
-                    <span className="text-lg font-bold text-yellow-600">{displayStats.pending}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-yellow-500 rounded-full h-2" 
-                      style={{ width: `${displayStats.total > 0 ? (displayStats.pending / displayStats.total) * 100 : 0}%` }}
-                    ></div>
-                  </div>
-                </div>
-                
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Cancelled</span>
-                    <span className="text-lg font-bold text-red-600">{displayStats.cancelled}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-red-500 rounded-full h-2" 
-                      style={{ width: `${displayStats.total > 0 ? (displayStats.cancelled / displayStats.total) * 100 : 0}%` }}
-                    ></div>
+                  <div>
+                    <p className="text-sm text-gray-500">Last Updated</p>
+                    <p className="font-medium">{formatDate(user.updated_at)}</p>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'bookings' && (
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Recent Bookings</h3>
-            
-            {bookings.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead>
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Booking ID</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {bookings.map((booking) => (
-                      <tr key={booking.id}>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                          {booking.booking_number}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {formatDate(booking.departure_date)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(booking.status)}`}>
-                            {getStatusText(booking.status)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                          {formatCurrency(booking.total_price)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => router.push(`/admin/bookings/${booking.id}`)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Ticket className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <p className="text-lg font-medium">No bookings found</p>
-                <p className="mt-1">This user hasn't made any bookings yet.</p>
-              </div>
-            )}
-            
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => router.push(`/admin/bookings?userId=${userId}`)}
-                className="px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg"
-              >
-                View All Bookings →
-              </button>
             </div>
           </div>
         )}
@@ -778,7 +584,35 @@ export default function UserDetailPage() {
                       </p>
                     </div>
                     <button
-                      onClick={handleDeleteUser}
+                      onClick={async () => {
+                        if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+                          return;
+                        }
+                        try {
+                          const token = await getToken?.();
+                          if (!token) {
+                            alert('Authentication required');
+                            return;
+                          }
+                          
+                          const response = await fetch(`/api/admin/users/${userId}`, {
+                            method: 'DELETE',
+                            headers: {
+                              'Authorization': `Bearer ${token}`
+                            }
+                          });
+                          
+                          if (response.ok) {
+                            alert('User deleted successfully');
+                            router.push('/admin/users');
+                          } else {
+                            const result = await response.json();
+                            alert(result.error || 'Failed to delete user');
+                          }
+                        } catch (err: any) {
+                          alert(err.message || 'Error deleting user');
+                        }
+                      }}
                       className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
                     >
                       Delete User

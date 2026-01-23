@@ -1,10 +1,9 @@
-// app/contexts/AuthContext.tsx
+// app/contexts/AuthContext.tsx (updated)
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { User, Session, AuthError } from '@supabase/supabase-js';
-// import { supabase } from '@/app/lib/supabaseClient';
-import { supabase as supabase } from '@/app/lib/supabaseClient';
+import { supabase } from '@/app/lib/supabaseClient';
 import { useRouter, usePathname } from 'next/navigation';
 
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -57,6 +56,7 @@ interface AuthContextType {
   clearErrors: () => void;
   checkSession: () => Promise<boolean>;
   forceUpdateRole: (role: 'admin' | 'super_admin' | 'staff' | 'user') => Promise<void>;
+  getToken: () => Promise<string | null>; // ADDED THIS
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -115,6 +115,58 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const lastRedirectTime = useRef<number>(0);
   const retryCount = useRef(0);
   const maxRetries = 3;
+
+  // ADDED: getToken function inside the component
+  const getToken = useCallback(async (): Promise<string | null> => {
+    try {
+      // Try from supabase client first
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        console.log('[getToken] Token from supabase.auth.getSession:', data.session.access_token?.substring(0, 20) + '...');
+        return data.session.access_token;
+      }
+      
+      // Try localStorage with common patterns
+      const possibleKeys = ['sb-auth-token', 'supabase.auth.token', 'access_token'];
+      for (const key of possibleKeys) {
+        try {
+          const stored = localStorage.getItem(key);
+          if (stored) {
+            console.log(`[getToken] Found key: ${key}`);
+            
+            // Try to parse as JSON
+            try {
+              const parsed = JSON.parse(stored);
+              const token = parsed?.currentSession?.access_token || 
+                           parsed?.access_token || 
+                           parsed?.token || 
+                           parsed;
+              
+              if (token && typeof token === 'string') {
+                console.log(`[getToken] Token from ${key}: ${token.substring(0, 20)}...`);
+                return token;
+              }
+            } catch (parseError) {
+              // If it's not JSON, it might be a plain token string
+              if (typeof stored === 'string' && stored.length > 100) {
+                console.log(`[getToken] Plain token from ${key}: ${stored.substring(0, 20)}...`);
+                return stored;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[getToken] Error reading key ${key}:`, e);
+          continue;
+        }
+      }
+      
+      console.log('[getToken] No token found');
+      return null;
+    } catch (error) {
+      console.error('[getToken] Error getting token:', error);
+      return null;
+    }
+  }, []);
 
   // Helper functions
   const getRedirectPathByRole = useCallback((role: string | undefined): string => {
@@ -474,122 +526,122 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [loading, pathname, userProfile, router, getRedirectPathByRole]);
 
   // Initialize auth
-// Initialize auth
-useEffect(() => {
-  isMounted.current = true;
-  hasFetchedProfile.current = false;
+  useEffect(() => {
+    isMounted.current = true;
+    hasFetchedProfile.current = false;
 
-  const initializeAuth = async () => {
-    if (!isMounted.current) return;
-    
-    setLoading(true);
-    
-    try {
-      console.log('[AuthContext] Initializing auth...');
+    const initializeAuth = async () => {
+      if (!isMounted.current) return;
       
-      const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+      setLoading(true);
       
-      if (sessionError) {
-        console.warn('Error getting session:', sessionError);
-      } else if (currentSession && currentSession.user) {
-        console.log('[AuthContext] User found:', currentSession.user.id, currentSession.user.email);
+      try {
+        console.log('[AuthContext] Initializing auth...');
         
-        if (isMounted.current) {
-          setSession(currentSession);
-          setUser(currentSession.user);
+        const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.warn('Error getting session:', sessionError);
+        } else if (currentSession && currentSession.user) {
+          console.log('[AuthContext] User found:', currentSession.user.id, currentSession.user.email);
+          
+          if (isMounted.current) {
+            setSession(currentSession);
+            setUser(currentSession.user);
+          }
+          
+          // Fetch user profile hanya jika belum pernah
+          if (!hasFetchedProfile.current) {
+            const profile = await fetchUserProfile(currentSession.user);
+            if (profile && isMounted.current) {
+              console.log('[AuthContext] Profile loaded:', {
+                email: profile.email,
+                role: profile.role,
+                isAdmin: ['admin', 'super_admin'].includes(profile.role)
+              });
+              setUserProfile(profile);
+            }
+            hasFetchedProfile.current = true;
+          }
+        } else {
+          console.log('[AuthContext] No user session found');
         }
         
-        // Fetch user profile hanya jika belum pernah
-        if (!hasFetchedProfile.current) {
+      } catch (error) {
+        console.warn('Exception initializing auth:', error);
+      } finally {
+        if (isMounted.current) {
+          setLoading(false);
+          setIsInitialized(true);
+          console.log('[AuthContext] Auth initialized', {
+            user: user?.email,
+            role: userProfile?.role,
+            isAdmin: userProfile ? ['admin', 'super_admin'].includes(userProfile.role) : false
+          });
+        }
+      }
+    };
+
+    initializeAuth();
+    
+    // Auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event: string, currentSession: Session | null) => {
+        if (!isMounted.current) return;
+        
+        console.log('[AuthContext] Auth state changed:', event);
+        
+        // Reset flag untuk user baru
+        hasFetchedProfile.current = false;
+        
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          
+          // Fetch profile untuk user baru
           const profile = await fetchUserProfile(currentSession.user);
           if (profile && isMounted.current) {
-            console.log('[AuthContext] Profile loaded:', {
+            console.log('[AuthContext] New profile loaded:', {
               email: profile.email,
               role: profile.role,
               isAdmin: ['admin', 'super_admin'].includes(profile.role)
             });
             setUserProfile(profile);
+            hasFetchedProfile.current = true;
+            
+            // AUTO-REDIRECT: Jika admin dan di halaman auth, redirect ke admin dashboard
+            if (['admin', 'super_admin'].includes(profile.role) && 
+                pathname?.startsWith('/auth/')) {
+              console.log('[AuthContext] Auto-redirecting admin to /admin/dashboard');
+              router.push('/admin/dashboard');
+            }
           }
-          hasFetchedProfile.current = true;
-        }
-      } else {
-        console.log('[AuthContext] No user session found');
-      }
-      
-    } catch (error) {
-      console.warn('Exception initializing auth:', error);
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-        setIsInitialized(true);
-        console.log('[AuthContext] Auth initialized', {
-          user: user?.email,
-          role: userProfile?.role,
-          isAdmin: userProfile ? ['admin', 'super_admin'].includes(userProfile.role) : false
-        });
-      }
-    }
-  };
-
-  initializeAuth();
-  
-  // Auth state change listener - KEEP ONLY THIS ONE
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event: string, currentSession: Session | null) => {
-      if (!isMounted.current) return;
-      
-      console.log('[AuthContext] Auth state changed:', event);
-      
-      // Reset flag untuk user baru
-      hasFetchedProfile.current = false;
-      
-      if (currentSession?.user) {
-        setSession(currentSession);
-        setUser(currentSession.user);
-        
-        // Fetch profile untuk user baru
-        const profile = await fetchUserProfile(currentSession.user);
-        if (profile && isMounted.current) {
-          console.log('[AuthContext] New profile loaded:', {
-            email: profile.email,
-            role: profile.role,
-            isAdmin: ['admin', 'super_admin'].includes(profile.role)
-          });
-          setUserProfile(profile);
-          hasFetchedProfile.current = true;
+        } else {
+          // Clear state saat logout
+          setSession(null);
+          setUser(null);
+          setUserProfile(null);
+          hasFetchedProfile.current = false;
           
-          // AUTO-REDIRECT: Jika admin dan di halaman auth, redirect ke admin dashboard
-          if (['admin', 'super_admin'].includes(profile.role) && 
-              pathname?.startsWith('/auth/')) {
-            console.log('[AuthContext] Auto-redirecting admin to /admin/dashboard');
-            router.push('/admin/dashboard');
+          // Clear storage
+          try {
+            localStorage.removeItem('myBookings');
+            localStorage.removeItem('userProfile');
+            sessionStorage.clear();
+          } catch (error) {
+            console.warn('Error clearing storage:', error);
           }
         }
-      } else {
-        // Clear state saat logout
-        setSession(null);
-        setUser(null);
-        setUserProfile(null);
-        hasFetchedProfile.current = false;
-        
-        // Clear storage
-        try {
-          localStorage.removeItem('myBookings');
-          localStorage.removeItem('userProfile');
-          sessionStorage.clear();
-        } catch (error) {
-          console.warn('Error clearing storage:', error);
-        }
       }
-    }
-  );
+    );
 
-  return () => {
-    console.log('[AuthContext] Cleaning up auth provider');
-    isMounted.current = false;
-    subscription.unsubscribe();
-  };
-}, [fetchUserProfile, pathname, router]); // Added pathname and router to dependencies
+    return () => {
+      console.log('[AuthContext] Cleaning up auth provider');
+      isMounted.current = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchUserProfile, pathname, router]); // Added pathname and router to dependencies
+
   // Handle auth page redirects
   useEffect(() => {
     if (isInitialized && !loading && pathname) {
@@ -944,6 +996,7 @@ useEffect(() => {
     networkError,
     supabaseError,
     isInitialized,
+    getToken, // ADDED THIS
     signUp,
     signIn,
     signInWithGoogle,
@@ -976,6 +1029,7 @@ useEffect(() => {
     networkError,
     supabaseError,
     isInitialized,
+    getToken, // ADDED THIS
     signUp,
     signIn,
     signInWithGoogle,
