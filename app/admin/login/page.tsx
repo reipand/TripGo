@@ -1,7 +1,7 @@
 // app/admin/login/page.tsx (sederhana)
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/app/lib/supabaseClient';
 
@@ -13,37 +13,35 @@ export default function AdminLoginPage() {
   const router = useRouter();
 
   // Check session on mount
-  useState(() => {
+  useEffect(() => {
+    let isSubscribed = true;
+
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+
+        if (!isSubscribed) return;
+
         if (session) {
-          // If already logged in, redirect to admin dashboard
-          // You might want to check for admin role here too, but for now redirect is enough
-          // as the dashboard should handle role protection
           console.log('Session found, redirecting to admin dashboard');
-
-          // Check local storage override
-          const isOverride = localStorage.getItem('admin_override');
-          if (isOverride) {
-            router.replace('/admin/dashboard');
-            return;
-          }
-
-          // Double check if user is actually admin/staff if needed, but let's assume
-          // if they are on this page and logged in, we try to send them to dashboard
           router.replace('/admin/dashboard');
         } else {
           setLoading(false);
         }
       } catch (e) {
-        console.error('Session check error:', e);
-        setLoading(false);
+        if (isSubscribed) {
+          console.error('Session check error:', e);
+          setLoading(false);
+        }
       }
     };
 
     checkSession();
-  });
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

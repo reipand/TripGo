@@ -17,17 +17,26 @@ const supabaseAdmin = createClient(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
+
     console.log('📝 Creating route with data:', body);
-    
+
     // Validasi data minimal
-    if (!body.schedule_id || !body.origin_station_id || !body.destination_station_id) {
+    const missingFields = [];
+    if (!body.schedule_id) missingFields.push('schedule_id');
+    if (!body.origin_station_id) missingFields.push('origin_station_id');
+    if (!body.destination_station_id) missingFields.push('destination_station_id');
+
+    if (missingFields.length > 0) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        {
+          error: 'Missing required fields',
+          fields: missingFields,
+          received: Object.keys(body)
+        },
         { status: 400 }
       );
     }
-    
+
     // Insert menggunakan admin client (bypass RLS)
     const { data, error } = await supabaseAdmin
       .from('rute_kereta')
@@ -42,25 +51,25 @@ export async function POST(request: NextRequest) {
       }])
       .select()
       .single();
-    
+
     if (error) {
       console.error('❌ Supabase error:', error);
       throw error;
     }
-    
+
     console.log('✅ Route created successfully:', data);
-    
+
     return NextResponse.json({
       success: true,
       data,
       message: 'Route created successfully'
     });
-    
+
   } catch (error: any) {
     console.error('💥 Error creating route:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: 'Failed to create route',
         details: error.message,

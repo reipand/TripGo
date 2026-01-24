@@ -1,18 +1,20 @@
-// app/api/stations/popular/route.ts
+// /app/api/stations/popular/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/app/lib/supabaseServer'; // Ganti impor ini
+import { createClient } from '@/app/lib/supabaseServer';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
     console.log('📡 Fetching popular stations from database...');
     
-    // Gunakan createClient dari supabaseServer
-    const supabase = createClient(); // <-- Ini yang penting!
+    const supabase = createClient();
     
     // Query ke tabel stasiun dengan kolom yang benar sesuai database
+    // Hanya ambil kolom yang ada di tabel
     const { data: stasiunData, error: stasiunError } = await supabase
       .from('stasiun')
-      .select('id, kode_stasiun, nama_stasiun, city, tipe')
+      .select('id, kode_stasiun, nama_stasiun, city, tipe, is_active')
       .eq('is_active', true)
       .order('kode_stasiun')
       .limit(8);
@@ -29,191 +31,116 @@ export async function GET(request: NextRequest) {
       if (allError) {
         console.error('❌ Error with alternative query:', allError);
         // Return fallback data
-        return NextResponse.json({
-          success: true,
-          data: getFallbackStations(),
-          message: 'Using fallback stations data'
-        });
+        return NextResponse.json(getFallbackStations());
       }
       
       if (allStations && allStations.length > 0) {
         console.log(`✅ Found ${allStations.length} stations (alternative query)`);
-        const transformedStations = transformStationData(allStations);
-        return NextResponse.json({
-          success: true,
-          data: transformedStations
-        });
+        const formattedStations = formatStations(allStations);
+        return NextResponse.json(formattedStations);
       }
       
       // Return fallback jika tidak ada data
-      return NextResponse.json({
-        success: true,
-        data: getFallbackStations(),
-        message: 'No stations found in database'
-      });
+      return NextResponse.json(getFallbackStations());
     }
 
     if (!stasiunData || stasiunData.length === 0) {
       console.log('ℹ️ No active stations found in database');
-      return NextResponse.json({
-        success: true,
-        data: getFallbackStations(),
-        message: 'No active stations found'
-      });
+      return NextResponse.json(getFallbackStations());
     }
 
     console.log(`✅ Found ${stasiunData.length} active stations`);
     
-    // Transform data sesuai format yang diharapkan
-    const transformedStations = transformStationData(stasiunData);
+    // Format data
+    const formattedStations = formatStations(stasiunData);
     
-    return NextResponse.json({
-      success: true,
-      data: transformedStations,
-      count: transformedStations.length
-    });
+    return NextResponse.json(formattedStations);
 
   } catch (error: any) {
     console.error('❌ Error in popular stations API:', error);
     
-    // Return fallback data dengan structure yang konsisten
-    return NextResponse.json({
-      success: true,
-      data: getFallbackStations(),
-      message: 'Using fallback stations data',
-      error: error.message
-    });
+    // Return fallback data
+    return NextResponse.json(getFallbackStations());
   }
 }
 
-// Helper function untuk transform data stasiun
-function transformStationData(stations: any[]) {
-  return stations.map((station: any) => {
-    // Tentukan popularitas berdasarkan kode stasiun
-    let popularity = 50; // Default
-    
-    // Stasiun utama lebih populer
-    const popularStations = ['BD', 'GMR', 'SBY', 'YK', 'SLO', 'SMG'];
-    if (popularStations.includes(station.kode_stasiun)) {
-      popularity = 80 + Math.floor(Math.random() * 20);
-    }
-    
-    // Ibu kota provinsi lebih populer
-    const capitalCities = ['Jakarta', 'Bandung', 'Surabaya', 'Yogyakarta', 'Semarang'];
-    if (capitalCities.includes(station.city)) {
-      popularity += 10;
-    }
-    
-    return {
-      id: station.id,
-      code: station.kode_stasiun || station.code || '',
-      name: station.nama_stasiun || station.name || `Stasiun ${station.kode_stasiun}`,
-      city: station.city || '',
-      region: getRegionFromCity(station.city),
-      type: station.tipe || 'regular',
-      popularity: Math.min(popularity, 100) // Max 100
-    };
-  });
-}
-
-// Helper function untuk menentukan region berdasarkan kota
-function getRegionFromCity(city: string): string {
-  const regions: Record<string, string> = {
-    'Jakarta': 'DKI Jakarta',
-    'Bandung': 'Jawa Barat',
-    'Surabaya': 'Jawa Timur',
-    'Yogyakarta': 'DI Yogyakarta',
-    'Semarang': 'Jawa Tengah',
-    'Solo': 'Jawa Tengah',
-    'Malang': 'Jawa Timur',
-    'Cirebon': 'Jawa Barat',
-    'Tangerang': 'Banten',
-    'Bekasi': 'Jawa Barat',
-    'Depok': 'Jawa Barat',
-    'Bogor': 'Jawa Barat',
-    'Purwokerto': 'Jawa Tengah',
-    'Madiun': 'Jawa Timur',
-    'Kediri': 'Jawa Timur',
-    'Jember': 'Jawa Timur'
-  };
-  
-  return regions[city] || 'Jawa';
+function formatStations(stations: any[]) {
+  return stations.map((station: any) => ({
+    id: station.id,
+    code: station.kode_stasiun || '',
+    name: station.nama_stasiun || `Stasiun ${station.kode_stasiun}`,
+    city: station.city || '',
+    type: station.tipe || 'regular',
+    is_active: station.is_active !== false
+  }));
 }
 
 // Fallback data jika database kosong atau error
 function getFallbackStations() {
   return [
     {
-      id: 'bd',
-      code: 'BD',
-      name: 'Stasiun Bandung',
-      city: 'Bandung',
-      region: 'Jawa Barat',
-      type: 'utama',
-      popularity: 95
-    },
-    {
-      id: 'gmr',
+      id: '1',
       code: 'GMR',
       name: 'Stasiun Gambir',
       city: 'Jakarta',
-      region: 'DKI Jakarta',
       type: 'utama',
-      popularity: 98
+      is_active: true
     },
     {
-      id: 'sby',
+      id: '2',
+      code: 'BD',
+      name: 'Stasiun Bandung',
+      city: 'Bandung',
+      type: 'utama',
+      is_active: true
+    },
+    {
+      id: '3',
       code: 'SBY',
       name: 'Stasiun Surabaya Gubeng',
       city: 'Surabaya',
-      region: 'Jawa Timur',
       type: 'utama',
-      popularity: 92
+      is_active: true
     },
     {
-      id: 'yk',
+      id: '4',
       code: 'YK',
       name: 'Stasiun Yogyakarta',
       city: 'Yogyakarta',
-      region: 'DI Yogyakarta',
       type: 'utama',
-      popularity: 90
+      is_active: true
     },
     {
-      id: 'slo',
-      code: 'SLO',
-      name: 'Stasiun Solo Balapan',
-      city: 'Solo',
-      region: 'Jawa Tengah',
-      type: 'utama',
-      popularity: 85
-    },
-    {
-      id: 'smg',
+      id: '5',
       code: 'SMG',
       name: 'Stasiun Semarang Tawang',
       city: 'Semarang',
-      region: 'Jawa Tengah',
       type: 'utama',
-      popularity: 88
+      is_active: true
     },
     {
-      id: 'mlg',
-      code: 'MLG',
+      id: '6',
+      code: 'SLO',
+      name: 'Stasiun Solo Balapan',
+      city: 'Solo',
+      type: 'utama',
+      is_active: true
+    },
+    {
+      id: '7',
+      code: 'ML',
       name: 'Stasiun Malang',
       city: 'Malang',
-      region: 'Jawa Timur',
-      type: 'utama',
-      popularity: 82
+      type: 'besar',
+      is_active: true
     },
     {
-      id: 'crb',
+      id: '8',
       code: 'CRB',
       name: 'Stasiun Cirebon',
       city: 'Cirebon',
-      region: 'Jawa Barat',
-      type: 'perantara',
-      popularity: 78
+      type: 'besar',
+      is_active: true
     }
   ];
 }

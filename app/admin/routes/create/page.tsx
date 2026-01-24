@@ -26,9 +26,11 @@ export default function CreateRoute() {
     const [loading, setLoading] = useState(false);
     const [stations, setStations] = useState<Station[]>([]);
     const [trains, setTrains] = useState<Train[]>([]);
+    const [schedules, setSchedules] = useState<any[]>([]);
 
     const [formData, setFormData] = useState({
-        train_id: '', // Optional: bind route to specific train if needed
+        schedule_id: '',
+        train_id: '',
         origin_station_id: '',
         destination_station_id: '',
         arrival_time: '',
@@ -44,6 +46,16 @@ export default function CreateRoute() {
 
             const { data: trData } = await supabase.from('kereta').select('id, nama_kereta, kode_kereta').eq('is_active', true);
             if (trData) setTrains(trData);
+
+            const { data: schData } = await supabase
+                .from('jadwal_kereta')
+                .select(`
+                    id, 
+                    travel_date, 
+                    kereta (nama_kereta, kode_kereta)
+                `)
+                .order('travel_date', { ascending: false });
+            if (schData) setSchedules(schData);
         };
         if (!authLoading) fetchData();
     }, [authLoading]);
@@ -77,21 +89,24 @@ export default function CreateRoute() {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    ...formData,
+                    schedule_id: formData.schedule_id,
+                    origin_station_id: formData.origin_station_id,
+                    destination_station_id: formData.destination_station_id,
                     duration_minutes: Number(formData.duration_minutes),
                     route_order: Number(formData.route_order),
-                    train_id: formData.train_id || null,
+                    departure_time: formData.departure_time,
+                    arrival_time: formData.arrival_time
                 }),
             });
 
             const result = await response.json();
 
             if (!response.ok) {
-                // Check specifically for RLS policy error from server response
-                if (response.status === 403 && result.error === 'RLS Policy Error') {
-                    throw new Error('Server Permission Error: ' + result.message);
-                }
-                throw new Error(result.error || result.message || 'Failed to create route');
+                // If the error contains missing fields, show them
+                const errorMsg = result.fields
+                    ? `Missing: ${result.fields.join(', ')}`
+                    : (result.error || result.message || 'Failed to create route');
+                throw new Error(errorMsg);
             }
 
             alert('Route segment created successfully!');
@@ -122,16 +137,19 @@ export default function CreateRoute() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Train (Optional)</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Target Schedule (Required)</label>
                         <select
-                            name="train_id"
-                            value={formData.train_id}
+                            name="schedule_id"
+                            required
+                            value={formData.schedule_id}
                             onChange={handleChange}
                             className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                         >
-                            <option value="">-- Generic Route --</option>
-                            {trains.map(t => (
-                                <option key={t.id} value={t.id}>{t.nama_kereta} ({t.kode_kereta})</option>
+                            <option value="">-- Select Schedule --</option>
+                            {schedules.map(s => (
+                                <option key={s.id} value={s.id}>
+                                    {s.kereta?.nama_kereta} - {new Date(s.travel_date).toLocaleDateString()}
+                                </option>
                             ))}
                         </select>
                     </div>

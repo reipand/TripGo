@@ -50,15 +50,19 @@ export default function CreateSchedule() {
         setLoading(true);
 
         try {
-            const { error } = await supabase
-                .from('jadwal_kereta')
-                .insert([{
-                    ...formData,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                }]);
+            const response = await fetch('/api/admin/schedules', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData),
+            });
 
-            if (error) throw error;
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to create schedule');
+            }
 
             alert('Schedule created successfully!');
             router.push('/admin/schedules');

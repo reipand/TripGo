@@ -89,17 +89,27 @@ export default function EditTrain({ params }: { params: Promise<{ id: string }> 
         setLoading(true);
 
         try {
-            const { error } = await supabase
+            // Exclude id from the update payload to avoid primary key update issues
+            const { id: _, fasilitas, ...updateData } = formData as any;
+
+            const { data, error, count } = await supabase
                 .from('kereta')
                 .update({
-                    ...formData,
+                    ...updateData,
+                    fasilitas: fasilitas, // Pass fasilitas explicitly if needed, but it's in updateData anyway
                     jumlah_kursi: Number(formData.jumlah_kursi),
                     updated_at: new Date().toISOString()
-                })
-                .eq('id', id);
+                }, { count: 'exact' })
+                .eq('id', id)
+                .select();
 
             if (error) throw error;
 
+            if (count === 0) {
+                throw new Error('No rows updated. The train might have been deleted or the ID is invalid.');
+            }
+
+            console.log('Update result:', { data, count });
             alert('Train updated successfully!');
             router.push('/admin/trains');
         } catch (error: any) {

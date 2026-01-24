@@ -83,8 +83,19 @@ const RealtimeSearch: React.FC = () => {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [searchPerformed, setSearchPerformed] = useState(false);
 
+  const searchAbortControllerRef = React.useRef<AbortController | null>(null);
+
   // Real-time search function
   const performSearch = useCallback(async (searchFilters: SearchFilters) => {
+    // Abort previous search if it exists
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    searchAbortControllerRef.current = controller;
+    const signal = controller.signal;
+
     setLoading(true);
     setError(null);
     setSearchPerformed(true);
@@ -98,7 +109,7 @@ const RealtimeSearch: React.FC = () => {
         transportType: searchFilters.transportType
       });
 
-      const response = await fetch(`/api/search?${queryParams.toString()}`);
+      const response = await fetch(`/api/search?${queryParams.toString()}`, { signal });
 
       if (!response.ok) {
         throw new Error('Search failed');
@@ -131,16 +142,24 @@ const RealtimeSearch: React.FC = () => {
         setResults([]);
       }
 
-      // Subscribe to real-time updates for general tables if needed
-      // Note: For specific rows found, we could subscribe to 'jadwal_kereta' changes
-      // This is left as an enhancement since we are already fetching fresh data.
-
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('Search error:', err);
       setError(err.message || 'An error occurred while searching');
     } finally {
-      setLoading(false);
+      if (searchAbortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (searchAbortControllerRef.current) {
+        searchAbortControllerRef.current.abort();
+      }
+    };
   }, []);
 
   // Handle search form submission

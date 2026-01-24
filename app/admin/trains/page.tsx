@@ -65,8 +65,12 @@ export default function AdminTrains() {
 
   const itemsPerPage = 10;
 
-  // Fetch trains data
+  // Fetch trains data with AbortController
   const fetchTrains = async () => {
+    // Abort previous request if it exists
+    const controller = new AbortController();
+    const signal = controller.signal;
+
     try {
       setLoading(true);
       setError(null);
@@ -94,9 +98,10 @@ export default function AdminTrains() {
       const from = (currentPage - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
 
-      const { data, error: queryError, count } = await query.range(from, to);
+      const { data, error: queryError, count } = await query.range(from, to).abortSignal(signal);
 
       if (queryError) {
+        if (queryError.message?.includes('abort')) return;
         throw queryError;
       }
 
@@ -105,11 +110,14 @@ export default function AdminTrains() {
       setTotalPages(Math.ceil((count || 0) / itemsPerPage));
 
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       console.error('Error fetching trains:', err);
       setError(err.message || 'Failed to load trains');
     } finally {
       setLoading(false);
     }
+
+    return controller;
   };
 
   // Fetch statistics
@@ -132,7 +140,7 @@ export default function AdminTrains() {
         .select('tipe_kereta');
 
       const types = {} as Record<string, number>;
-      typeData?.forEach(train => {
+      typeData?.forEach((train: { tipe_kereta: string }) => {
         const type = train.tipe_kereta || 'Unknown';
         types[type] = (types[type] || 0) + 1;
       });
@@ -150,8 +158,12 @@ export default function AdminTrains() {
   };
 
   useEffect(() => {
+    let currentController: AbortController | null = null;
+
     if (!authLoading) {
-      fetchTrains();
+      fetchTrains().then(controller => {
+        if (controller) currentController = controller;
+      });
       fetchStats();
 
       // Realtime subscription
@@ -163,6 +175,7 @@ export default function AdminTrains() {
         .subscribe();
 
       return () => {
+        if (currentController) currentController.abort();
         supabase.removeChannel(channel);
       };
     }

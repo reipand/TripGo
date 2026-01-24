@@ -24,7 +24,7 @@ export async function GET(
     }
 
     const { data: train, error } = await supabase
-      .from('trains')
+      .from('kereta')
       .select('*')
       .eq('id', id)
       .single();
@@ -45,9 +45,9 @@ export async function GET(
   } catch (error: any) {
     console.error('Train API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );
@@ -86,18 +86,14 @@ export async function PATCH(
 
     // Allowed fields for update
     const allowedFields = [
-      'train_name',
-      'train_code',
-      'class',
-      'capacity',
-      'status',
-      'departure_time',
-      'arrival_time',
-      'departure_station',
-      'arrival_station',
-      'price',
-      'description',
-      'facilities'
+      'nama_kereta',
+      'kode_kereta',
+      'operator',
+      'tipe_kereta',
+      'jumlah_kursi',
+      'is_active',
+      'fasilitas',
+      'keterangan'
     ];
 
     // Filter only allowed fields
@@ -120,7 +116,7 @@ export async function PATCH(
 
     // Update train
     const { data, error } = await supabase
-      .from('trains')
+      .from('kereta')
       .update(updateData)
       .eq('id', id)
       .select()
@@ -143,9 +139,9 @@ export async function PATCH(
   } catch (error: any) {
     console.error('Update train API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );
@@ -185,13 +181,13 @@ export async function DELETE(
     const { count: activeBookings } = await supabase
       .from('bookings_kereta')
       .select('*', { count: 'exact', head: true })
-      .eq('train_code', existingTrain.train_code)
+      .eq('train_code', existingTrain.kode_kereta)
       .in('status', ['pending', 'confirmed']);
 
     if (activeBookings && activeBookings > 0) {
       return NextResponse.json(
-        { 
-          error: 'Cannot delete train with active bookings. Consider marking as inactive instead.' 
+        {
+          error: 'Cannot delete train with active bookings. Consider marking as inactive instead.'
         },
         { status: 400 }
       );
@@ -199,9 +195,9 @@ export async function DELETE(
 
     // Soft delete: Mark as inactive
     const { data, error } = await supabase
-      .from('trains')
+      .from('kereta')
       .update({
-        status: 'inactive',
+        is_active: false,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -225,9 +221,9 @@ export async function DELETE(
   } catch (error: any) {
     console.error('Delete train API error:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Internal server error' 
+      {
+        success: false,
+        error: error.message || 'Internal server error'
       },
       { status: 500 }
     );

@@ -44,35 +44,41 @@ export default function AdminSchedules() {
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
 
-    const itemsPerPage = 10;
+    const itemsPerPage = 100;
 
     const fetchSchedules = async () => {
         try {
             setLoading(true);
+
+            // Use !inner to allow filtering on the joined table
             let query = supabase
                 .from('jadwal_kereta')
                 .select(`
-          *,
-          kereta (nama_kereta, kode_kereta, tipe_kereta)
-        `, { count: 'exact' })
-                .order('travel_date', { ascending: true }); // Soonest first
+                    *,
+                    kereta!inner (nama_kereta, kode_kereta, tipe_kereta)
+                `, { count: 'exact' });
 
-            // Note: Supabase filtering on joined tables is tricky with simple syntax.
-            // We might need to filter client-side for train name search if not using exact foreign key constraints extensively or view.
-            // For now, let's assume we search mostly by date or fetch mostly all and filter.
-            // However, large datasets require DB search.
-            // Searching deep relations: !inner join required for filtering.
+            // Handle searchTerm: Date (dd/mm/yyyy) or Train Name/Code
+            if (searchTerm.trim()) {
+                const dateRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/;
+                const dateMatch = searchTerm.trim().match(dateRegex);
 
-            if (searchTerm) {
-                // This won't work easily on joined columns without !inner
-                // Simplified: Search by ID or date if matches format, or ignore text search on train name for now unless we do inner join
-                // query = query.or(`travel_date.eq.${searchTerm}`); 
-                // Better: Let's search by Date if it looks like a date, otherwise ignored for now.
+                if (dateMatch) {
+                    // Convert dd/mm/yyyy to YYYY-MM-DD
+                    const [_, day, month, year] = dateMatch;
+                    const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                    query = query.eq('travel_date', formattedDate);
+                } else {
+                    // Search by train name or code in the joined 'kereta' table
+                    query = query.or(`nama_kereta.ilike.%${searchTerm}%,kode_kereta.ilike.%${searchTerm}%`, { foreignTable: 'kereta' });
+                }
             }
 
             if (statusFilter !== 'all') {
                 query = query.eq('status', statusFilter);
             }
+
+            query = query.order('travel_date', { ascending: true });
 
             const from = (currentPage - 1) * itemsPerPage;
             const to = from + itemsPerPage - 1;
@@ -93,21 +99,54 @@ export default function AdminSchedules() {
     };
 
     useEffect(() => {
-        if (!authLoading) {
+        if (authLoading) return;
+
+        // Fetch immediately on initial load or filters change
+        // But debounce the searchTerm specifically
+        const timer = setTimeout(() => {
             fetchSchedules();
-        }
-    }, [authLoading, currentPage, statusFilter]);
+        }, searchTerm ? 500 : 0);
+
+        return () => clearTimeout(timer);
+    }, [authLoading, currentPage, statusFilter, searchTerm]);
+
+    // Real-time subscription - Separate effect to avoid re-subscribing on every search keystroke
+    useEffect(() => {
+        if (authLoading) return;
+
+        const channel = supabase.channel('admin-schedules-realtime')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'jadwal_kereta'
+            }, (payload: any) => {
+                console.log('Real-time schedule update:', payload);
+                fetchSchedules();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [authLoading]);
 
     const deleteSchedule = async (id: string) => {
         if (!confirm('Are you sure you want to delete this schedule? This might affect bookings.')) return;
 
         try {
-            const { error } = await supabase.from('jadwal_kereta').delete().eq('id', id);
-            if (error) throw error;
+            const response = await fetch(`/api/admin/schedules/${id}`, {
+                method: 'DELETE',
+            });
+
+            if (!response.ok) {
+                const result = await response.json();
+                throw new Error(result.error || 'Failed to delete schedule');
+            }
+
             fetchSchedules();
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error deleting schedule:', err);
-            alert('Failed to delete schedule');
+            alert('Error: ' + err.message);
         }
     };
 

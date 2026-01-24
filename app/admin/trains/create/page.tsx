@@ -51,16 +51,19 @@ export default function CreateTrain() {
         setLoading(true);
 
         try {
-            const { error } = await supabase
-                .from('kereta')
-                .insert([{
-                    ...formData,
-                    jumlah_kursi: Number(formData.jumlah_kursi),
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                }]);
+            const response = await fetch('/api/admin/trains', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData),
+            });
 
-            if (error) throw error;
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to create train');
+            }
 
             alert('Train created successfully!');
             router.push('/admin/trains');
