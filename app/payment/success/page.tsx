@@ -513,22 +513,9 @@ const PaymentSuccessContent = () => {
                 final_amount: dbBooking.total_amount || dbBooking.final_amount,
               };
 
-              // Update payment status if needed
-              if (dbBooking.payment_status === 'pending') {
-                const { error: updateErr } = await supabase
-                  .from('bookings_kereta')
-                  .update({
-                    payment_status: 'paid',
-                    status: 'confirmed',
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', dbBooking.id);
-
-                if (!updateErr) {
-                  bookingFromDB.payment_status = 'paid';
-                  bookingFromDB.status = 'confirmed';
-                }
-              }
+              // Update payment status if needed (only if pending and trust DB)
+              // Actually, we should trust the API call made before redirect. 
+              // Redundant client-side update removed for speed.
             }
           } catch (dbError) {
             console.error('Database error:', dbError);

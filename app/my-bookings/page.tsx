@@ -803,7 +803,7 @@ export default function MyBookingsPage() {
         console.error('Local storage error:', localStorageError);
       }
 
-      // 2. Load from database with updated API
+      // 2. Load from database with updated API - PRIORITY SOURCE
       if (user?.id) {
         try {
           // Coba load dari tabel bookings_kereta terlebih dahulu
@@ -815,17 +815,28 @@ export default function MyBookingsPage() {
 
           if (!bookingsError && dbBookings) {
             const validDbBookings = dbBookings
-              .map(validateAndCleanBooking)
+              .map((b: any) => validateAndCleanBooking(b))
               .filter((b): b is Booking => b !== null);
 
-            // Merge dan hindari duplikat
-            const existingCodes = allBookings.map(b => b.booking_code);
-            const uniqueDbBookings = validDbBookings.filter(
-              (b: Booking) => !existingCodes.includes(b.booking_code)
-            );
+            // Create map from DB bookings for easy lookup
+            const dbBookingMap = new Map(validDbBookings.map(b => [b.booking_code, b]));
 
-            allBookings = [...allBookings, ...uniqueDbBookings];
+            // Merge: DB overwrites LocalStorage
+            // First, keep local bookings that are NOT in DB (e.g., just created but not synced?)
+            // Actually, if we are online, DB is truth.
+            // But let's keep local ones only if they don't exist in DB to be safe (fallback).
+            const mergedBookings = [...validDbBookings];
+
+            // Add local bookings that are missing from DB (rare case, maybe offline creation)
+            allBookings.forEach(localB => {
+              if (!dbBookingMap.has(localB.booking_code)) {
+                mergedBookings.push(localB);
+              }
+            });
+
+            allBookings = mergedBookings;
           }
+
 
           // Coba load dari tabel transactions jika ada
           const { data: transactions, error: transactionsError } = await supabase
@@ -836,7 +847,7 @@ export default function MyBookingsPage() {
             .order('created_at', { ascending: false });
 
           if (!transactionsError && transactions) {
-            const transactionBookings = transactions.map(transaction => {
+            const transactionBookings = transactions.map((transaction: any) => {
               try {
                 const bookingData = typeof transaction.metadata === 'string'
                   ? JSON.parse(transaction.metadata)
@@ -982,7 +993,7 @@ export default function MyBookingsPage() {
             total_amount: 149825,
             status: 'pending',
             payment_status: 'pending',
-            payment_method: null,
+            payment_method: undefined,
             passenger_count: 1,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -992,7 +1003,7 @@ export default function MyBookingsPage() {
             pnr_number: 'PNR789012',
             coach_number: 'A1',
             seat_numbers: ['A1'],
-            transaction_id: null,
+            transaction_id: undefined,
             checkin_status: false,
             baggage_allowance: '15kg',
             trip_duration: '5j 0m',
@@ -1419,16 +1430,48 @@ export default function MyBookingsPage() {
     };
   }, [bookings]);
 
+  // Setup Realtime Subscription
+  useEffect(() => {
+    if (!user?.id) return;
+
+    console.log('🔌 Setting up realtime subscription for user:', user.id);
+
+    const channel = supabase
+      .channel('my-bookings-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE
+          schema: 'public',
+          table: 'bookings_kereta',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload: any) => {
+          console.log('🔔 Realtime update received:', payload);
+          // Reload bookings completely to ensure consistency
+          loadBookings(true);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log('🔌 Subscription status:', status);
+      });
+
+    return () => {
+      console.log('🔌 Cleaning up subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, loadBookings]);
+
   // Load data on mount
   useEffect(() => {
-    if (!initialLoadDone.current) {
+    if (!initialLoadDone.current || (user?.id && bookings.length === 0)) {
       loadBookings();
     }
 
     return () => {
       isLoadingRef.current = false;
     };
-  }, [loadBookings]);
+  }, [loadBookings, user?.id]);
 
   // Loading state
   if (loading && bookings.length === 0) {
@@ -1882,22 +1925,22 @@ export default function MyBookingsPage() {
                       <div className="mt-6 pt-6 border-t border-gray-100">
                         <p className="text-sm font-medium text-gray-700 mb-2">Rincian Biaya:</p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          {booking.insurance_amount > 0 && (
+                          {(booking.insurance_amount || 0) > 0 && (
                             <div className="text-sm text-gray-600">
                               <span>Asuransi: </span>
-                              <span className="font-semibold">{formatCurrency(booking.insurance_amount)}</span>
+                              <span className="font-semibold">{formatCurrency(booking.insurance_amount || 0)}</span>
                             </div>
                           )}
-                          {booking.convenience_fee > 0 && (
+                          {(booking.convenience_fee || 0) > 0 && (
                             <div className="text-sm text-gray-600">
                               <span>Biaya Layanan: </span>
-                              <span className="font-semibold">{formatCurrency(booking.convenience_fee)}</span>
+                              <span className="font-semibold">{formatCurrency(booking.convenience_fee || 0)}</span>
                             </div>
                           )}
-                          {booking.discount_amount > 0 && (
+                          {(booking.discount_amount || 0) > 0 && (
                             <div className="text-sm text-green-600">
                               <span>Diskon: </span>
-                              <span className="font-semibold">-{formatCurrency(booking.discount_amount)}</span>
+                              <span className="font-semibold">-{formatCurrency(booking.discount_amount || 0)}</span>
                             </div>
                           )}
                         </div>

@@ -99,8 +99,8 @@ const ArrowRightIcon = () => (
   </svg>
 );
 
-const ChevronRightIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+const ChevronRightIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={`w-5 h-5 ${className}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
   </svg>
 );
@@ -159,7 +159,7 @@ interface BookingCardProps {
 // --- Helper Functions ---
 const safeJsonParse = <T,>(jsonString: string | null, fallback: T): T => {
   if (!jsonString || jsonString.trim() === '') return fallback;
-  
+
   try {
     return JSON.parse(jsonString) as T;
   } catch (error) {
@@ -177,7 +177,7 @@ const safeLocalStorage = {
       return null;
     }
   },
-  
+
   setItem: (key: string, value: string): boolean => {
     try {
       localStorage.setItem(key, value);
@@ -187,7 +187,7 @@ const safeLocalStorage = {
       return false;
     }
   },
-  
+
   removeItem: (key: string): void => {
     try {
       localStorage.removeItem(key);
@@ -206,7 +206,7 @@ const safeSessionStorage = {
       return null;
     }
   },
-  
+
   setItem: (key: string, value: string): boolean => {
     try {
       sessionStorage.setItem(key, value);
@@ -216,7 +216,7 @@ const safeSessionStorage = {
       return false;
     }
   },
-  
+
   removeItem: (key: string): void => {
     try {
       sessionStorage.removeItem(key);
@@ -233,11 +233,11 @@ const generateAvatarUrl = (firstName: string, lastName: string) => {
 
 const formatDate = (dateString: string | undefined): string => {
   if (!dateString) return 'Tanggal tidak tersedia';
-  
+
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
-    
+
     return date.toLocaleDateString('id-ID', {
       weekday: 'long',
       day: 'numeric',
@@ -252,16 +252,16 @@ const formatDate = (dateString: string | undefined): string => {
 
 const formatTime = (timeString: string | undefined): string => {
   if (!timeString) return '--:--';
-  
+
   if (timeString.includes(':')) {
     const parts = timeString.split(':');
     return `${parts[0]?.padStart(2, '0')}:${parts[1]?.padStart(2, '0')}`;
   }
-  
+
   try {
     const date = new Date(timeString);
     if (isNaN(date.getTime())) return timeString;
-    
+
     return date.toLocaleTimeString('id-ID', {
       hour: '2-digit',
       minute: '2-digit',
@@ -288,7 +288,7 @@ const formatCoin = (coins: number): string => {
 
 const getBookingStatusConfig = (status: string) => {
   const statusLower = status?.toLowerCase() || '';
-  
+
   switch (statusLower) {
     case 'confirmed':
     case 'paid':
@@ -340,15 +340,15 @@ const Avatar: React.FC<{
   avatarUrl?: string;
   size?: number;
   className?: string;
-}> = React.memo(({ 
-  firstName, 
-  lastName, 
-  avatarUrl, 
-  size = 42, 
-  className = "" 
+}> = React.memo(({
+  firstName,
+  lastName,
+  avatarUrl,
+  size = 42,
+  className = ""
 }) => {
   const avatarSrc = avatarUrl || generateAvatarUrl(firstName, lastName);
-  
+
   return (
     <div className={`relative ${className}`}>
       <img
@@ -388,8 +388,8 @@ const SkeletonCard: React.FC = React.memo(() => (
 ));
 SkeletonCard.displayName = 'SkeletonCard';
 
-const ErrorDisplay: React.FC<{ 
-  message: string; 
+const ErrorDisplay: React.FC<{
+  message: string;
   onRetry?: () => void;
   title?: string;
 }> = React.memo(({ message, onRetry, title = 'Gagal Memuat' }) => (
@@ -402,7 +402,7 @@ const ErrorDisplay: React.FC<{
     <h3 className="font-semibold text-gray-800 mb-2">{title}</h3>
     <p className="text-gray-500 mb-4 text-sm">{message}</p>
     {onRetry && (
-      <button 
+      <button
         onClick={onRetry}
         className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
       >
@@ -468,7 +468,7 @@ CoinCounter.displayName = 'CoinCounter';
 export default function DashboardPage() {
   const router = useRouter();
   const { user, userProfile, signOut, loading: authLoading } = useAuth();
-  
+
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [loading, setLoading] = useState<boolean>(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -477,7 +477,7 @@ export default function DashboardPage() {
   const [tripCoins, setTripCoins] = useState<number>(0);
   const [coinAnimation, setCoinAnimation] = useState<boolean>(false);
   const [coinTransactions, setCoinTransactions] = useState<TripCoinTransaction[]>([]);
-  
+
   // Refs untuk cleanup
   const isMounted = useRef<boolean>(true);
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -488,23 +488,23 @@ export default function DashboardPage() {
   // Cleanup function
   const cleanup = useCallback(() => {
     isMounted.current = false;
-    
+
     // Clear all timeouts
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
       refreshTimeoutRef.current = null;
     }
-    
+
     if (pendingRefreshIntervalRef.current) {
       clearInterval(pendingRefreshIntervalRef.current);
       pendingRefreshIntervalRef.current = null;
     }
-    
+
     if (animationTimeoutRef.current) {
       clearTimeout(animationTimeoutRef.current);
       animationTimeoutRef.current = null;
     }
-    
+
     // Abort fetch requests
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -521,44 +521,44 @@ export default function DashboardPage() {
 
   // Initial load effect
   useEffect(() => {
-    if (user && !loading && bookings.length === 0 && isMounted.current) {
+    if (user?.id && !loading && bookings.length === 0 && isMounted.current) {
       fetchBookings();
     }
-  }, [user, loading, bookings.length]);
+  }, [user?.id, loading, bookings.length]);
 
   // Memoized calculations
   const calculateTripCoins = useCallback((bookingsData: Booking[]): number => {
-    if (!user || !bookingsData || bookingsData.length === 0) return 0;
-    
-    const validBookings = bookingsData.filter(booking => 
+    if (!user?.id || !bookingsData || bookingsData.length === 0) return 0;
+
+    const validBookings = bookingsData.filter(booking =>
       ['paid', 'confirmed', 'completed'].includes(booking.status)
     );
-    
+
     let totalCoins = 0;
     validBookings.forEach(booking => {
       totalCoins += Math.floor((booking.total_amount || 0) / 10000);
     });
-    
+
     if (validBookings.length > 0) {
       totalCoins += 100;
     }
-    
+
     totalCoins += Math.floor(validBookings.length / 5) * 50;
-    
+
     return totalCoins;
-  }, [user]);
+  }, [user?.id]);
 
   const generateCoinTransactions = useCallback((bookingsData: Booking[]): TripCoinTransaction[] => {
-    if (!user || !bookingsData || bookingsData.length === 0) return [];
-    
+    if (!user?.id || !bookingsData || bookingsData.length === 0) return [];
+
     const transactions: TripCoinTransaction[] = [];
-    const validBookings = bookingsData.filter(booking => 
+    const validBookings = bookingsData.filter(booking =>
       ['paid', 'confirmed', 'completed'].includes(booking.status)
     );
-    
+
     validBookings.forEach((booking, index) => {
       const coinsEarned = Math.floor((booking.total_amount || 0) / 10000);
-      
+
       if (coinsEarned > 0) {
         transactions.push({
           id: `transaction-${booking.id}-${Date.now()}-${index}`,
@@ -571,7 +571,7 @@ export default function DashboardPage() {
           created_at: booking.booking_date
         });
       }
-      
+
       if (index === 0) {
         transactions.push({
           id: `bonus-first-${booking.id}-${Date.now()}`,
@@ -584,7 +584,7 @@ export default function DashboardPage() {
           created_at: booking.booking_date
         });
       }
-      
+
       if ((index + 1) % 5 === 0) {
         transactions.push({
           id: `bonus-multiplier-${booking.id}-${Date.now()}`,
@@ -598,18 +598,18 @@ export default function DashboardPage() {
         });
       }
     });
-    
-    return transactions.sort((a, b) => 
+
+    return transactions.sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [user]);
+  }, [user?.id]);
 
   // Update Trip Coins
   useEffect(() => {
-    if (user && bookings.length > 0 && isMounted.current) {
+    if (user?.id && bookings.length > 0 && isMounted.current) {
       const newCoins = calculateTripCoins(bookings);
       const oldCoins = tripCoins;
-      
+
       if (newCoins > oldCoins) {
         setCoinAnimation(true);
         animationTimeoutRef.current = setTimeout(() => {
@@ -618,346 +618,362 @@ export default function DashboardPage() {
           }
         }, 1000);
       }
-      
+
       setTripCoins(newCoins);
       setCoinTransactions(generateCoinTransactions(bookings));
-    } else if (!user && isMounted.current) {
+    } else if (!user?.id && isMounted.current) {
       setTripCoins(0);
       setCoinTransactions([]);
     }
-    
+
     return () => {
       if (animationTimeoutRef.current) {
         clearTimeout(animationTimeoutRef.current);
         animationTimeoutRef.current = null;
       }
     };
-  }, [bookings, user, calculateTripCoins, generateCoinTransactions, tripCoins]);
+  }, [bookings, user?.id, calculateTripCoins, generateCoinTransactions, tripCoins]);
 
- // Fetch bookings dengan abort controller
-const fetchBookings = useCallback(async (forceRefresh = false) => {
-  if (!user || !isMounted.current) {
-    if (isMounted.current) {
-      setBookings([]);
-      setLoading(false);
-    }
-    return;
-  }
-  
-  // Prevent multiple simultaneous requests
-  if (loading && !forceRefresh) {
-    console.log('Fetch already in progress, skipping...');
-    return;
-  }
-  
-  // Abort previous request
-  if (abortControllerRef.current) {
-    abortControllerRef.current.abort('New request started');
-  }
-  
-  // Create new abort controller
-  abortControllerRef.current = new AbortController();
-  const signal = abortControllerRef.current.signal;
-  
-  try {
-    setLoading(true);
-    setBookingsError(null);
-    
-    let allBookings: Booking[] = [];
-    
-    // Check sessionStorage for new bookings from payment
-    const paymentSuccess = safeSessionStorage.getItem('paymentSuccess');
-    const newBookingData = safeSessionStorage.getItem('newBookingData');
-    
-    if (paymentSuccess === 'true' && newBookingData) {
-      try {
-        const parsedData = safeJsonParse<any>(newBookingData, {});
-        
-        if (parsedData && typeof parsedData === 'object') {
-          const newBooking: Booking = {
-            id: `temp-${Date.now()}`,
-            booking_code: parsedData.bookingCode || `BOOK-${Date.now()}`,
-            booking_date: parsedData.paymentDate || new Date().toISOString(),
-            total_amount: parsedData.totalAmount || 0,
-            status: 'paid',
-            passenger_count: parsedData.passengerCount || 1,
-            order_id: parsedData.orderId,
-            passenger_name: parsedData.passengerName,
-            passenger_email: parsedData.passengerEmail,
-            passenger_phone: parsedData.passengerPhone,
-            train_name: parsedData.trainName || 'Kereta Api',
-            train_type: parsedData.trainType,
-            origin: parsedData.origin,
-            destination: parsedData.destination,
-            departure_date: parsedData.departureDate,
-            departure_time: parsedData.departureTime,
-            payment_status: 'paid',
-            payment_method: parsedData.paymentMethod,
-            payment_date: parsedData.paymentDate
-          };
-          
-          allBookings.push(newBooking);
-          
-          // Clear session storage
-          safeSessionStorage.removeItem('paymentSuccess');
-          safeSessionStorage.removeItem('newBookingData');
-          safeSessionStorage.removeItem('newBookingCode');
-        }
-      } catch (error) {
-        console.warn('Error processing session storage data:', error);
+  // Fetch bookings dengan abort controller
+  const fetchBookings = useCallback(async (forceRefresh = false) => {
+    if (!user?.id || !isMounted.current) {
+      if (isMounted.current) {
+        setBookings([]);
+        setLoading(false);
       }
-    }
-    
-    // Check if we should fetch from database
-    const shouldFetchFromDB = forceRefresh || allBookings.length === 0;
-    
-    // Helper function for retry logic
-    const fetchWithRetry = async (queryFn: () => Promise<any>, maxRetries = 2): Promise<any> => {
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          // Add exponential backoff delay for retries
-          if (attempt > 0) {
-            const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            console.log(`Retry attempt ${attempt} after ${delay}ms`);
-          }
-          
-          return await queryFn();
-        } catch (error: any) {
-          if (error.name === 'AbortError' || attempt === maxRetries) {
-            throw error;
-          }
-          console.warn(`Query attempt ${attempt + 1} failed:`, error.message);
-        }
-      }
-      throw new Error('All retry attempts failed');
-    };
-    
-    if (shouldFetchFromDB && isMounted.current) {
-      try {
-        // Check if signal is already aborted
-        if (signal.aborted) {
-          console.log('Request was aborted before query execution');
-          return;
-        }
-        
-        const email = user.email;
-        
-        // Create a single optimized query with proper error handling
-        const executeQuery = async () => {
-          // Set a longer timeout for the query itself
-          const queryTimeout = 20000; // 20 seconds for database query
-          
-          const queryPromise = (async () => {
-            try {
-              // Build base query
-              let query = supabase
-                .from('bookings_kereta')
-                .select('id, booking_code, created_at, total_amount, status, passenger_count, passenger_name, train_name, origin, destination')
-                .order('created_at', { ascending: false })
-                .limit(8); // Reduced limit for faster response
-              
-              // Add filters
-              if (email) {
-                // Use OR for both conditions
-                query = query.or(`passenger_email.eq.${email},user_id.eq.${user.id}`);
-              } else {
-                query = query.eq('user_id', user.id);
-              }
-              
-              const { data, error } = await query;
-              
-              if (error) {
-                throw error;
-              }
-              
-              return data || [];
-            } catch (error: any) {
-              console.error('Supabase query error:', error);
-              throw error;
-            }
-          })();
-          
-          // Race between query and timeout
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Database query timeout')), queryTimeout);
-          });
-          
-          return Promise.race([queryPromise, timeoutPromise]) as Promise<any[]>;
-        };
-        
-        // Execute query with retry logic
-        const dbBookings = await fetchWithRetry(executeQuery);
-        
-        if (!Array.isArray(dbBookings)) {
-          console.error('Invalid response from database:', dbBookings);
-          throw new Error('Invalid response format from database');
-        }
-        
-        // Process and deduplicate bookings
-        const uniqueDbBookings = Array.from(
-          new Map(dbBookings.map(item => [item.booking_code, item])).values()
-        );
-        
-        const processedDbBookings = uniqueDbBookings.map((booking): Booking => ({
-          id: booking.id || `db-${booking.booking_code}`,
-          booking_code: booking.booking_code,
-          booking_date: booking.created_at || new Date().toISOString(),
-          total_amount: booking.total_amount || 0,
-          status: (booking.status || 'pending').toLowerCase() as Booking['status'],
-          passenger_count: booking.passenger_count || 1,
-          passenger_name: booking.passenger_name,
-          train_name: booking.train_name,
-          origin: booking.origin,
-          destination: booking.destination
-        }));
-        
-        // Merge with existing bookings
-        const existingCodes = new Set(allBookings.map(b => b.booking_code));
-        const uniqueDbBookingsFiltered = processedDbBookings.filter(b => 
-          !existingCodes.has(b.booking_code)
-        );
-        
-        allBookings = [...allBookings, ...uniqueDbBookingsFiltered];
-        
-      } catch (dbError: any) {
-        if (dbError.name === 'AbortError') {
-          console.log('Database fetch was aborted');
-          return;
-        }
-        
-        console.error('Database query failed:', dbError);
-        
-        // Don't throw error here, continue with cached data
-      }
-    }
-    
-    // Load from cache if we don't have enough data
-    if (allBookings.length === 0) {
-      const savedBookings = safeLocalStorage.getItem('myBookings');
-      if (savedBookings) {
-        try {
-          const cacheData = safeJsonParse<{bookings: Booking[], timestamp: number}>(savedBookings, {bookings: [], timestamp: 0});
-          if (Array.isArray(cacheData.bookings) && cacheData.bookings.length > 0) {
-            // Check cache age (5 minutes)
-            const cacheAge = Date.now() - cacheData.timestamp;
-            if (cacheAge < 5 * 60 * 1000) {
-              allBookings = [...cacheData.bookings];
-              console.log('Using cached bookings:', allBookings.length);
-            } else {
-              console.log('Cache expired, not using');
-            }
-          }
-        } catch (error) {
-          console.warn('Error parsing cache:', error);
-        }
-      }
-    }
-    
-    // Filter out invalid bookings
-    const validBookings = allBookings.filter(booking => {
-      // Skip manual pending bookings with zero amount
-      if (booking.id?.startsWith('manual-') && booking.status === 'pending' && booking.total_amount === 0) {
-        return false;
-      }
-      return true;
-    });
-    
-    // Deduplicate and sort
-    const uniqueBookings = Array.from(
-      new Map(validBookings.map(item => [item.booking_code, item])).values()
-    )
-    .sort((a, b) => 
-      new Date(b.booking_date).getTime() - new Date(a.booking_date).getTime()
-    )
-    .slice(0, 15); // Limit to 15 bookings for performance
-    
-    // Update state if component is still mounted
-    if (isMounted.current) {
-      setBookings(uniqueBookings);
-      
-      // Cache to localStorage
-      try {
-        const cacheData = {
-          bookings: uniqueBookings,
-          timestamp: Date.now(),
-          version: '1.0'
-        };
-        safeLocalStorage.setItem('myBookings', JSON.stringify(cacheData));
-      } catch (error) {
-        console.warn('Failed to cache bookings:', error);
-      }
-    }
-    
-  } catch (mainError: any) {
-    if (mainError.name === 'AbortError') {
-      console.log('Request was aborted');
       return;
     }
-    
-    console.error('Error loading bookings:', mainError);
-    
-    if (isMounted.current) {
-      let errorMessage = 'Gagal memuat data pesanan';
-      
-      if (mainError.message === 'Request timeout' || mainError.message === 'Database query timeout') {
-        errorMessage = 'Waktu permintaan habis. Coba refresh halaman atau periksa koneksi internet Anda.';
-      } else if (mainError?.code === '42P01') {
-        errorMessage = 'Sistem pesanan sedang dalam maintenance';
-      } else if (mainError?.message?.includes('network') || mainError?.message?.includes('fetch') || mainError?.message?.includes('Failed to fetch')) {
-        errorMessage = 'Koneksi internet bermasalah. Pastikan Anda terhubung ke internet.';
-      } else if (mainError?.message?.includes('jwt')) {
-        errorMessage = 'Sesi Anda telah berakhir. Silakan login kembali.';
-        // Clear auth data if JWT is invalid
-        safeLocalStorage.removeItem('myBookings');
-      } else if (mainError?.message?.includes('invalid') || mainError?.message?.includes('Invalid')) {
-        errorMessage = 'Data tidak valid diterima dari server.';
-      } else {
-        errorMessage = mainError?.message || 'Terjadi kesalahan tidak terduga. Silakan coba lagi.';
-      }
-      
-      setBookingsError(errorMessage);
-      
-      // Fallback to cache even on error
-      const savedBookings = safeLocalStorage.getItem('myBookings');
-      if (savedBookings) {
+
+    // Prevent multiple simultaneous requests
+    if (loading && !forceRefresh) {
+      console.log('Fetch already in progress, skipping...');
+      return;
+    }
+
+    // Abort previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort('New request started');
+    }
+
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    try {
+      setLoading(true);
+      setBookingsError(null);
+
+      let allBookings: Booking[] = [];
+
+      // Check sessionStorage for new bookings from payment
+      const paymentSuccess = safeSessionStorage.getItem('paymentSuccess');
+      const newBookingData = safeSessionStorage.getItem('newBookingData');
+
+      if (paymentSuccess === 'true' && newBookingData) {
         try {
-          const cacheData = safeJsonParse<{bookings: Booking[], timestamp: number}>(savedBookings, {bookings: [], timestamp: 0});
-          if (Array.isArray(cacheData.bookings)) {
-            setBookings(cacheData.bookings.slice(0, 10));
+          const parsedData = safeJsonParse<any>(newBookingData, {});
+
+          if (parsedData && typeof parsedData === 'object') {
+            const newBooking: Booking = {
+              id: `temp-${Date.now()}`,
+              booking_code: parsedData.bookingCode || `BOOK-${Date.now()}`,
+              booking_date: parsedData.paymentDate || new Date().toISOString(),
+              total_amount: parsedData.totalAmount || 0,
+              status: 'paid',
+              passenger_count: parsedData.passengerCount || 1,
+              order_id: parsedData.orderId,
+              passenger_name: parsedData.passengerName,
+              passenger_email: parsedData.passengerEmail,
+              passenger_phone: parsedData.passengerPhone,
+              train_name: parsedData.trainName || 'Kereta Api',
+              train_type: parsedData.trainType,
+              origin: parsedData.origin,
+              destination: parsedData.destination,
+              departure_date: parsedData.departureDate,
+              departure_time: parsedData.departureTime,
+              payment_status: 'paid',
+              payment_method: parsedData.paymentMethod,
+              payment_date: parsedData.paymentDate
+            };
+
+            allBookings.push(newBooking);
+
+            // Clear session storage
+            safeSessionStorage.removeItem('paymentSuccess');
+            safeSessionStorage.removeItem('newBookingData');
+            safeSessionStorage.removeItem('newBookingCode');
           }
         } catch (error) {
-          console.warn('Error loading from cache:', error);
+          console.warn('Error processing session storage data:', error);
         }
       }
+
+      // Check if we should fetch from database
+      const shouldFetchFromDB = forceRefresh || allBookings.length === 0;
+
+      // Helper function for retry logic
+      const fetchWithRetry = async (queryFn: () => Promise<any>, maxRetries = 2): Promise<any> => {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            // Add exponential backoff delay for retries
+            if (attempt > 0) {
+              const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              console.log(`Retry attempt ${attempt} after ${delay}ms`);
+            }
+
+            return await queryFn();
+          } catch (error: any) {
+            if (error.name === 'AbortError' || attempt === maxRetries) {
+              throw error;
+            }
+            console.warn(`Query attempt ${attempt + 1} failed:`, error.message);
+          }
+        }
+        throw new Error('All retry attempts failed');
+      };
+
+      if (shouldFetchFromDB && isMounted.current) {
+        try {
+          // Check if signal is already aborted
+          if (signal.aborted) {
+            console.log('Request was aborted before query execution');
+            return;
+          }
+
+          const email = user.email;
+
+          // Create a single optimized query with proper error handling
+          const executeQuery = async () => {
+            // Set a longer timeout for the query itself
+            const queryTimeout = 20000; // 20 seconds for database query
+
+            const queryPromise = (async () => {
+              try {
+                // Build base query
+                let query = supabase
+                  .from('bookings_kereta')
+                  .select('id, booking_code, created_at, total_amount, status, passenger_count, passenger_name, train_name, origin, destination')
+                  .order('created_at', { ascending: false })
+                  .limit(8); // Reduced limit for faster response
+
+                // Add filters
+                if (email) {
+                  // Use OR for both conditions
+                  query = query.or(`passenger_email.eq.${email},user_id.eq.${user.id}`);
+                } else {
+                  query = query.eq('user_id', user.id);
+                }
+
+                const { data, error } = await query;
+
+                if (error) {
+                  throw error;
+                }
+
+                return data || [];
+              } catch (error: any) {
+                // Check for AbortError
+                if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+                  // Silent abort - do not log
+                  return [];
+                }
+
+                // Detailed error logging
+                console.error('Supabase query error:', {
+                  message: error.message,
+                  code: error.code,
+                  details: error.details,
+                  hint: error.hint
+                });
+                throw error;
+              }
+            })();
+
+            // Race between query and timeout
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Database query timeout')), queryTimeout);
+            });
+
+            return Promise.race([queryPromise, timeoutPromise]) as Promise<any[]>;
+          };
+
+          // Execute query with retry logic
+          const dbBookings = await fetchWithRetry(executeQuery);
+
+          if (!Array.isArray(dbBookings)) {
+            console.error('Invalid response from database:', dbBookings);
+            throw new Error('Invalid response format from database');
+          }
+
+          // Process and deduplicate bookings
+          const uniqueDbBookings = Array.from(
+            new Map(dbBookings.map(item => [item.booking_code, item])).values()
+          );
+
+          const processedDbBookings = uniqueDbBookings.map((booking): Booking => ({
+            id: booking.id || `db-${booking.booking_code}`,
+            booking_code: booking.booking_code,
+            booking_date: booking.created_at || new Date().toISOString(),
+            total_amount: booking.total_amount || 0,
+            status: (booking.status || 'pending').toLowerCase() as Booking['status'],
+            passenger_count: booking.passenger_count || 1,
+            passenger_name: booking.passenger_name,
+            train_name: booking.train_name,
+            origin: booking.origin,
+            destination: booking.destination
+          }));
+
+          // Merge with existing bookings
+          const existingCodes = new Set(allBookings.map(b => b.booking_code));
+          const uniqueDbBookingsFiltered = processedDbBookings.filter(b =>
+            !existingCodes.has(b.booking_code)
+          );
+
+          allBookings = [...allBookings, ...uniqueDbBookingsFiltered];
+
+        } catch (dbError: any) {
+          if (dbError.name === 'AbortError' || dbError.message === 'The operation was aborted' || dbError.message?.includes('aborted')) {
+            // Silent abort
+            return;
+          }
+
+          console.error('Database query failed:', {
+            message: dbError.message,
+            code: dbError.code,
+            details: dbError.details || 'No details'
+          });
+
+          // Don't throw error here, continue with cached data
+        }
+      }
+
+      // Load from cache if we don't have enough data
+      if (allBookings.length === 0) {
+        const savedBookings = safeLocalStorage.getItem('myBookings');
+        if (savedBookings) {
+          try {
+            const cacheData = safeJsonParse<{ bookings: Booking[], timestamp: number }>(savedBookings, { bookings: [], timestamp: 0 });
+            if (Array.isArray(cacheData.bookings) && cacheData.bookings.length > 0) {
+              // Check cache age (5 minutes)
+              const cacheAge = Date.now() - cacheData.timestamp;
+              if (cacheAge < 5 * 60 * 1000) {
+                allBookings = [...cacheData.bookings];
+                console.log('Using cached bookings:', allBookings.length);
+              } else {
+                console.log('Cache expired, not using');
+              }
+            }
+          } catch (error) {
+            console.warn('Error parsing cache:', error);
+          }
+        }
+      }
+
+      // Filter out invalid bookings
+      const validBookings = allBookings.filter(booking => {
+        // Skip manual pending bookings with zero amount
+        if (booking.id?.startsWith('manual-') && booking.status === 'pending' && booking.total_amount === 0) {
+          return false;
+        }
+        return true;
+      });
+
+      // Deduplicate and sort
+      const uniqueBookings = Array.from(
+        new Map(validBookings.map(item => [item.booking_code, item])).values()
+      )
+        .sort((a, b) =>
+          new Date(b.booking_date).getTime() - new Date(a.booking_date).getTime()
+        )
+        .slice(0, 15); // Limit to 15 bookings for performance
+
+      // Update state if component is still mounted
+      if (isMounted.current) {
+        setBookings(uniqueBookings);
+
+        // Cache to localStorage
+        try {
+          const cacheData = {
+            bookings: uniqueBookings,
+            timestamp: Date.now(),
+            version: '1.0'
+          };
+          safeLocalStorage.setItem('myBookings', JSON.stringify(cacheData));
+        } catch (error) {
+          console.warn('Failed to cache bookings:', error);
+        }
+      }
+
+    } catch (mainError: any) {
+      if (mainError.name === 'AbortError') {
+        // Silent abort
+        return;
+      }
+
+      console.error('Error loading bookings:', mainError);
+
+      if (isMounted.current) {
+        let errorMessage = 'Gagal memuat data pesanan';
+
+        if (mainError.message === 'Request timeout' || mainError.message === 'Database query timeout') {
+          errorMessage = 'Waktu permintaan habis. Coba refresh halaman atau periksa koneksi internet Anda.';
+        } else if (mainError?.code === '42P01') {
+          errorMessage = 'Sistem pesanan sedang dalam maintenance';
+        } else if (mainError?.message?.includes('network') || mainError?.message?.includes('fetch') || mainError?.message?.includes('Failed to fetch')) {
+          errorMessage = 'Koneksi internet bermasalah. Pastikan Anda terhubung ke internet.';
+        } else if (mainError?.message?.includes('jwt')) {
+          errorMessage = 'Sesi Anda telah berakhir. Silakan login kembali.';
+          // Clear auth data if JWT is invalid
+          safeLocalStorage.removeItem('myBookings');
+        } else if (mainError?.message?.includes('invalid') || mainError?.message?.includes('Invalid')) {
+          errorMessage = 'Data tidak valid diterima dari server.';
+        } else {
+          errorMessage = mainError?.message || 'Terjadi kesalahan tidak terduga. Silakan coba lagi.';
+        }
+
+        setBookingsError(errorMessage);
+
+        // Fallback to cache even on error
+        const savedBookings = safeLocalStorage.getItem('myBookings');
+        if (savedBookings) {
+          try {
+            const cacheData = safeJsonParse<{ bookings: Booking[], timestamp: number }>(savedBookings, { bookings: [], timestamp: 0 });
+            if (Array.isArray(cacheData.bookings)) {
+              setBookings(cacheData.bookings.slice(0, 10));
+            }
+          } catch (error) {
+            console.warn('Error loading from cache:', error);
+          }
+        }
+      }
+    } finally {
+      if (isMounted.current) {
+        setLoading(false);
+        // Clear abort controller reference
+        abortControllerRef.current = null;
+      }
     }
-  } finally {
-    if (isMounted.current) {
-      setLoading(false);
-      // Clear abort controller reference
-      abortControllerRef.current = null;
-    }
-  }
-}, [user, loading]);
+  }, [user?.id, loading]);
 
   // Memoized filtered bookings
   const { activeBookings, historyBookings, paidBookings, pendingBookings } = useMemo(() => {
-    const active = bookings.filter(booking => 
+    const active = bookings.filter(booking =>
       ['pending', 'waiting_payment', 'confirmed', 'paid', 'active'].includes(booking.status)
     );
-    
-    const history = bookings.filter(booking => 
+
+    const history = bookings.filter(booking =>
       ['cancelled', 'failed', 'expired'].includes(booking.status)
     );
-    
-    const paid = bookings.filter(booking => 
+
+    const paid = bookings.filter(booking =>
       booking.payment_status === 'paid' || booking.status === 'paid' || booking.status === 'confirmed'
     );
-    
-    const pending = bookings.filter(booking => 
+
+    const pending = bookings.filter(booking =>
       booking.status === 'pending' || booking.status === 'waiting_payment' || booking.payment_status === 'pending'
     );
-    
+
     return { activeBookings: active, historyBookings: history, paidBookings: paid, pendingBookings: pending };
   }, [bookings]);
 
@@ -966,46 +982,46 @@ const fetchBookings = useCallback(async (forceRefresh = false) => {
   }, [coinTransactions]);
 
   // Handle refresh
-const handleRefresh = useCallback(async () => {
-  if (refreshing || !user || !isMounted.current) return;
-  
-  setRefreshing(true);
-  try {
-    // Clear cache before refresh
-    safeLocalStorage.removeItem('myBookings');
-    await fetchBookings(true);
-  } catch (error) {
-    console.error('Refresh error:', error);
-  } finally {
-    // Always stop refreshing after 2 seconds max
-    const timeout = setTimeout(() => {
-      if (isMounted.current) {
-        setRefreshing(false);
+  const handleRefresh = useCallback(async () => {
+    if (refreshing || !user || !isMounted.current) return;
+
+    setRefreshing(true);
+    try {
+      // Clear cache before refresh
+      safeLocalStorage.removeItem('myBookings');
+      await fetchBookings(true);
+    } catch (error) {
+      console.error('Refresh error:', error);
+    } finally {
+      // Always stop refreshing after 2 seconds max
+      const timeout = setTimeout(() => {
+        if (isMounted.current) {
+          setRefreshing(false);
+        }
+      }, 2000);
+
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
       }
-    }, 2000);
-    
-    if (refreshTimeoutRef.current) {
-      clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = timeout;
     }
-    refreshTimeoutRef.current = timeout;
-  }
-}, [refreshing, user, fetchBookings]);
+  }, [refreshing, user?.id, fetchBookings]);
 
   // Setup auto-refresh hanya untuk pending bookings
   useEffect(() => {
     if (!user?.id || !isMounted.current) {
       return;
     }
-    
-    const hasPendingBookings = bookings.some(b => 
+
+    const hasPendingBookings = bookings.some(b =>
       b.status === 'pending' || b.status === 'waiting_payment' || b.payment_status === 'pending'
     );
-    
+
     if (hasPendingBookings) {
       if (pendingRefreshIntervalRef.current) {
         clearInterval(pendingRefreshIntervalRef.current);
       }
-      
+
       pendingRefreshIntervalRef.current = setInterval(() => {
         if (isMounted.current && !loading) {
           fetchBookings();
@@ -1017,7 +1033,7 @@ const handleRefresh = useCallback(async () => {
         pendingRefreshIntervalRef.current = null;
       }
     }
-    
+
     return () => {
       if (pendingRefreshIntervalRef.current) {
         clearInterval(pendingRefreshIntervalRef.current);
@@ -1028,65 +1044,65 @@ const handleRefresh = useCallback(async () => {
 
   // Event handlers
   // Dalam DashboardPage component, perbaiki handleLogout
-const handleLogout = useCallback(async () => {
-  try {
-    console.log('[Dashboard] Starting logout process...');
-    
-    // Call signOut from AuthContext
-    if (signOut) {
-      await signOut();
-      console.log('[Dashboard] AuthContext signOut completed');
-    }
-    
-    // Clear all localStorage data
-    console.log('[Dashboard] Clearing localStorage...');
-    safeLocalStorage.removeItem('myBookings');
-    safeLocalStorage.removeItem('userProfile');
-    safeLocalStorage.removeItem('tripCoins');
-    
-    // Clear sessionStorage
-    console.log('[Dashboard] Clearing sessionStorage...');
-    safeSessionStorage.removeItem('paymentSuccess');
-    safeSessionStorage.removeItem('newBookingData');
-    safeSessionStorage.removeItem('newBookingCode');
-    
-    // Clear all cookies related to Supabase
-    console.log('[Dashboard] Clearing Supabase cookies...');
-    const cookieNames = [
-      'sb-access-token',
-      'sb-refresh-token',
-      'supabase-auth-token',
-      'supabase-refresh-token'
-    ];
-    
-    cookieNames.forEach(cookieName => {
-      try {
-        document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-      } catch (error) {
-        console.warn(`Failed to clear cookie ${cookieName}:`, error);
-      }
-    });
-    
-    // Cleanup before redirect
-    cleanup();
-    
-    console.log('[Dashboard] Redirecting to login page...');
-    
-    // Force redirect with replace to prevent going back
-    window.location.href = '/auth/login';
-    
-  } catch (error) {
-    console.error('[Dashboard] Logout error:', error);
-    
-    // Fallback: try to redirect anyway
+  const handleLogout = useCallback(async () => {
     try {
+      console.log('[Dashboard] Starting logout process...');
+
+      // Call signOut from AuthContext
+      if (signOut) {
+        await signOut();
+        console.log('[Dashboard] AuthContext signOut completed');
+      }
+
+      // Clear all localStorage data
+      console.log('[Dashboard] Clearing localStorage...');
+      safeLocalStorage.removeItem('myBookings');
+      safeLocalStorage.removeItem('userProfile');
+      safeLocalStorage.removeItem('tripCoins');
+
+      // Clear sessionStorage
+      console.log('[Dashboard] Clearing sessionStorage...');
+      safeSessionStorage.removeItem('paymentSuccess');
+      safeSessionStorage.removeItem('newBookingData');
+      safeSessionStorage.removeItem('newBookingCode');
+
+      // Clear all cookies related to Supabase
+      console.log('[Dashboard] Clearing Supabase cookies...');
+      const cookieNames = [
+        'sb-access-token',
+        'sb-refresh-token',
+        'supabase-auth-token',
+        'supabase-refresh-token'
+      ];
+
+      cookieNames.forEach(cookieName => {
+        try {
+          document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        } catch (error) {
+          console.warn(`Failed to clear cookie ${cookieName}:`, error);
+        }
+      });
+
+      // Cleanup before redirect
+      cleanup();
+
+      console.log('[Dashboard] Redirecting to login page...');
+
+      // Force redirect with replace to prevent going back
       window.location.href = '/auth/login';
-    } catch (fallbackError) {
-      console.error('[Dashboard] Fallback redirect failed:', fallbackError);
-      alert('Logout gagal. Silakan refresh halaman dan coba lagi.');
+
+    } catch (error) {
+      console.error('[Dashboard] Logout error:', error);
+
+      // Fallback: try to redirect anyway
+      try {
+        window.location.href = '/auth/login';
+      } catch (fallbackError) {
+        console.error('[Dashboard] Fallback redirect failed:', fallbackError);
+        alert('Logout gagal. Silakan refresh halaman dan coba lagi.');
+      }
     }
-  }
-}, [signOut, cleanup, router]);
+  }, [signOut, cleanup, router]);
 
   const handleLogin = useCallback(() => {
     router.push('/auth/login');
@@ -1126,19 +1142,19 @@ const handleLogout = useCallback(async () => {
   const userData = useMemo(() => {
     if (user) {
       return {
-        firstName: userProfile?.first_name || 
-                  user?.user_metadata?.first_name || 
-                  user?.email?.split('@')[0] || 
-                  'User',
-        lastName: userProfile?.last_name || 
-                 user?.user_metadata?.last_name || 
-                 '',
-        avatarUrl: userProfile?.avatar_url || 
-                  user?.user_metadata?.avatar_url,
+        firstName: userProfile?.name?.split(' ')[0] ||
+          user?.user_metadata?.first_name ||
+          user?.email?.split('@')[0] ||
+          'User',
+        lastName: userProfile?.name?.split(' ').slice(1).join(' ') ||
+          user?.user_metadata?.last_name ||
+          '',
+        avatarUrl: userProfile?.avatar_url ||
+          user?.user_metadata?.avatar_url,
         email: user?.email || '',
-        phone: userProfile?.phone || 
-              user?.user_metadata?.phone || 
-              '-',
+        phone: userProfile?.phone ||
+          user?.user_metadata?.phone ||
+          '-',
       };
     } else {
       return {
@@ -1185,7 +1201,7 @@ const handleLogout = useCallback(async () => {
         }
       ];
     }
-    
+
     return [
       {
         title: 'Total Pesanan',
@@ -1240,21 +1256,21 @@ const handleLogout = useCallback(async () => {
   }
 
   // Booking Card Component
-  const BookingCard = React.memo(function BookingCard({ 
-    booking, 
+  const BookingCard = React.memo(function BookingCard({
+    booking,
     showActions = true,
-    compact = false 
+    compact = false
   }: BookingCardProps) {
     const statusConfig = getBookingStatusConfig(booking.status || booking.payment_status || 'pending');
-    
+
     const handleViewDetails = useCallback(() => {
       handleViewBookingDetails(booking.id);
     }, [booking.id, handleViewBookingDetails]);
-    
+
     const handleDownload = useCallback(() => {
       handleDownloadTicket(booking);
     }, [booking, handleDownloadTicket]);
-    
+
     return (
       <div className={`bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow ${compact ? 'mb-3' : ''}`}>
         <div className="flex justify-between items-start mb-3">
@@ -1366,13 +1382,12 @@ const handleLogout = useCallback(async () => {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 hover:shadow-md transition-shadow">
         <div className="flex items-center space-x-3 sm:space-x-4">
-          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${
-            color === 'blue' ? 'bg-blue-100 text-blue-600' :
+          <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${color === 'blue' ? 'bg-blue-100 text-blue-600' :
             color === 'green' ? 'bg-green-100 text-green-600' :
-            color === 'yellow' ? 'bg-yellow-100 text-yellow-600' :
-            color === 'purple' ? 'bg-purple-100 text-purple-600' :
-            'bg-orange-100 text-orange-600'
-          }`}>
+              color === 'yellow' ? 'bg-yellow-100 text-yellow-600' :
+                color === 'purple' ? 'bg-purple-100 text-purple-600' :
+                  'bg-orange-100 text-orange-600'
+            }`}>
             {icon}
           </div>
           <div className="flex-1 min-w-0">
@@ -1398,16 +1413,15 @@ const handleLogout = useCallback(async () => {
     const handleClick = useCallback(() => {
       if (!disabled) onClick();
     }, [disabled, onClick]);
-    
+
     return (
       <div className={`bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow ${disabled ? 'opacity-50' : ''}`}>
         <div className="flex items-start mb-3">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center mr-3 shrink-0 ${
-            color === 'blue' ? 'bg-blue-100 text-blue-600' :
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center mr-3 shrink-0 ${color === 'blue' ? 'bg-blue-100 text-blue-600' :
             color === 'green' ? 'bg-green-100 text-green-600' :
-            color === 'orange' ? 'bg-orange-100 text-orange-600' :
-            'bg-purple-100 text-purple-600'
-          }`}>
+              color === 'orange' ? 'bg-orange-100 text-orange-600' :
+                'bg-purple-100 text-purple-600'
+            }`}>
             {icon}
           </div>
           <div className="flex-1 min-w-0">
@@ -1418,11 +1432,10 @@ const handleLogout = useCallback(async () => {
         <button
           onClick={handleClick}
           disabled={disabled}
-          className={`w-full mt-3 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
-            disabled
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'text-white bg-blue-600 hover:bg-blue-700'
-          }`}
+          className={`w-full mt-3 py-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${disabled
+            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            : 'text-white bg-blue-600 hover:bg-blue-700'
+            }`}
         >
           <span>{buttonText}</span>
           <ArrowRightIcon />
@@ -1437,7 +1450,7 @@ const handleLogout = useCallback(async () => {
       <header className="bg-white shadow-sm sticky top-0 z-10 border-b border-gray-200">
         <div className="container mx-auto px-4 py-3 sm:py-4">
           <div className="flex justify-between items-center">
-            <button 
+            <button
               onClick={() => setActiveTab('overview')}
               className="flex items-center space-x-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg"
               aria-label="TripGo Dashboard"
@@ -1447,12 +1460,12 @@ const handleLogout = useCallback(async () => {
               </div>
               <span className="font-bold text-xl sm:text-2xl text-gray-800 hidden sm:block">TripGo</span>
             </button>
-            
+
             <div className="flex items-center space-x-3">
               {/* Trip Coins Display in Header */}
               {user && (
                 <div className="hidden sm:block">
-                  <button 
+                  <button
                     onClick={handleViewCoinHistory}
                     className="flex items-center space-x-2 px-3 py-1.5 bg-yellow-50 hover:bg-yellow-100 rounded-lg border border-yellow-200 transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500"
                   >
@@ -1460,22 +1473,21 @@ const handleLogout = useCallback(async () => {
                   </button>
                 </div>
               )}
-              
+
               {user ? (
                 <>
-                  <button 
+                  <button
                     onClick={handleRefresh}
                     disabled={refreshing}
-                    className={`p-1.5 sm:p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      refreshing ? 'animate-spin text-blue-600' : 'text-gray-600 hover:text-blue-600'
-                    } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`p-1.5 sm:p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${refreshing ? 'animate-spin text-blue-600' : 'text-gray-600 hover:text-blue-600'
+                      } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     aria-label="Refresh data"
                     title="Refresh data"
                   >
                     <RefreshIcon />
                   </button>
                   <div className="flex items-center space-x-2">
-                    <Avatar 
+                    <Avatar
                       firstName={userData.firstName}
                       lastName={userData.lastName}
                       avatarUrl={userData.avatarUrl}
@@ -1490,13 +1502,13 @@ const handleLogout = useCallback(async () => {
                 </>
               ) : (
                 <div className="flex items-center space-x-2">
-                  <button 
+                  <button
                     onClick={handleLogin}
                     className="px-3 py-1.5 sm:px-4 sm:py-2 text-gray-700 hover:text-blue-600 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     Masuk
                   </button>
-                  <button 
+                  <button
                     onClick={handleSignUp}
                     className="bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg font-semibold hover:bg-blue-700 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   >
@@ -1515,7 +1527,7 @@ const handleLogout = useCallback(async () => {
           <aside className="lg:w-64">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 sticky top-20">
               <div className="text-center mb-4 sm:mb-6 pb-4 border-b border-gray-200">
-                <Avatar 
+                <Avatar
                   firstName={userData.firstName}
                   lastName={userData.lastName}
                   avatarUrl={userData.avatarUrl}
@@ -1524,13 +1536,13 @@ const handleLogout = useCallback(async () => {
                 />
                 <h3 className="font-bold text-gray-800 truncate">{userData.firstName} {userData.lastName}</h3>
                 <p className="text-gray-500 text-sm truncate">{userData.email}</p>
-                
+
                 {/* Trip Coins Display in Sidebar */}
                 {user && (
                   <div className="mt-4 pt-4 border-t border-gray-200">
                     <div className="flex flex-col items-center">
                       <CoinCounter coins={tripCoins} showAnimation={coinAnimation} />
-                      <button 
+                      <button
                         onClick={handleViewCoinHistory}
                         className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
                       >
@@ -1539,7 +1551,7 @@ const handleLogout = useCallback(async () => {
                     </div>
                   </div>
                 )}
-                
+
                 {!user && (
                   <div className="mt-3 p-2 bg-yellow-50 rounded border border-yellow-200">
                     <p className="text-yellow-700 text-xs">
@@ -1555,25 +1567,23 @@ const handleLogout = useCallback(async () => {
                     key={item.id}
                     onClick={() => !item.disabled && setActiveTab(item.id)}
                     disabled={item.disabled}
-                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 rounded-lg transition-colors text-left ${
-                      activeTab === item.id 
-                        ? 'bg-blue-50 text-blue-600' 
-                        : 'text-gray-600 hover:bg-gray-50'
-                    } ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                    className={`w-full flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 rounded-lg transition-colors text-left ${activeTab === item.id
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-gray-600 hover:bg-gray-50'
+                      } ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
                     aria-current={activeTab === item.id ? 'page' : undefined}
                   >
                     {item.icon}
                     <span className="font-medium text-sm sm:text-base flex-1">{item.label}</span>
-                    <ChevronRightIcon className={`transition-transform ${
-                      activeTab === item.id ? 'translate-x-0' : '-translate-x-1 opacity-0'
-                    }`} />
+                    <ChevronRightIcon className={`transition-transform ${activeTab === item.id ? 'translate-x-0' : '-translate-x-1 opacity-0'
+                      }`} />
                   </button>
                 ))}
-                
-                <hr className="my-2 border-gray-200"/>
-                
+
+                <hr className="my-2 border-gray-200" />
+
                 {user ? (
-                  <button 
+                  <button
                     onClick={handleLogout}
                     className="w-full flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                   >
@@ -1581,7 +1591,7 @@ const handleLogout = useCallback(async () => {
                     <span className="font-medium text-sm sm:text-base">Keluar</span>
                   </button>
                 ) : (
-                  <button 
+                  <button
                     onClick={handleLogin}
                     className="w-full flex items-center space-x-2 sm:space-x-3 px-3 py-2.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                   >
@@ -1603,15 +1613,15 @@ const handleLogout = useCallback(async () => {
                     {user ? `Halo, ${userData.firstName}!` : 'Selamat Datang di TripGo!'}
                   </h1>
                   <p className="text-gray-600 text-sm sm:text-base">
-                    {new Date().toLocaleDateString('id-ID', { 
-                      weekday: 'long', 
-                      day: 'numeric', 
-                      month: 'long', 
-                      year: 'numeric' 
+                    {new Date().toLocaleDateString('id-ID', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
                     })}
                   </p>
                 </div>
-                
+
                 {/* Stats Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                   {stats.map((stat, index) => (
@@ -1669,11 +1679,10 @@ const handleLogout = useCallback(async () => {
                               {formatDate(transaction.created_at)} • #{transaction.booking_code}
                             </p>
                           </div>
-                          <div className={`ml-2 shrink-0 flex items-center gap-1 ${
-                            transaction.transaction_type === 'earn' ? 'text-green-600' : 
-                            transaction.transaction_type === 'bonus' ? 'text-purple-600' : 
-                            'text-red-600'
-                          }`}>
+                          <div className={`ml-2 shrink-0 flex items-center gap-1 ${transaction.transaction_type === 'earn' ? 'text-green-600' :
+                            transaction.transaction_type === 'bonus' ? 'text-purple-600' :
+                              'text-red-600'
+                            }`}>
                             <span className="text-sm font-semibold">
                               {transaction.transaction_type === 'redeem' ? '-' : '+'}{transaction.amount}
                             </span>
@@ -1753,7 +1762,7 @@ const handleLogout = useCallback(async () => {
                     )}
                   </div>
                 </div>
-                
+
                 {!user ? (
                   <EmptyState
                     icon={<UserIcon />}
@@ -1772,7 +1781,7 @@ const handleLogout = useCallback(async () => {
                     ))}
                   </div>
                 ) : bookingsError ? (
-                  <ErrorDisplay 
+                  <ErrorDisplay
                     message={bookingsError}
                     onRetry={() => fetchBookings(true)}
                   />
@@ -1806,7 +1815,7 @@ const handleLogout = useCallback(async () => {
                     <span className="font-medium">{historyBookings.length} riwayat pesanan</span>
                   </div>
                 </div>
-                
+
                 {!user ? (
                   <EmptyState
                     icon={<UserIcon />}
@@ -1825,7 +1834,7 @@ const handleLogout = useCallback(async () => {
                     ))}
                   </div>
                 ) : bookingsError ? (
-                  <ErrorDisplay 
+                  <ErrorDisplay
                     message={bookingsError}
                     onRetry={() => fetchBookings(true)}
                   />
@@ -1859,7 +1868,7 @@ const handleLogout = useCallback(async () => {
                     <span className="font-medium">{bookings.length} total pesanan</span>
                   </div>
                 </div>
-                
+
                 {!user ? (
                   <EmptyState
                     icon={<UserIcon />}
@@ -1878,26 +1887,26 @@ const handleLogout = useCallback(async () => {
                     ))}
                   </div>
                 ) : bookingsError ? (
-                  <ErrorDisplay 
+                  <ErrorDisplay
                     message={bookingsError}
                     onRetry={() => fetchBookings(true)}
                   />
                 ) : bookings.length > 0 ? (
                   <div className="space-y-4">
                     <div className="flex flex-wrap gap-2 mb-4">
-                      <button 
+                      <button
                         onClick={() => setActiveTab('mybooking')}
                         className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         Aktif: {activeBookings.length}
                       </button>
-                      <button 
+                      <button
                         onClick={() => setActiveTab('history')}
                         className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
                       >
                         Riwayat: {historyBookings.length}
                       </button>
-                      <button 
+                      <button
                         onClick={() => router.push('/my-bookings')}
                         className="px-3 py-1.5 bg-green-100 text-green-700 text-sm font-medium rounded-lg hover:bg-green-200 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center gap-1"
                       >
@@ -1928,7 +1937,7 @@ const handleLogout = useCallback(async () => {
             {activeTab === 'profile' && (
               <div className="space-y-4 sm:space-y-6">
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pengaturan Akun</h1>
-                
+
                 {!user ? (
                   <EmptyState
                     icon={<SettingsIcon />}
@@ -1945,7 +1954,7 @@ const handleLogout = useCallback(async () => {
                     {/* Profile Info Card */}
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
                       <div className="flex items-center space-x-4 mb-6">
-                        <Avatar 
+                        <Avatar
                           firstName={userData.firstName}
                           lastName={userData.lastName}
                           avatarUrl={userData.avatarUrl}
@@ -1959,28 +1968,28 @@ const handleLogout = useCallback(async () => {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                          <input 
-                            type="email" 
-                            defaultValue={userData.email} 
-                            disabled 
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 focus:outline-none" 
+                          <input
+                            type="email"
+                            defaultValue={userData.email}
+                            disabled
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 focus:outline-none"
                           />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Telepon</label>
-                          <input 
-                            type="tel" 
-                            defaultValue={userData.phone} 
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none" 
+                          <input
+                            type="tel"
+                            defaultValue={userData.phone}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
                             placeholder="Masukkan nomor telepon"
                           />
                         </div>
                       </div>
-                      
+
                       <div className="mt-6 pt-6 border-t border-gray-200">
                         <button
                           className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
@@ -2014,7 +2023,7 @@ const handleLogout = useCallback(async () => {
                             </li>
                           </ul>
                         </div>
-                        
+
                         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                           <div className="flex items-center gap-2 mb-2">
                             <CoinIcon />
