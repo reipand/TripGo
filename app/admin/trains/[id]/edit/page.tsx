@@ -51,13 +51,13 @@ export default function EditTrain({ params }: { params: Promise<{ id: string }> 
             }
 
             setFormData({
-                kode_kereta: data.kode_kereta,
-                nama_kereta: data.nama_kereta,
-                operator: data.operator,
-                tipe_kereta: data.tipe_kereta,
-                jumlah_kursi: data.jumlah_kursi,
+                kode_kereta: data.kode_kereta || '',
+                nama_kereta: data.nama_kereta || '',
+                operator: data.operator || '',
+                tipe_kereta: data.tipe_kereta || 'Eksekutif',
+                jumlah_kursi: data.jumlah_kursi || 0,
                 keterangan: data.keterangan || '',
-                is_active: data.is_active,
+                is_active: data.is_active ?? true,
                 fasilitas: {
                     ac: false, toilet: false, socket: false, wifi: false, makan: false, bantal: false, selimut: false,
                     ...data.fasilitas
@@ -195,7 +195,7 @@ export default function EditTrain({ params }: { params: Promise<{ id: string }> 
                                 name="jumlah_kursi"
                                 min="1"
                                 required
-                                value={formData.jumlah_kursi}
+                                value={formData.jumlah_kursi ?? 0}
                                 onChange={handleChange}
                                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                             />
@@ -204,7 +204,7 @@ export default function EditTrain({ params }: { params: Promise<{ id: string }> 
                             <label className="inline-flex items-center cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    checked={formData.is_active}
+                                    checked={!!formData.is_active}
                                     onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
                                     className="sr-only peer"
                                 />
