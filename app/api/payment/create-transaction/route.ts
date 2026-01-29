@@ -13,6 +13,65 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   }
 });
 
+// FUNGSI BARU: Decode email yang double encoded
+function decodeEmail(email: string): string {
+  if (!email) return 'customer@example.com';
+  
+  try {
+    console.log('📧 Email decoding process:', { original: email });
+    
+    // Case 1: Sudah benar (@gmail.com)
+    if (email.includes('@')) {
+      console.log('✅ Email already has @ symbol');
+      return email;
+    }
+    
+    // Case 2: %40 encoding (single encoded)
+    if (email.includes('%40')) {
+      let decoded = decodeURIComponent(email);
+      console.log('🔧 Decoded %40:', { before: email, after: decoded });
+      
+      // Jika masih ada encoding setelah decode pertama
+      if (decoded.includes('%40')) {
+        decoded = decodeURIComponent(decoded);
+        console.log('🔧 Double decoded:', { before: email, after: decoded });
+      }
+      return decoded;
+    }
+    
+    // Case 3: %2540 encoding (double encoded)
+    if (email.includes('%2540')) {
+      const decoded = decodeURIComponent(decodeURIComponent(email));
+      console.log('🔧 Decoded %2540:', { before: email, after: decoded });
+      return decoded;
+    }
+    
+    console.log('⚠️ Email format unknown, returning as-is:', email);
+    return email;
+  } catch (error) {
+    console.error('❌ Error decoding email:', error);
+    return 'customer@example.com';
+  }
+}
+
+// FUNGSI BARU: Validasi dan format email untuk Midtrans
+function validateAndFormatEmailForMidtrans(email: string): string {
+  const decodedEmail = decodeEmail(email);
+  
+  // Validasi format email sederhana
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  if (emailRegex.test(decodedEmail)) {
+    console.log('✅ Email validated for Midtrans:', decodedEmail);
+    return decodedEmail;
+  } else {
+    console.warn('⚠️ Invalid email format, using fallback:', decodedEmail);
+    // Return email yang sudah di-decode meskipun format tidak valid
+    // Midtrans akan menolak jika format benar-benar invalid
+    return decodedEmail;
+  }
+}
+
 // PERBAIKAN: Fungsi untuk mendapatkan atau membuat payment transaction
 async function getOrCreatePaymentTransaction(
   orderId: string,
@@ -28,9 +87,9 @@ async function getOrCreatePaymentTransaction(
       .from('payment_transactions')
       .select('*')
       .eq('order_id', orderId)
-      .maybeSingle(); // Gunakan maybeSingle untuk menghindari error jika tidak ada
+      .maybeSingle();
 
-    if (findError) {
+    if (findError && !findError.message.includes('does not exist')) {
       console.error('❌ Error finding payment:', findError);
     }
 
@@ -67,7 +126,7 @@ async function getOrCreatePaymentTransaction(
     // 3. Jika tidak ada, buat transaksi baru
     console.log('🔄 Creating new payment transaction...');
 
-    // Cari booking_id
+    // Cari booking_id dengan email yang sudah di-decode
     let bookingId = null;
     if (bookingCode) {
       const { data: bookingData, error: bookingError } = await supabase
@@ -76,19 +135,25 @@ async function getOrCreatePaymentTransaction(
         .eq('booking_code', bookingCode)
         .maybeSingle();
 
-      if (bookingError) {
+      if (bookingError && !bookingError.message.includes('does not exist')) {
         console.warn('⚠️ Error finding booking:', bookingError.message);
       }
 
       bookingId = bookingData?.id || null;
     }
 
+    // PERBAIKAN: Decode email sebelum disimpan
+    const customerEmail = body.customer_email 
+      ? validateAndFormatEmailForMidtrans(body.customer_email)
+      : 'customer@example.com';
+    
+    const customerName = body.customer_name || 'Customer';
+
     // Bangun data payment
     const paymentData: any = {
-      id: generateValidUUID(),
       order_id: orderId,
-      customer_email: body.customer_email || 'customer@example.com',
-      customer_name: body.customer_name || 'Customer',
+      customer_email: customerEmail, // Email yang sudah di-decode
+      customer_name: customerName,
       amount: body.amount || body.total_amount || 0,
       payment_method: body.payment_method || 'e-wallet',
       status: 'pending',
@@ -105,7 +170,11 @@ async function getOrCreatePaymentTransaction(
         departure_date: body.departure_date,
         passenger_count: body.passenger_count,
         booking_code: bookingCode,
-        booking_data: body
+        booking_data: body,
+        // Tambahkan info decoding
+        email_original: body.customer_email,
+        email_decoded: customerEmail,
+        decoded_at: new Date().toISOString()
       })
     };
 
@@ -114,10 +183,7 @@ async function getOrCreatePaymentTransaction(
       paymentData.booking_id = bookingId;
     }
 
-    // 4. Coba insert dengan berbagai strategi
-    let insertResult = null;
-
-    // Strategi 1: Coba insert biasa
+    // 4. Insert dengan error handling yang lebih baik
     let { data: insertedData, error: insertError } = await supabase
       .from('payment_transactions')
       .insert([paymentData])
@@ -125,72 +191,63 @@ async function getOrCreatePaymentTransaction(
       .single();
 
     if (insertError) {
-      console.error('❌ Initial insert failed:', insertError.message);
-
-      // Strategi 2: Jika duplicate key, coba tanpa ID (biarkan database generate)
-      if (insertError.code === '23505' && insertError.message.includes('payment_transactions_pkey')) {
-        console.log('🔄 Trying insert without custom ID');
-        delete paymentData.id;
-
+      console.error('❌ Insert failed:', insertError.message);
+      
+      // Coba tanpa metadata jika error
+      if (insertError.message.includes('metadata')) {
+        console.log('🔄 Trying insert without metadata');
+        delete paymentData.metadata;
+        
         ({ data: insertedData, error: insertError } = await supabase
           .from('payment_transactions')
           .insert([paymentData])
           .select()
           .single());
       }
-
-      // Strategi 3: Jika masih error karena order_id duplicate, update existing
-      if (insertError && insertError.code === '23505' && insertError.message.includes('payment_transactions_order_id_key')) {
-        console.log('🔄 Duplicate order_id, updating existing record');
-
-        // Cari lagi dan update
-        const { data: foundPayment } = await supabase
-          .from('payment_transactions')
-          .select('*')
-          .eq('order_id', orderId)
-          .single();
-
-        if (foundPayment) {
-          const { error: updateError } = await supabase
-            .from('payment_transactions')
-            .update({
-              midtrans_token: midtransResponse.token,
-              payment_url: midtransResponse.redirect_url,
-              snap_redirect_url: midtransResponse.redirect_url,
-              amount: paymentData.amount,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', foundPayment.id);
-
-          if (!updateError) {
-            insertedData = foundPayment;
-            insertError = null;
-          }
-        }
-      }
-
-      // Strategi 4: Jika masih gagal, coba tanpa booking_id
-      if (insertError) {
-        console.log('🔄 Trying insert without booking_id');
-        delete paymentData.booking_id;
-
+      
+      // Coba tanpa transaction_data jika masih error
+      if (insertError && insertError.message.includes('transaction_data')) {
+        console.log('🔄 Trying insert without transaction_data');
+        delete paymentData.transaction_data;
+        
         ({ data: insertedData, error: insertError } = await supabase
           .from('payment_transactions')
           .insert([paymentData])
+          .select()
+          .single());
+      }
+      
+      // Coba dengan minimal fields jika masih error
+      if (insertError) {
+        console.log('🔄 Trying minimal insert');
+        const minimalData = {
+          order_id: orderId,
+          customer_email: customerEmail,
+          customer_name: customerName,
+          amount: paymentData.amount,
+          payment_method: paymentData.payment_method,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+        
+        ({ data: insertedData, error: insertError } = await supabase
+          .from('payment_transactions')
+          .insert([minimalData])
           .select()
           .single());
       }
     }
 
     if (insertError) {
-      console.error('❌ All insert strategies failed:', insertError);
+      console.error('❌ All insert attempts failed:', insertError);
 
-      // Return response dengan data meskipun tidak tersimpan di database
+      // Return response meskipun database error
       return {
         success: false,
-        data: paymentData, // Return data yang seharusnya disimpan
+        data: paymentData, // Data yang seharusnya disimpan
         error: insertError.message,
-        isExisting: false
+        isExisting: false,
+        note: 'Payment data created but not saved to database'
       };
     }
 
@@ -213,16 +270,7 @@ async function getOrCreatePaymentTransaction(
   }
 }
 
-// Fungsi untuk generate UUID yang valid
-function generateValidUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
-
-// Simple Midtrans integration
+// Simple Midtrans integration dengan perbaikan email
 async function createMidtransTransaction(data: any) {
   const serverKey = process.env.MIDTRANS_SERVER_KEY;
   const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
@@ -235,6 +283,27 @@ async function createMidtransTransaction(data: any) {
       is_fallback: true
     };
   }
+
+  // PERBAIKAN: Pastikan email di customer_details sudah valid
+  if (data.customer_details && data.customer_details.email) {
+    const originalEmail = data.customer_details.email;
+    const fixedEmail = validateAndFormatEmailForMidtrans(originalEmail);
+    
+    if (originalEmail !== fixedEmail) {
+      console.log('🔧 Fixed email for Midtrans:', {
+        original: originalEmail,
+        fixed: fixedEmail
+      });
+      data.customer_details.email = fixedEmail;
+    }
+  }
+
+  console.log('🔄 Sending to Midtrans with data:', {
+    order_id: data.transaction_details.order_id,
+    amount: data.transaction_details.gross_amount,
+    email: data.customer_details?.email,
+    item_name: data.item_details?.[0]?.name
+  });
 
   try {
     const encodedKey = Buffer.from(`${serverKey}:`).toString('base64');
@@ -252,8 +321,31 @@ async function createMidtransTransaction(data: any) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ Midtrans API error:', response.status, errorText);
+      
+      // Cek jika error karena email
+      if (errorText.includes('customer_details.email') || errorText.includes('email format')) {
+        console.error('📧 Email format rejected by Midtrans. Original email:', data.customer_details?.email);
+        
+        // Coba dengan email default
+        data.customer_details.email = 'customer@example.com';
+        console.log('🔄 Retrying with default email...');
+        
+        const retryResponse = await fetch('https://app.sandbox.midtrans.com/snap/v1/transactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': `Basic ${encodedKey}`
+          },
+          body: JSON.stringify(data)
+        });
+        
+        if (retryResponse.ok) {
+          return await retryResponse.json();
+        }
+      }
 
-      // Fallback untuk error 400 dan lainnya
+      // Fallback untuk error lainnya
       return {
         token: `FALLBACK-TOKEN-${Date.now()}`,
         redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${data.transaction_details.order_id}`,
@@ -273,15 +365,27 @@ async function createMidtransTransaction(data: any) {
   }
 }
 
-// Fungsi untuk mendapatkan data dari request
+// PERBAIKAN: Fungsi untuk mendapatkan data dari request dengan email decoding
 async function getRequestData(request: NextRequest) {
   try {
     const body = await request.json();
     console.log('📦 Data dari JSON body:', {
       order_id: body.order_id,
       booking_code: body.booking_code,
-      amount: body.amount
+      amount: body.amount,
+      customer_email: body.customer_email
     });
+    
+    // PERBAIKAN: Decode email di sini
+    if (body.customer_email) {
+      const originalEmail = body.customer_email;
+      body.customer_email = decodeEmail(originalEmail);
+      console.log('📧 Email decoded in getRequestData:', {
+        original: originalEmail,
+        decoded: body.customer_email
+      });
+    }
+    
     return body;
   } catch (error) {
     // Coba ambil dari query parameters
@@ -306,8 +410,19 @@ async function getRequestData(request: NextRequest) {
     console.log('📦 Data dari query params:', {
       order_id: data.order_id,
       booking_code: data.booking_code,
-      amount: data.amount
+      amount: data.amount,
+      customer_email: data.customer_email
     });
+    
+    // PERBAIKAN: Decode email di sini juga
+    if (data.customer_email) {
+      const originalEmail = data.customer_email;
+      data.customer_email = decodeEmail(originalEmail);
+      console.log('📧 Email decoded from query params:', {
+        original: originalEmail,
+        decoded: data.customer_email
+      });
+    }
 
     return data;
   }
@@ -327,7 +442,7 @@ async function updateBookingStatus(bookingCode: string, orderId: string) {
       .eq('booking_code', bookingCode)
       .maybeSingle();
 
-    if (findError) {
+    if (findError && !findError.message.includes('does not exist')) {
       console.warn('⚠️ Error finding booking:', findError.message);
     }
 
@@ -357,14 +472,14 @@ async function updateBookingStatus(bookingCode: string, orderId: string) {
   }
 }
 
-// Fungsi utama untuk membuat transaksi pembayaran
+// PERBAIKAN: Fungsi utama untuk membuat transaksi pembayaran
 export async function POST(request: NextRequest) {
   console.log('🔍 /api/payment/create-transaction called');
 
   try {
     const body = await getRequestData(request);
 
-    console.log('📥 Payment request data:', {
+    console.log('📥 Payment request data (after decoding):', {
       booking_code: body.booking_code,
       order_id: body.order_id,
       amount: body.amount || body.total_amount,
@@ -393,6 +508,11 @@ export async function POST(request: NextRequest) {
     const grossAmount = parseInt(amount);
     const bookingCode = body.booking_code || body.order_id;
 
+    // PERBAIKAN: Pastikan email valid untuk Midtrans
+    const customerEmail = body.customer_email 
+      ? validateAndFormatEmailForMidtrans(body.customer_email)
+      : 'customer@example.com';
+
     // Buat data Midtrans
     const midtransData = {
       transaction_details: {
@@ -402,7 +522,7 @@ export async function POST(request: NextRequest) {
       customer_details: {
         first_name: body.customer_name?.split(' ')[0] || 'Customer',
         last_name: body.customer_name?.split(' ').slice(1).join(' ') || '',
-        email: body.customer_email || 'customer@example.com',
+        email: customerEmail, // Email yang sudah di-decode dan divalidasi
         phone: body.customer_phone || '081234567890'
       },
       item_details: [
@@ -423,23 +543,33 @@ export async function POST(request: NextRequest) {
       },
       enabled_payments: body.payment_method
         ? [body.payment_method]
-        : ['credit_card', 'bank_transfer', 'gopay', 'shopeepay']
+        : ['credit_card', 'bank_transfer', 'gopay', 'shopeepay'],
+      // Tambahan untuk debugging
+      custom_expiry: {
+        order_time: new Date().toISOString(),
+        expiry_duration: 30,
+        unit: 'minute'
+      }
     };
 
-    console.log('🔄 Calling Midtrans...');
+    console.log('🔄 Calling Midtrans with validated email...');
     const midtransResponse = await createMidtransTransaction(midtransData);
 
     console.log('✅ Midtrans response:', {
       token_length: midtransResponse.token?.length || 0,
       has_redirect_url: !!midtransResponse.redirect_url,
-      is_fallback: midtransResponse.is_fallback || false
+      is_fallback: midtransResponse.is_fallback || false,
+      email_used: customerEmail
     });
 
-    // PERBAIKAN: Gunakan fungsi getOrCreatePaymentTransaction yang baru
+    // Gunakan fungsi getOrCreatePaymentTransaction yang baru
     const paymentResult = await getOrCreatePaymentTransaction(
       body.order_id,
       bookingCode,
-      body,
+      {
+        ...body,
+        customer_email: customerEmail // Pastikan email yang sudah di-decode
+      },
       midtransResponse
     );
 
@@ -460,17 +590,20 @@ export async function POST(request: NextRequest) {
         amount: grossAmount,
         customer: {
           name: body.customer_name || 'Customer',
-          email: body.customer_email || 'customer@example.com',
-          phone: body.customer_phone
+          email: customerEmail, // Email yang sudah diproses
+          phone: body.customer_phone,
+          email_processed: true,
+          original_email: body.customer_email // Untuk debugging
         },
         payment_method: body.payment_method || 'e-wallet',
         passenger_count: body.passenger_count || 1,
         payment_record: {
           saved: paymentResult.success,
           id: paymentResult.data?.id,
-          is_existing: paymentResult.isExisting || false
+          is_existing: paymentResult.isExisting || false,
+          database_success: paymentResult.success
         },
-        expires_at: new Date(Date.now() + 3600000).toISOString(),
+        expires_at: new Date(Date.now() + 1800000).toISOString(), // 30 menit
         timestamp: new Date().toISOString(),
         ...(midtransResponse.is_fallback && {
           is_fallback: true,
@@ -480,15 +613,18 @@ export async function POST(request: NextRequest) {
       message: paymentResult.isExisting
         ? 'Transaksi pembayaran sudah ada, menggunakan token yang sama'
         : 'Transaksi pembayaran berhasil dibuat',
-      ...(process.env.NODE_ENV === 'development' && {
-        development_note: 'Development mode: Transaction handling optimized'
-      })
+      email_processing: {
+        original: body.customer_email,
+        processed: customerEmail,
+        valid_for_midtrans: customerEmail.includes('@')
+      }
     };
 
     console.log('✅ Payment response prepared:', {
       order_id: responseData.data.order_id,
       has_token: !!responseData.data.token,
-      payment_saved: responseData.data.payment_record.saved
+      payment_saved: responseData.data.payment_record.saved,
+      email_status: responseData.email_processing.valid_for_midtrans ? 'valid' : 'invalid'
     });
 
     return NextResponse.json(responseData);
@@ -507,12 +643,13 @@ export async function POST(request: NextRequest) {
         amount: 100000,
         customer: {
           name: 'Customer',
-          email: 'customer@example.com'
+          email: 'customer@example.com',
+          email_processed: 'fallback'
         },
         payment_method: 'e-wallet',
         is_fallback: true,
         development_mode: true,
-        expires_at: new Date(Date.now() + 3600000).toISOString(),
+        expires_at: new Date(Date.now() + 1800000).toISOString(),
         timestamp: new Date().toISOString()
       },
       message: 'Transaksi pembayaran dibuat dalam mode fallback',
@@ -523,9 +660,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET method untuk testing
+// GET method untuk testing dengan email debugging
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
+  
+  // Test email decoding
+  const testEmail = 'reisanadrefa1%2540gmail.com';
+  const decodedEmail = decodeEmail(testEmail);
 
   return NextResponse.json({
     success: true,
@@ -534,11 +675,17 @@ export async function GET(request: NextRequest) {
     environment: process.env.NODE_ENV,
     supabase_configured: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     timestamp: new Date().toISOString(),
+    email_decoding_test: {
+      original: testEmail,
+      decoded: decodedEmail,
+      has_at_symbol: decodedEmail.includes('@'),
+      valid_format: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(decodedEmail)
+    },
     test_data: {
       order_id: `TEST-${Date.now()}`,
       booking_code: `DEV${Date.now().toString().slice(-6)}ABC`,
       amount: 150000,
-      customer_email: 'test@example.com',
+      customer_email: testEmail,
       customer_name: 'Test Customer'
     },
     note: 'Use POST method to create actual payment transactions'

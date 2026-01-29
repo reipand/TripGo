@@ -7,13 +7,13 @@ import { v4 as uuidv4 } from 'uuid';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Tambahkan log untuk debugging environment variables
-console.log('🔧 Supabase Config:', {
-  hasUrl: !!supabaseUrl,
-  hasKey: !!supabaseKey,
-  urlLength: supabaseUrl?.length || 0,
-  keyLength: supabaseKey?.length || 0
-});
+// Validasi environment variables
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ Supabase environment variables are missing!');
+  console.error('NEXT_PUBLIC_SUPABASE_URL:', !!supabaseUrl);
+  console.error('SUPABASE_SERVICE_ROLE_KEY:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+  console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+}
 
 const supabase = createClient(
   supabaseUrl || 'https://dummy.supabase.co',
@@ -40,6 +40,9 @@ interface Passenger {
   birthDate?: string;
   gender?: string;
   useContactDetail?: boolean;
+  transitStation?: string;
+  transitArrival?: string;
+  transitDeparture?: string;
 }
 
 interface ContactDetail {
@@ -119,6 +122,61 @@ interface BookingData {
   paymentMethod?: string;
   user_id?: string;
   bookingTime: string;
+  // Transit data
+  transitStation?: string;
+  transitArrival?: string;
+  transitDeparture?: string;
+  transitDiscount?: number;
+  transitAdditionalPrice?: number;
+  // Fare breakdown details
+  seatPremium?: number;
+  adminFee?: number;
+  insuranceFee?: number;
+  basePrice?: number;
+  // Multi-segment
+  isMultiSegment?: boolean;
+  segments?: any[];
+}
+
+// FUNGSI BARU: Decode email
+function decodeEmail(email: string): string {
+  if (!email) return '';
+  
+  try {
+    console.log('📧 Email decoding process:', { original: email });
+    
+    // Case 1: Sudah benar (@gmail.com)
+    if (email.includes('@')) {
+      console.log('✅ Email already has @ symbol');
+      return email;
+    }
+    
+    // Case 2: %40 encoding (single encoded)
+    if (email.includes('%40')) {
+      let decoded = decodeURIComponent(email);
+      console.log('🔧 Decoded %40:', { before: email, after: decoded });
+      
+      // Jika masih ada encoding setelah decode pertama
+      if (decoded.includes('%40')) {
+        decoded = decodeURIComponent(decoded);
+        console.log('🔧 Double decoded:', { before: email, after: decoded });
+      }
+      return decoded;
+    }
+    
+    // Case 3: %2540 encoding (double encoded)
+    if (email.includes('%2540')) {
+      const decoded = decodeURIComponent(decodeURIComponent(email));
+      console.log('🔧 Decoded %2540:', { before: email, after: decoded });
+      return decoded;
+    }
+    
+    console.log('⚠️ Email format unknown, returning as-is:', email);
+    return email;
+  } catch (error) {
+    console.error('❌ Error decoding email:', error);
+    return email || '';
+  }
 }
 
 // Helper function untuk generate IDs
@@ -139,7 +197,7 @@ function generateIDs(providedBookingCode?: string, providedOrderId?: string): {
   };
 }
 
-// Helper function untuk prepare booking data dengan schema yang benar
+// PERBAIKAN: Helper function untuk prepare booking data dengan email decoding
 function prepareBookingData(
   bookingData: BookingData,
   ids: ReturnType<typeof generateIDs>
@@ -147,13 +205,28 @@ function prepareBookingData(
   const passengers = bookingData.passengers || [];
   const passengerNames = passengers.map(p => p.fullName).filter(Boolean).join(', ') || bookingData.customerName || 'Penumpang';
 
-  // Cek dan log struktur trainDetail
+  // Ambil data transit dari passenger pertama atau dari booking data langsung
+  const firstPassenger = passengers[0];
+  const transitStation = firstPassenger?.transitStation || bookingData.transitStation;
+  const transitArrival = firstPassenger?.transitArrival || bookingData.transitArrival;
+  const transitDeparture = firstPassenger?.transitDeparture || bookingData.transitDeparture;
+
+  // PERBAIKAN: Decode email sebelum disimpan
+  const customerEmail = decodeEmail(bookingData.customerEmail || passengers[0]?.email || '');
+  const passengerEmail = decodeEmail(passengers[0]?.email || bookingData.customerEmail || '');
+
   console.log('🚂 Train Detail Structure:', {
     hasTrainDetail: !!bookingData.trainDetail,
     trainName: bookingData.trainDetail?.trainName,
     origin: bookingData.trainDetail?.origin,
     destination: bookingData.trainDetail?.destination,
-    keys: bookingData.trainDetail ? Object.keys(bookingData.trainDetail) : []
+    transitStation,
+    transitArrival,
+    transitDeparture,
+    transitDiscount: bookingData.transitDiscount,
+    transitAdditionalPrice: bookingData.transitAdditionalPrice,
+    email_original: bookingData.customerEmail,
+    email_decoded: customerEmail
   });
 
   const bookingDataToSave = {
@@ -161,7 +234,8 @@ function prepareBookingData(
     booking_code: ids.bookingCode,
     order_id: ids.orderId,
     passenger_name: bookingData.customerName || passengerNames.substring(0, 100),
-    passenger_email: bookingData.customerEmail || passengers[0]?.email || '',
+    passenger_email: passengerEmail, // Email yang sudah di-decode
+    customer_email: customerEmail,   // Email yang sudah di-decode
     passenger_phone: bookingData.customerPhone || passengers[0]?.phoneNumber || '',
     user_id: bookingData.user_id || null,
     total_amount: Number(bookingData.totalAmount || 0),
@@ -175,16 +249,34 @@ function prepareBookingData(
     departure_date: bookingData.trainDetail?.departureDate || new Date().toISOString().split('T')[0],
     departure_time: bookingData.trainDetail?.departureTime || '06:00',
     arrival_time: bookingData.trainDetail?.arrivalTime || '11:00',
+    train_code: bookingData.trainDetail?.trainCode || '',
+
+    // Transit data
+    transit_station: transitStation || null,
+    transit_arrival: transitArrival || null,
+    transit_departure: transitDeparture || null,
+    transit_discount: bookingData.transitDiscount || 0,
+    transit_total_adjustment: bookingData.transitAdditionalPrice || 0,
+    
+    // Fare breakdown
+    seat_premium: bookingData.seatPremium || 0,
+    admin_fee: bookingData.adminFee || 5000,
+    insurance_fee: bookingData.insuranceFee || 10000,
+    base_price: bookingData.basePrice || 265000,
+    promo_discount: 0, // Default value
 
     // Informasi tambahan
     payment_method: bookingData.paymentMethod || 'manual',
     status: 'pending_payment',
     payment_status: 'pending',
+    is_multi_segment: bookingData.isMultiSegment || false,
+    segments: bookingData.segments ? JSON.stringify(bookingData.segments) : '[]',
 
     // Passenger details as text (for the passenger_details column)
     passenger_details: JSON.stringify(passengers),
 
     // Timestamps
+    booking_date: new Date().toISOString(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -193,13 +285,20 @@ function prepareBookingData(
     bookingCode: bookingDataToSave.booking_code,
     passengerCount: bookingDataToSave.passenger_count,
     totalAmount: bookingDataToSave.total_amount,
-    trainName: bookingDataToSave.train_name
+    trainName: bookingDataToSave.train_name,
+    customerEmail: bookingDataToSave.customer_email,
+    passengerEmail: bookingDataToSave.passenger_email,
+    transitStation: bookingDataToSave.transit_station,
+    transitDiscount: bookingDataToSave.transit_discount,
+    transitAdditionalPrice: bookingDataToSave.transit_total_adjustment,
+    seatPremium: bookingDataToSave.seat_premium,
+    basePrice: bookingDataToSave.base_price
   });
 
   return bookingDataToSave;
 }
 
-// Helper function untuk handle database insertion dengan multiple fallback
+// PERBAIKAN: Helper function untuk handle database insertion dengan schema validation
 async function tryInsertBooking(data: Record<string, any>) {
   const tablesToTry = ['bookings_kereta', 'bookings', 'temp_bookings'];
 
@@ -207,26 +306,97 @@ async function tryInsertBooking(data: Record<string, any>) {
     try {
       console.log(`🔄 Trying to insert to ${table}...`);
 
-      // Cek apakah tabel ada
-      const { data: tableExists, error: tableError } = await supabase
+      // Cek schema tabel terlebih dahulu
+      const { data: columns, error: schemaError } = await supabase
         .from(table)
-        .select('id')
-        .limit(1)
-        .maybeSingle();
+        .select('*')
+        .limit(0);
 
-      if (tableError && !tableError.message.includes('does not exist')) {
-        console.log(`ℹ️ Table ${table} check:`, tableError.message);
+      if (schemaError) {
+        console.warn(`⚠️ Table ${table} may not exist or schema error:`, schemaError.message);
+        continue; // Coba tabel berikutnya
+      }
+
+      // Filter hanya kolom yang ada di tabel
+      const tableColumns = Object.keys(columns || {});
+      const filteredData: Record<string, any> = {};
+
+      // Filter data berdasarkan kolom yang ada di tabel
+      for (const [key, value] of Object.entries(data)) {
+        // Map nama field jika berbeda
+        let mappedKey = key;
+        
+        // Mapping untuk kolom umum
+        if (key === 'booking_code' && !tableColumns.includes('booking_code')) {
+          mappedKey = 'bookingCode';
+        }
+        if (key === 'order_id' && !tableColumns.includes('order_id')) {
+          mappedKey = 'orderId';
+        }
+        if (key === 'passenger_email' && !tableColumns.includes('passenger_email')) {
+          mappedKey = 'customerEmail';
+        }
+        
+        if (tableColumns.includes(mappedKey) || tableColumns.includes(key)) {
+          filteredData[mappedKey] = value;
+        }
+      }
+
+      // Pastikan required fields ada
+      if (!filteredData.id) filteredData.id = data.id || uuidv4();
+      if (!filteredData.booking_code && !filteredData.bookingCode) {
+        filteredData.booking_code = data.booking_code;
+      }
+      if (!filteredData.order_id && !filteredData.orderId) {
+        filteredData.order_id = data.order_id;
+      }
+
+      // Tambahkan timestamp jika tidak ada
+      if (!filteredData.created_at && !filteredData.createdAt) {
+        filteredData.created_at = new Date().toISOString();
       }
 
       // Coba insert
       const { data: result, error } = await supabase
         .from(table)
-        .insert([data])
+        .insert([filteredData])
         .select('id, booking_code, order_id')
         .single();
 
       if (error) {
         console.warn(`⚠️ Failed to insert to ${table}:`, error.message);
+        
+        // Coba dengan data minimal
+        if (error.message.includes('column') || error.message.includes('does not exist')) {
+          console.log(`🔄 Trying minimal insert to ${table}`);
+          
+          const minimalData = {
+            id: filteredData.id,
+            booking_code: filteredData.booking_code || filteredData.bookingCode,
+            order_id: filteredData.order_id || filteredData.orderId,
+            passenger_name: filteredData.passenger_name || 'Penumpang',
+            total_amount: filteredData.total_amount || 0,
+            status: 'pending_payment',
+            created_at: filteredData.created_at
+          };
+          
+          const { data: simpleResult, error: simpleError } = await supabase
+            .from(table)
+            .insert([minimalData])
+            .select('id, booking_code, order_id')
+            .single();
+            
+          if (!simpleError) {
+            console.log(`✅ Successfully inserted simplified data to ${table}:`, simpleResult.id);
+            return {
+              success: true,
+              data: simpleResult,
+              tableUsed: table,
+              method: 'simplified_insert'
+            };
+          }
+        }
+        
         continue; // Coba tabel berikutnya
       }
 
@@ -250,24 +420,167 @@ async function tryInsertBooking(data: Record<string, any>) {
   };
 }
 
-// Helper untuk create minimal booking data
-function createMinimalBooking(bookingData: BookingData, ids: ReturnType<typeof generateIDs>) {
-  return {
-    id: ids.bookingId,
-    booking_code: ids.bookingCode,
-    order_id: ids.orderId,
-    passenger_name: bookingData.customerName || 'Customer',
-    passenger_email: bookingData.customerEmail || '',
-    passenger_phone: bookingData.customerPhone || '',
-    total_amount: bookingData.totalAmount || 0,
-    passenger_count: bookingData.passengerCount || 1,
-    status: 'pending_payment',
-    payment_status: 'pending',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
+// FUNGSI BARU: Cek dan buat tabel jika tidak ada
+async function ensureTableExists(tableName: string, createSQL: string): Promise<boolean> {
+  try {
+    // Cek apakah tabel ada
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    if (error && error.message.includes('does not exist')) {
+      console.log(`⚠️ Table ${tableName} does not exist`);
+      console.log(`📋 SQL to create table ${tableName}:`);
+      console.log(createSQL);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.warn(`⚠️ Error checking table ${tableName}:`, error);
+    return false;
+  }
 }
 
+// Perbaikan fungsi untuk menyimpan data penumpang
+async function savePassengers(bookingId: string, passengers: Passenger[]) {
+  try {
+    // Decode email penumpang sebelum disimpan
+    const passengerData = passengers.map((passenger, index) => ({
+      id: uuidv4(),
+      booking_id: bookingId,
+      passenger_id: `PASS-${Date.now()}-${index}`,
+      full_name: passenger.fullName || '',
+      email: decodeEmail(passenger.email || ''), // Decode email penumpang
+      phone: passenger.phoneNumber || '',
+      seat_number: passenger.seatNumber || '',
+      seat_id: passenger.seatNumber ? `seat-${passenger.seatNumber}` : '',
+      segment_id: passenger.seatNumber ? `segment-${passenger.seatNumber}` : '',
+      transit_station: passenger.transitStation || null,
+      transit_arrival: passenger.transitArrival || null,
+      transit_departure: passenger.transitDeparture || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }));
+
+    const { data, error } = await supabase
+      .from('passengers')
+      .insert(passengerData)
+      .select('id, full_name, email');
+
+    if (error) {
+      // Jika tabel tidak ada, coba buat dulu
+      if (error.message.includes('does not exist')) {
+        console.log('⚠️ passengers table does not exist, creating...');
+        
+        // SQL untuk membuat tabel passengers
+        const createSQL = `
+          CREATE TABLE IF NOT EXISTS public.passengers (
+            id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+            booking_id uuid REFERENCES public.bookings_kereta(id),
+            passenger_id character varying,
+            full_name character varying NOT NULL,
+            email character varying,
+            phone character varying,
+            seat_number character varying,
+            seat_id character varying,
+            segment_id character varying,
+            transit_station character varying,
+            transit_arrival time without time zone,
+            transit_departure time without time zone,
+            created_at timestamp without time zone DEFAULT now(),
+            updated_at timestamp without time zone DEFAULT now()
+          );
+        `;
+        
+        await ensureTableExists('passengers', createSQL);
+        
+        // Coba insert lagi setelah create (akan gagal di sini karena kita tidak bisa eksekusi DDL dari client)
+        console.log('⚠️ Table creation SQL logged above. Please run migration manually.');
+        
+        return {
+          success: false,
+          error: 'Passengers table does not exist. Run migration first.',
+          savedCount: 0
+        };
+      }
+      
+      console.warn('⚠️ Error saving passengers:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        savedCount: 0
+      };
+    }
+
+    console.log(`✅ Saved ${data?.length || 0} passengers to passengers table`);
+    return {
+      success: true,
+      savedCount: data?.length || 0,
+      data
+    };
+
+  } catch (error: any) {
+    console.warn('⚠️ Exception saving passengers:', error.message);
+    return {
+      success: false,
+      error: error.message,
+      savedCount: 0
+    };
+  }
+}
+
+// Perbaikan fungsi untuk membuat record tiket
+async function createTicketRecord(bookingCode: string, ticketNumber: string, bookingData: BookingData) {
+  try {
+    const ticketData = {
+      booking_id: bookingCode,
+      ticket_number: ticketNumber,
+      passenger_name: bookingData.customerName,
+      passenger_email: decodeEmail(bookingData.customerEmail), // Decode email
+      train_name: bookingData.trainDetail?.trainName || 'Parahyangan',
+      departure_date: bookingData.trainDetail?.departureDate || new Date().toISOString().split('T')[0],
+      departure_time: bookingData.trainDetail?.departureTime || '06:00',
+      arrival_time: bookingData.trainDetail?.arrivalTime || '11:00',
+      origin: bookingData.trainDetail?.origin || 'Bandung',
+      destination: bookingData.trainDetail?.destination || 'Gambir',
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('tickets')
+      .insert([ticketData])
+      .select('ticket_number')
+      .single();
+
+    if (error) {
+      console.warn('⚠️ Error creating ticket record:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+
+    console.log('✅ Ticket record created:', data.ticket_number);
+    return {
+      success: true,
+      ticketNumber: data.ticket_number
+    };
+
+  } catch (error: any) {
+    console.warn('⚠️ Exception creating ticket record:', error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// PERBAIKAN: Fungsi utama dengan email decoding
 export async function POST(request: NextRequest) {
   console.log('🚀 /api/bookings/create called');
 
@@ -275,19 +588,39 @@ export async function POST(request: NextRequest) {
     // Validasi environment variables
     if (!supabaseUrl || !supabaseKey) {
       console.error('❌ Supabase config missing');
-      throw new Error('Supabase configuration is missing. Check environment variables.');
+      return NextResponse.json({
+        success: false,
+        error: 'Supabase configuration is missing',
+        message: 'Konfigurasi database tidak lengkap'
+      }, { status: 500 });
     }
 
     // Parse request body
     let bookingData: BookingData;
     try {
       bookingData = await request.json();
-      console.log('📥 Raw booking data received:', {
+      
+      // PERBAIKAN: Decode email di sini sebelum diproses
+      bookingData.customerEmail = decodeEmail(bookingData.customerEmail);
+      
+      // Decode email penumpang juga
+      if (bookingData.passengers) {
+        bookingData.passengers = bookingData.passengers.map(passenger => ({
+          ...passenger,
+          email: decodeEmail(passenger.email || '')
+        }));
+      }
+      
+      console.log('📥 Raw booking data received (with decoded emails):', {
         bookingCode: bookingData.bookingCode,
         orderId: bookingData.orderId,
         passengerCount: bookingData.passengerCount,
+        customerEmail: bookingData.customerEmail,
         hasTrainDetail: !!bookingData.trainDetail,
-        hasPassengers: bookingData.passengers?.length || 0
+        hasPassengers: bookingData.passengers?.length || 0,
+        transitStation: bookingData.transitStation,
+        transitDiscount: bookingData.transitDiscount,
+        transitAdditionalPrice: bookingData.transitAdditionalPrice
       });
     } catch (parseError) {
       console.error('❌ Failed to parse request body:', parseError);
@@ -320,6 +653,8 @@ export async function POST(request: NextRequest) {
     let usedTable = '';
     let insertionMethod = '';
     let databaseError = null;
+    let passengersSaved = false;
+    let ticketCreated = false;
 
     // Coba save ke database
     try {
@@ -333,49 +668,17 @@ export async function POST(request: NextRequest) {
 
         console.log(`✅ Successfully saved to ${usedTable}, ID: ${savedBookingId}`);
 
-        // Coba simpan detail penumpang ke tabel terpisah jika tersedia
-        try {
-          const { data: passengerTableCheck } = await supabase
-            .from('passengers')
-            .select('id')
-            .limit(1)
-            .maybeSingle();
+        // Simpan penumpang ke tabel terpisah
+        const passengerSaveResult = await savePassengers(savedBookingId, bookingData.passengers);
+        passengersSaved = passengerSaveResult.success;
 
-          if (passengerTableCheck !== undefined) {
-            const passengerData = bookingData.passengers.map((passenger, index) => ({
-              id: uuidv4(),
-              booking_id: savedBookingId,
-              passenger_order: index + 1,
-              full_name: passenger.fullName || '',
-              id_number: passenger.idNumber || '',
-              email: passenger.email || '',
-              phone: passenger.phoneNumber || '',
-              seat_number: passenger.seatNumber || '',
-              wagon_number: passenger.wagonNumber || '',
-              wagon_class: passenger.wagonClass || '',
-              title: passenger.title || 'Tn',
-              birth_date: passenger.birthDate || '',
-              gender: passenger.gender || '',
-              created_at: new Date().toISOString()
-            }));
-
-            const { error: passengerError } = await supabase
-              .from('passengers')
-              .insert(passengerData);
-
-            if (passengerError) {
-              console.warn('⚠️ Could not save to passengers table:', passengerError.message);
-            } else {
-              console.log(`✅ Saved ${passengerData.length} passengers to passengers table`);
-            }
-          }
-        } catch (passengerError) {
-          console.warn('⚠️ Passenger save skipped:', passengerError);
-        }
+        // Buat record tiket
+        const ticketResult = await createTicketRecord(ids.bookingCode, ids.ticketNumber, bookingData);
+        ticketCreated = ticketResult.success;
 
       } else {
         databaseError = insertionResult.error;
-        console.warn('⚠️ Database insertion failed, using fallback');
+        console.warn('⚠️ Database insertion failed:', databaseError);
       }
     } catch (dbError: any) {
       databaseError = dbError.message;
@@ -392,6 +695,8 @@ export async function POST(request: NextRequest) {
         ticketNumber: ids.ticketNumber,
         passengers: bookingData.passengerCount || bookingData.passengers.length,
         savedToDatabase,
+        passengersSaved,
+        ticketCreated,
         usedTable: usedTable || 'none',
         insertionMethod: insertionMethod || 'fallback',
         trainName: bookingData.trainDetail?.trainName || 'Parahyangan',
@@ -401,8 +706,17 @@ export async function POST(request: NextRequest) {
         departureDate: bookingData.trainDetail?.departureDate || new Date().toISOString().split('T')[0],
         departureTime: bookingData.trainDetail?.departureTime || '06:00',
         scheduleId: bookingData.trainDetail?.scheduleId || 'unknown',
+        transitStation: bookingData.transitStation,
+        transitDiscount: bookingData.transitDiscount || 0,
+        transitAdditionalPrice: bookingData.transitAdditionalPrice || 0,
+        seatPremium: bookingData.seatPremium || 0,
+        adminFee: bookingData.adminFee || 5000,
+        insuranceFee: bookingData.insuranceFee || 10000,
+        basePrice: bookingData.basePrice || 265000,
+        customerEmail: bookingData.customerEmail, // Email yang sudah di-decode
         hasDatabaseError: !!databaseError,
-        databaseError: databaseError
+        databaseError: databaseError,
+        emailStatus: 'decoded' // Tambahkan status email
       },
       message: savedToDatabase
         ? `Booking berhasil dibuat dan disimpan di ${usedTable}`
@@ -412,40 +726,38 @@ export async function POST(request: NextRequest) {
     console.log('✅ Booking API response:', {
       bookingCode: responseData.data.bookingCode,
       saved: savedToDatabase,
-      table: usedTable
+      table: usedTable,
+      passengersSaved,
+      ticketCreated,
+      email: responseData.data.customerEmail
     });
 
-    // Simpan ke localStorage untuk frontend (fallback)
-    if (!savedToDatabase) {
-      const localStorageData = {
-        ...bookingData,
-        bookingId: savedBookingId,
-        bookingCode: ids.bookingCode,
-        orderId: ids.orderId,
-        ticketNumber: ids.ticketNumber,
-        savedAt: new Date().toISOString(),
-        savedLocally: true
-      };
+    // Simpan data untuk frontend
+    const localStorageData = {
+      ...bookingData,
+      bookingId: savedBookingId,
+      bookingCode: ids.bookingCode,
+      orderId: ids.orderId,
+      ticketNumber: ids.ticketNumber,
+      savedToDatabase,
+      passengersSaved,
+      savedAt: new Date().toISOString(),
+      responseData: responseData.data
+    };
 
-      // Simpan ke sessionStorage untuk halaman saat ini
-      if (typeof window !== 'undefined') {
-        try {
-          sessionStorage.setItem('currentBooking', JSON.stringify(localStorageData));
-          localStorage.setItem(`booking_${ids.bookingCode}`, JSON.stringify(localStorageData));
+    console.log('💾 Booking data ready for client storage');
 
-          // Tambahkan ke daftar bookings
-          const existingBookings = JSON.parse(localStorage.getItem('myBookings') || '[]');
-          existingBookings.push(localStorageData);
-          localStorage.setItem('myBookings', JSON.stringify(existingBookings));
-
-          console.log('💾 Saved booking to localStorage as fallback');
-        } catch (storageError) {
-          console.warn('⚠️ Could not save to localStorage:', storageError);
-        }
+    // Tambahkan localStorage data ke response untuk client
+    const enhancedResponse = {
+      ...responseData,
+      localStorageData,
+      clientInstructions: 'Save this data to localStorage/sessionStorage on client side',
+      emailProcessing: {
+        note: 'Email addresses have been decoded for database storage'
       }
-    }
+    };
 
-    return NextResponse.json(responseData);
+    return NextResponse.json(enhancedResponse);
 
   } catch (error: any) {
     console.error('💥 Fatal error in booking creation:', error);
@@ -469,41 +781,73 @@ export async function POST(request: NextRequest) {
       message: 'Gagal menyimpan ke database, menggunakan fallback mode'
     };
 
-    // Simpan fallback ke localStorage jika di browser
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('fallback_booking', JSON.stringify(fallbackResponse.fallbackData));
-      } catch (e) {
-        console.warn('Could not save fallback to localStorage');
-      }
-    }
-
     return NextResponse.json(fallbackResponse, { status: 200 });
   }
 }
 
-// GET endpoint untuk health check
+// GET endpoint untuk health check dengan info email
 export async function GET(request: NextRequest) {
   try {
     // Cek koneksi database
     let dbStatus = 'unknown';
+    let tableCheck = {
+      bookings_kereta: false,
+      passengers: false,
+      tickets: false
+    };
+
     try {
-      const { data, error } = await supabase
+      // Cek tabel bookings_kereta
+      const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings_kereta')
         .select('count')
         .limit(1)
         .single();
 
-      dbStatus = error ? 'error' : 'connected';
+      tableCheck.bookings_kereta = !bookingsError;
+
+      // Cek tabel passengers
+      const { error: passengersError } = await supabase
+        .from('passengers')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+
+      tableCheck.passengers = passengersError?.message?.includes('does not exist') ? false : true;
+
+      // Cek tabel tickets
+      const { error: ticketsError } = await supabase
+        .from('tickets')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+
+      tableCheck.tickets = ticketsError?.message?.includes('does not exist') ? false : true;
+
+      dbStatus = 'connected';
     } catch (dbError) {
       dbStatus = 'error';
+      console.error('Database check error:', dbError);
     }
+
+    // Test email decoding
+    const testEmail = 'reisanadrefa1%2540gmail.com';
+    const decodedEmail = decodeEmail(testEmail);
 
     return NextResponse.json({
       status: 'healthy',
       endpoint: '/api/bookings/create',
       method: 'POST',
-      database: dbStatus,
+      database: {
+        status: dbStatus,
+        tables: tableCheck
+      },
+      email_decoding: {
+        test: true,
+        original_email: testEmail,
+        decoded_email: decodedEmail,
+        valid: decodedEmail.includes('@')
+      },
       environment: {
         hasSupabaseUrl: !!supabaseUrl,
         hasSupabaseKey: !!supabaseKey,

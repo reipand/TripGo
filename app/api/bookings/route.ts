@@ -50,6 +50,313 @@ async function getAuthUser(request: NextRequest) {
   }
 }
 
+// GET handler untuk mengambil data booking dan kursi
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const scheduleId = searchParams.get('scheduleId');
+    const trainId = searchParams.get('trainId');
+    const bookingId = searchParams.get('bookingId');
+    const bookingCode = searchParams.get('bookingCode');
+
+    console.log('📊 GET /api/bookings params:', {
+      scheduleId,
+      trainId,
+      bookingId,
+      bookingCode
+    });
+
+    // Initialize Supabase
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Kasus 1: Ambil booking berdasarkan bookingId atau bookingCode
+    if (bookingId || bookingCode) {
+      const query = supabase
+        .from('bookings_kereta')
+        .select(`
+          *,
+          penumpang(*),
+          booking_items(*),
+          jadwal_kereta!inner(
+            *,
+            kereta:train_id(*)
+          )
+        `);
+
+      if (bookingId) query.eq('id', bookingId);
+      if (bookingCode) query.eq('booking_code', bookingCode);
+
+      const { data: booking, error: bookingError } = await query.single();
+
+      if (bookingError) {
+        console.error('❌ Booking error:', bookingError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Booking tidak ditemukan'
+          },
+          { status: 404 }
+        );
+      }
+
+      // Jika ada scheduleId, ambil juga data kursi
+      if (booking.schedule_id) {
+        const { data: seats, error: seatsError } = await supabase
+          .from('train_seats')
+          .select('*')
+          .eq('schedule_id', booking.schedule_id)
+          .order('seat_number');
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            booking,
+            seats: seats || [],
+            total_seats: seats?.length || 0
+          }
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: { booking }
+      });
+    }
+
+    // Kasus 2: Ambil data kursi berdasarkan scheduleId atau trainId
+    if (scheduleId || trainId) {
+      let scheduleData = null;
+      let trainData = null;
+
+      // Cari schedule berdasarkan ID
+      if (scheduleId) {
+        const { data: schedule, error: scheduleError } = await supabase
+          .from('jadwal_kereta')
+          .select(`
+            *,
+            kereta:train_id(*)
+          `)
+          .eq('id', scheduleId)
+          .single();
+
+        if (!scheduleError && schedule) {
+          scheduleData = schedule;
+          trainData = schedule.kereta;
+        }
+      } else if (trainId) {
+        // Cari train langsung
+        const { data: train, error: trainError } = await supabase
+          .from('kereta')
+          .select('*')
+          .eq('id', trainId)
+          .single();
+
+        if (!trainError && train) {
+          trainData = train;
+        }
+      }
+
+      if (!trainData) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Data kereta tidak ditemukan'
+          },
+          { status: 404 }
+        );
+      }
+
+      // Ambil data gerbong untuk kereta ini
+      const { data: wagons, error: wagonsError } = await supabase
+        .from('gerbong')
+        .select('*')
+        .eq('train_id', trainData.id)
+        .order('coach_code');
+
+      if (wagonsError) {
+        console.error('❌ Wagons error:', wagonsError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Gagal mengambil data gerbong'
+          },
+          { status: 500 }
+        );
+      }
+
+      // Ambil data kursi untuk setiap gerbong
+      const wagonsWithSeats = await Promise.all(
+        (wagons || []).map(async (wagon) => {
+          // Cari kursi untuk gerbong ini
+          let seatQuery = supabase
+            .from('train_seats')
+            .select('*');
+
+          if (scheduleData) {
+            seatQuery = seatQuery
+              .eq('schedule_id', scheduleData.id)
+              .eq('coach_id', wagon.id);
+          } else {
+            // Jika tidak ada schedule, ambil kursi dari gerbong saja
+            seatQuery = seatQuery.eq('coach_id', wagon.id);
+          }
+
+          const { data: seats, error: seatsError } = await seatQuery.order('seat_number');
+
+          // Format data kursi
+          const formattedSeats = (seats || []).map(seat => {
+            const seatNumber = seat.seat_number || '1A';
+            const rowMatch = seatNumber.match(/\d+/);
+            const colMatch = seatNumber.match(/[A-Z]/);
+            
+            const row = rowMatch ? parseInt(rowMatch[0]) : 1;
+            const column = colMatch ? colMatch[0] : 'A';
+            
+            // Determine seat type
+            const columns = wagon.class_type === 'executive' ? 4 : 
+                           wagon.class_type === 'business' ? 5 : 6;
+            
+            const windowSeat = column === 'A' || 
+                             (columns === 4 && column === 'D') ||
+                             (columns === 5 && column === 'E') ||
+                             (columns === 6 && column === 'F');
+            
+            const forwardFacing = row % 2 === 1;
+
+            // Calculate seat price
+            const basePrice = 250000; // Default
+            let price = basePrice;
+            
+            if (wagon.class_type === 'executive') price *= 1.5;
+            else if (wagon.class_type === 'business') price *= 1.2;
+            
+            if (windowSeat) price = Math.round(price * 1.1);
+            if (forwardFacing) price = Math.round(price * 1.05);
+
+            return {
+              id: seat.id,
+              number: seatNumber,
+              row,
+              column,
+              available: seat.status === 'available',
+              windowSeat,
+              forwardFacing,
+              price,
+              wagonNumber: wagon.coach_code,
+              wagonClass: wagon.class_type,
+              kode_kursi: seatNumber,
+              status: seat.status,
+              booking_id: seat.booking_id
+            };
+          });
+
+          // Default layout berdasarkan kelas
+          const getDefaultLayout = () => {
+            const totalSeats = wagon.total_seats || 40;
+            const columns = wagon.class_type === 'executive' ? 4 : 
+                           wagon.class_type === 'business' ? 5 : 6;
+            const rows = Math.ceil(totalSeats / columns);
+            const aisleAfterColumn = Math.floor(columns / 2);
+            
+            const windowSeats = [];
+            if (columns === 4) windowSeats.push('A', 'D');
+            else if (columns === 5) windowSeats.push('A', 'E');
+            else if (columns === 6) windowSeats.push('A', 'F');
+            
+            return {
+              rows,
+              columns,
+              aisleAfterColumn,
+              windowSeats
+            };
+          };
+
+          // Fasilitas default
+          const getDefaultFacilities = () => {
+            const facilities = ['AC'];
+            
+            switch (wagon.class_type) {
+              case 'executive':
+                facilities.push('Toilet', 'Power Outlet', 'WiFi', 'Food Service', 'Luggage Rack');
+                break;
+              case 'business':
+                facilities.push('Toilet', 'Power Outlet', 'WiFi', 'Food Service');
+                break;
+              case 'economy':
+                facilities.push('Toilet', 'Luggage Rack');
+                break;
+            }
+            
+            return facilities;
+          };
+
+          return {
+            id: wagon.id,
+            number: wagon.coach_code,
+            name: `Gerbong ${wagon.coach_code}`,
+            class: wagon.class_type,
+            facilities: getDefaultFacilities(),
+            availableSeats: formattedSeats.filter(s => s.available).length,
+            totalSeats: wagon.total_seats || 40,
+            seats: formattedSeats,
+            layout: getDefaultLayout()
+          };
+        })
+      );
+
+      // Format response untuk komponen TrainSeatMap
+      const responseData = {
+        id: scheduleData?.id || trainData.id,
+        trainId: trainData.id,
+        scheduleId: scheduleData?.id,
+        trainName: trainData.nama_kereta,
+        trainType: trainData.tipe_kereta || 'Executive',
+        kode_kereta: trainData.kode_kereta,
+        nama_kereta: trainData.nama_kereta,
+        departureTime: '07:00:00',
+        arrivalTime: '12:00:00',
+        duration: '5j 0m',
+        origin: searchParams.get('origin') || 'BD',
+        destination: searchParams.get('destination') || 'CCL',
+        price: parseInt(searchParams.get('price') || '250000'),
+        availableSeats: wagonsWithSeats.reduce((sum, wagon) => sum + wagon.availableSeats, 0),
+        departureDate: searchParams.get('departureDate') || new Date().toISOString().split('T')[0],
+        wagons: wagonsWithSeats,
+        operator: trainData.operator,
+        originStation: searchParams.get('origin'),
+        destinationStation: searchParams.get('destination')
+      };
+
+      return NextResponse.json({
+        success: true,
+        data: responseData
+      });
+    }
+
+    // Jika tidak ada parameter yang valid
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Parameter tidak valid. Gunakan scheduleId, trainId, bookingId, atau bookingCode'
+      },
+      { status: 400 }
+    );
+
+  } catch (error) {
+    console.error('❌ Error in GET /api/bookings:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Terjadi kesalahan saat mengambil data'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// POST handler untuk membuat booking (sudah ada)
 export async function POST(request: NextRequest) {
   try {
     const bookingData = await request.json();

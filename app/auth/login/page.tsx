@@ -53,6 +53,39 @@ const GoogleIcon = () => (
   </svg>
 );
 
+// Helper functions untuk PKCE (dipindahkan ke luar komponen)
+const generatePKCEVerifier = (): string => {
+  const array = new Uint8Array(32);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(array);
+  } else {
+    // Fallback untuk lingkungan tanpa crypto
+    for (let i = 0; i < array.length; i++) {
+      array[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  return btoa(String.fromCharCode(...array))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+};
+
+const generatePKCEChallenge = async (verifier: string): Promise<string> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  
+  if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return btoa(String.fromCharCode(...new Uint8Array(hash)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  } else {
+    // Fallback untuk lingkungan tanpa crypto.subtle
+    return verifier;
+  }
+};
+
 // --- Komponen Login Content ---
 function LoginContent() {
   const router = useRouter();
@@ -173,7 +206,6 @@ function LoginContent() {
     setError(''); // Clear error when user types
   };
 
-  // Fixed: handleSubmit dengan proper role checking
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -198,9 +230,6 @@ function LoginContent() {
       // Login berhasil, set pesan sukses dan tunggu redirect dari auth context
       setSuccessMessage('Login berhasil! Mengarahkan...');
 
-      // Redirect akan ditangani oleh onAuthStateChange di AuthContext
-      // atau oleh handleAlreadyLoggedIn di useEffect
-
     } catch (err: any) {
       console.error('Login exception:', err);
       setError(err.message || 'Terjadi kesalahan saat login');
@@ -212,17 +241,14 @@ function LoginContent() {
   const hasAccess = (userRole: string, path: string): boolean => {
     const normalizedRole = userRole.toLowerCase();
 
-    // Admin dan Super Admin bisa akses semua admin routes
     if (path.startsWith('/admin') && !['admin', 'super_admin'].includes(normalizedRole)) {
       return false;
     }
 
-    // Staff hanya bisa akses staff routes
     if (path.startsWith('/staff') && !['staff', 'super_admin'].includes(normalizedRole)) {
       return false;
     }
 
-    // Super Admin only routes
     if (path.startsWith('/super-admin') && normalizedRole !== 'super_admin') {
       return false;
     }
@@ -235,34 +261,67 @@ function LoginContent() {
     setError('');
 
     try {
-      // Save remember me preference untuk email dari Google
-      if (formData.rememberMe && formData.email) {
-        localStorage.setItem('remembered_email', formData.email);
-      }
-
-      // Construct proper callback URL with redirect parameter
-      const callbackUrl = `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`;
-      console.log('Google login callback URL:', callbackUrl);
-
-      const { error: socialError } = await signInWithGoogle(callbackUrl);
+      // Method 1: Gunakan Supabase built-in OAuth dengan PKCE otomatis
+      const { data, error: socialError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          scopes: 'email profile',
+        },
+      });
 
       if (socialError) {
-        if (socialError.message?.includes('popup blocked')) {
-          setError('Popup diblokir oleh browser. Silakan izinkan popup untuk situs ini.');
-        } else if (socialError.message?.includes('access_denied')) {
-          setError('Anda membatalkan proses login dengan Google.');
-        } else {
-          setError(socialError.message || 'Gagal login dengan Google');
-        }
-        setLoading(false);
-      } else {
-        // Google login initiated successfully
-        setSuccessMessage('Mengarahkan ke Google untuk login...');
-        // Redirect will be handled by OAuth flow
+        throw socialError;
+      }
+
+      if (data?.url) {
+        // Redirect ke Google OAuth
+        window.location.href = data.url;
       }
     } catch (err: any) {
-      setError('Terjadi kesalahan saat login dengan Google');
-      setLoading(false);
+      console.error('Google login error:', err);
+      
+      // Fallback: Method 2 - Manual PKCE (jika method 1 gagal)
+      try {
+        // Generate PKCE code verifier dan challenge
+        const codeVerifier = generatePKCEVerifier();
+        const codeChallenge = await generatePKCEChallenge(codeVerifier);
+        
+        // Simpan code_verifier di cookie (bisa diakses oleh server)
+        document.cookie = `sb-auth-code-verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax`;
+        
+        // Construct OAuth URL dengan PKCE parameters
+        const { data: oauthData, error: oauthError } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'consent',
+            },
+            scopes: 'email profile',
+            // PKCE parameters
+            code_challenge_method: 's256',
+            code_challenge: codeChallenge,
+          },
+        });
+
+        if (oauthError) {
+          throw oauthError;
+        }
+
+        if (oauthData?.url) {
+          window.location.href = oauthData.url;
+        }
+      } catch (fallbackErr: any) {
+        setError('Terjadi kesalahan saat login dengan Google');
+        console.error('Fallback Google login error:', fallbackErr);
+        setLoading(false);
+      }
     }
   };
 

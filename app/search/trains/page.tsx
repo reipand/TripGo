@@ -33,350 +33,334 @@ const originCodeToName = (code: string): string => {
     'JKT': 'Jakarta',
     'TNG': 'Tangerang',
     'BKS': 'Bekasi',
-    'origin': 'Bandung', // Fallback
-    'destination': 'Gambir' // Fallback
+    'origin': 'Bandung',
+    'destination': 'Gambir'
   };
   return stations[code] || code;
 };
 
-// app/search/trains/page.tsx (ganti bagian useFetchTrains)
-// Fungsi untuk generate fallback berdasarkan data database yang sudah ada
-const generateRealisticFallbackTrainsFromDB = (
-  originCode: string,
-  destinationCode: string,
-  date: string
-): any[] => {
-  // Data real dari database query sebelumnya
-  const realTrainData = [
+// Types
+interface TransitStation {
+  id: string;
+  station_id: string;
+  station_name: string;
+  arrival_time: string;
+  departure_time: string;
+  waiting_minutes: number;
+  available_seats: number;
+  additional_price?: number;
+  previous_station: string;
+  next_station: string;
+}
+
+interface Segment {
+  segmentId: string;
+  trainId: number;
+  trainName: string;
+  trainType: string;
+  departureTime: string;
+  arrivalTime: string;
+  duration: string;
+  origin: string;
+  destination: string;
+  price: number;
+  availableSeats: number;
+  departureDate: string;
+  scheduleId?: string;
+  transitStations?: TransitStation[];
+  selectedTransit?: TransitStation | null;
+  selectedSeats: any[];
+}
+
+interface MultiSegmentBooking {
+  segments: Segment[];
+  totalPrice: number;
+  totalDuration: string;
+  isMultiSegment: boolean;
+  connectionTime?: number;
+}
+
+interface Train {
+  id?: string;
+  train_id?: number;
+  trainId: number;
+  train_number?: string;
+  train_name: string;
+  train_type: string;
+  operator?: string;
+  origin_station?: {
+    code: string;
+    name: string;
+    city: string;
+  };
+  destination_station?: {
+    code: string;
+    name: string;
+    city: string;
+  };
+  departure_time: string;
+  arrival_time: string;
+  duration_minutes?: number;
+  duration: string;
+  travel_date: string;
+  status?: string;
+  harga?: number;
+  price: number;
+  stok_kursi?: number;
+  availableSeats: number;
+  class_type?: string;
+  trainClass?: string;
+  facilities?: string[];
+  insurance?: number;
+  seat_type?: string;
+  route_type?: string;
+  schedule_id?: string;
+  isRefundable?: boolean;
+  isCheckinAvailable?: boolean;
+  isBestDeal?: boolean;
+  isHighDemand?: boolean;
+  isMultiSegment?: boolean;
+  segments?: Segment[];
+  connectionTime?: number;
+  classes?: any[];
+}
+
+// Fungsi untuk mengambil data multi-segment dari database
+const fetchMultiSegmentOptionsFromDB = async (
+  origin: string,
+  destination: string,
+  departureDate: string,
+  passengerCount: number
+): Promise<MultiSegmentBooking[]> => {
+  try {
+    const response = await fetch(
+      `/api/trains/multi-segment?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&date=${departureDate}&passengers=${passengerCount}`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      
+      if (data.success && Array.isArray(data.options)) {
+        return data.options.map((option: any) => ({
+          segments: option.segments.map((seg: any) => ({
+            segmentId: seg.id || `segment-${Math.random().toString(36).substr(2, 9)}`,
+            trainId: seg.train_id || seg.trainId || Date.now(),
+            trainName: seg.train_name || seg.trainName || 'Kereta',
+            trainType: seg.train_type || seg.trainType || 'Executive',
+            departureTime: seg.departure_time || seg.departureTime || '07:00',
+            arrivalTime: seg.arrival_time || seg.arrivalTime || '10:00',
+            duration: seg.duration || formatDuration(seg.duration_minutes || 180),
+            origin: seg.origin_station?.name || seg.origin || origin,
+            destination: seg.destination_station?.name || seg.destination || destination,
+            price: seg.price || seg.harga || 250000,
+            availableSeats: seg.available_seats || seg.stok_kursi || 20,
+            departureDate: seg.travel_date || seg.departureDate || departureDate,
+            scheduleId: seg.schedule_id || seg.id,
+            selectedSeats: [],
+            transitStations: seg.transitStations || []
+          })),
+          totalPrice: option.totalPrice || (option.segments.reduce((sum: number, seg: any) => sum + (seg.price || 250000), 0)),
+          totalDuration: option.totalDuration || `${option.segments.length * 3}j 0m`,
+          isMultiSegment: option.segments.length > 1,
+          connectionTime: option.connectionTime || 30
+        }));
+      }
+    }
+
+    // Fallback ke data khusus untuk Bandung-Gambir
+    return generateBandungGambirMultiSegmentOptions(origin, destination, departureDate, passengerCount);
+  } catch (error) {
+    console.error('Error fetching multi-segment options:', error);
+    return generateBandungGambirMultiSegmentOptions(origin, destination, departureDate, passengerCount);
+  }
+};
+
+// Fungsi khusus untuk rute Bandung-Gambir
+const generateBandungGambirMultiSegmentOptions = (
+  origin: string,
+  destination: string,
+  departureDate: string,
+  passengerCount: number
+): MultiSegmentBooking[] => {
+  const originName = originCodeToName(origin);
+  const destinationName = originCodeToName(destination);
+  
+  // Jika rute bukan Bandung-Gambir atau sebaliknya, kembalikan array kosong
+  const normalizedOrigin = originName.toLowerCase();
+  const normalizedDest = destinationName.toLowerCase();
+  
+  const isBandungGambirRoute = 
+    (normalizedOrigin.includes('bandung') && normalizedDest.includes('gambir')) ||
+    (normalizedOrigin.includes('gambir') && normalizedDest.includes('bandung'));
+  
+  if (!isBandungGambirRoute) {
+    return [];
+  }
+  
+  return [
+    // Opsi 1: Bandung -> Cirebon -> Gambir
     {
-      kode_kereta: 'KA-002',
-      nama_kereta: 'Argo Bromo',
-      departure_time: '07:00:00',
-      arrival_time: '10:00:00',
-      duration_minutes: 180
+      segments: [
+        {
+          segmentId: 'bdg-cbn-1',
+          trainId: 201,
+          trainName: 'Lokal Bandung-Cirebon',
+          trainType: 'Economy',
+          departureTime: '07:00',
+          arrivalTime: '09:30',
+          duration: '2j 30m',
+          origin: 'Bandung',
+          destination: 'Cirebon',
+          price: 75000,
+          availableSeats: 45,
+          departureDate: departureDate,
+          scheduleId: 'schedule-bdg-cbn-0700',
+          selectedSeats: []
+        },
+        {
+          segmentId: 'cbn-gmr-1',
+          trainId: 202,
+          trainName: 'Argo Bromo',
+          trainType: 'Executive',
+          departureTime: '11:00',
+          arrivalTime: '14:30',
+          duration: '3j 30m',
+          origin: 'Cirebon',
+          destination: 'Gambir',
+          price: 175000,
+          availableSeats: 30,
+          departureDate: departureDate,
+          scheduleId: 'schedule-cbn-gmr-1100',
+          selectedSeats: []
+        }
+      ],
+      totalPrice: 250000,
+      totalDuration: '6j 0m',
+      isMultiSegment: true,
+      connectionTime: 90 // 1.5 jam transit di Cirebon
     },
+    
+    // Opsi 2: Bandung -> Purwakarta -> Gambir
     {
-      kode_kereta: 'TAK-003',
-      nama_kereta: 'Taksaka',
-      departure_time: '07:00:00',
-      arrival_time: '10:00:00',
-      duration_minutes: 180
-    },
-    {
-      kode_kereta: 'ARGO-PHY',
-      nama_kereta: 'Argo Parahyangan',
-      departure_time: '07:00:00',
-      arrival_time: '10:00:00',
-      duration_minutes: 180
-    },
-    {
-      kode_kereta: 'TURANGGA',
-      nama_kereta: 'Turangga',
-      departure_time: '07:00:00',
-      arrival_time: '10:00:00',
-      duration_minutes: 180
-    },
-    {
-      kode_kereta: 'SRIWIJAYA',
-      nama_kereta: 'Sriwijaya',
-      departure_time: '07:00:00',
-      arrival_time: '10:00:00',
-      duration_minutes: 180
-    },
-    {
-      kode_kereta: 'GAJAYANA',
-      nama_kereta: 'Gajayana',
-      departure_time: '07:00:00',
-      arrival_time: '10:00:00',
-      duration_minutes: 180
+      segments: [
+        {
+          segmentId: 'bdg-pwk-1',
+          trainId: 203,
+          trainName: 'Lokal Bandung-Purwakarta',
+          trainType: 'Economy',
+          departureTime: '08:30',
+          arrivalTime: '10:15',
+          duration: '1j 45m',
+          origin: 'Bandung',
+          destination: 'Purwakarta',
+          price: 45000,
+          availableSeats: 50,
+          departureDate: departureDate,
+          scheduleId: 'schedule-bdg-pwk-0830',
+          selectedSeats: []
+        },
+        {
+          segmentId: 'pwk-gmr-1',
+          trainId: 204,
+          trainName: 'Argo Parahyangan',
+          trainType: 'Executive',
+          departureTime: '11:30',
+          arrivalTime: '13:45',
+          duration: '2j 15m',
+          origin: 'Purwakarta',
+          destination: 'Gambir',
+          price: 205000,
+          availableSeats: 25,
+          departureDate: departureDate,
+          scheduleId: 'schedule-pwk-gmr-1130',
+          selectedSeats: []
+        }
+      ],
+      totalPrice: 250000,
+      totalDuration: '4j 0m',
+      isMultiSegment: true,
+      connectionTime: 75 // 1.25 jam transit di Purwakarta
     }
   ];
-
-  const fallbackTrains: any[] = [];
-  
-  // Gunakan data real dari database untuk generate fallback
-  realTrainData.forEach((train, index) => {
-    // Tentukan kelas berdasarkan nama kereta
-    let trainType = 'Ekonomi';
-    let basePrice = 150000;
-    
-    if (train.nama_kereta.includes('Argo') || train.nama_kereta.includes('Bromo')) {
-      trainType = 'Executive';
-      basePrice = 350000;
-    } else if (train.nama_kereta.includes('Taksaka') || train.nama_kereta.includes('Gajayana')) {
-      trainType = 'Business';
-      basePrice = 250000;
-    }
-    
-    // Tambahkan variasi waktu untuk kereta yang berbeda
-    const hoursToAdd = index * 1; // Tambah 1 jam untuk setiap kereta berikutnya
-    const [depHours, depMinutes] = train.departure_time.split(':').map(Number);
-    const [arrHours, arrMinutes] = train.arrival_time.split(':').map(Number);
-    
-    const newDepHours = (depHours + hoursToAdd) % 24;
-    const newArrHours = (arrHours + hoursToAdd) % 24;
-    
-    const departureTime = `${newDepHours.toString().padStart(2, '0')}:${depMinutes.toString().padStart(2, '0')}`;
-    const arrivalTime = `${newArrHours.toString().padStart(2, '0')}:${arrMinutes.toString().padStart(2, '0')}`;
-    
-    // Variasi harga (±15%)
-    const priceVariation = Math.floor(Math.random() * 50000) - 25000;
-    const finalPrice = Math.max(basePrice + priceVariation, 100000);
-    
-    // Kursi tersedia (realistis)
-    const availableSeats = Math.floor(Math.random() * 30) + 5;
-    
-    // Generate fasilitas berdasarkan kelas
-    const facilities = getFacilitiesByClass(trainType);
-    
-    fallbackTrains.push({
-      id: `db-fallback-${index + 1}`,
-      schedule_id: `schedule-${Math.random().toString(36).substr(2, 9)}`,
-      train_id: `train-${Math.random().toString(36).substr(2, 9)}`,
-      train_number: train.kode_kereta,
-      train_name: train.nama_kereta,
-      train_type: trainType,
-      operator: 'PT KAI',
-      origin_station: {
-        code: originCode,
-        name: `Stasiun ${originCode === 'BD' ? 'Bandung' : originCode}`,
-        city: originCode === 'BD' ? 'Bandung' : originCode
-      },
-      destination_station: {
-        code: destinationCode,
-        name: `Stasiun ${destinationCode === 'PSE' ? 'Gambir' : destinationCode}`,
-        city: destinationCode === 'PSE' ? 'Jakarta' : destinationCode
-      },
-      departure_time: departureTime,
-      arrival_time: arrivalTime,
-      duration_minutes: train.duration_minutes,
-      duration: formatDuration(train.duration_minutes),
-      travel_date: date,
-      status: 'scheduled',
-      classes: [{
-        class_type: trainType,
-        price: finalPrice,
-        originalPrice: finalPrice * 1.2,
-        availableSeats: availableSeats,
-        insurance: 5000,
-        facilities: facilities
-      }],
-      facilities: facilities,
-      isAvailable: true,
-      isBestDeal: availableSeats > 20 && finalPrice < 250000,
-      isHighDemand: availableSeats < 8,
-      warning: availableSeats < 3 ? 'Hampir habis!' : undefined
-    });
-  });
-
-  return fallbackTrains;
 };
-const useFetchTrains = (
+
+// Fungsi untuk mengambil data direct trains (tanpa transit) dari database
+const fetchDirectTrainsFromDB = async (
   origin: string,
   destination: string,
   departureDate: string,
   passengers: number
-) => {
-  const [trains, setTrains] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+): Promise<Train[]> => {
+  try {
+    const response = await fetch(
+      `/api/trains/direct?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&date=${departureDate}&passengers=${passengers}`
+    );
 
-  useEffect(() => {
-    const fetchTrains = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        console.log('🔍 Fetching trains with params:', {
-          origin,
-          destination,
-          departureDate,
-          passengers
-        });
-
-        // Endpoint khusus untuk mengambil data dari database
-        const apiUrl = `/api/trains/direct-search?origin=${origin}&destination=${destination}&date=${departureDate}`;
-        
-        console.log(`Trying database endpoint: ${apiUrl}`);
-        const response = await fetch(apiUrl);
-        
-        let apiData = null;
-        
-        if (response.ok) {
-          const data = await response.json();
-          console.log(`✅ Success from database API:`, data);
-          
-          // Handle response format dari database
-          if (data.success && Array.isArray(data.trains)) {
-            apiData = data.trains;
-          } else if (Array.isArray(data)) {
-            apiData = data;
-          } else if (data.data && Array.isArray(data.data)) {
-            apiData = data.data;
-          }
-        }
-
-        if (apiData && apiData.length > 0) {
-          const formattedData: any[] = apiData.map((item: any) => ({
-            id: item.id || `train-${Date.now()}-${Math.random()}`,
-            train_id: item.train_id || item.id || '',
-            train_number: item.train_number || item.kode_kereta || '',
-            train_name: item.train_name || item.nama_kereta || '',
-            train_type: item.train_type || item.tipe_kereta || 'Executive',
-            operator: item.operator || 'PT KAI',
-            origin_station: {
-              code: item.origin_code || origin,
-              name: item.origin_name || `Stasiun ${origin}`,
-              city: item.origin_city || origin
-            },
-            destination_station: {
-              code: item.destination_code || destination,
-              name: item.destination_name || `Stasiun ${destination}`,
-              city: item.destination_city || destination
-            },
-            departure_time: item.departure_time || '07:00:00',
-            arrival_time: item.arrival_time || '10:00:00',
-            duration_minutes: item.duration_minutes || 180,
-            duration: item.duration || formatDuration(item.duration_minutes || 180),
-            travel_date: item.travel_date || departureDate,
-            status: item.status || 'scheduled',
-            harga: item.price || item.harga || 250000,
-            price: item.price || item.harga || 250000,
-            stok_kursi: item.available_seats || item.stok_kursi || 20,
-            availableSeats: item.available_seats || item.stok_kursi || 20,
-            class_type: item.class_type || item.train_type || 'Executive',
-            trainClass: item.class_type || item.train_type || 'Executive',
-            facilities: item.facilities || getFacilitiesByClass(item.class_type || item.train_type || 'Executive'),
+    if (response.ok) {
+      const data = await response.json();
+      
+      if (data.success && Array.isArray(data.trains)) {
+        return data.trains.map((train: any) => ({
+          id: train.id || `train-${Date.now()}-${Math.random()}`,
+          train_id: train.train_id || train.id || Date.now(),
+          trainId: train.train_id || train.id || Date.now(),
+          train_number: train.train_number || train.kode_kereta || '',
+          train_name: train.train_name || train.nama_kereta || '',
+          train_type: train.train_type || train.tipe_kereta || 'Executive',
+          operator: train.operator || 'PT KAI',
+          origin_station: train.origin_station || {
+            code: origin,
+            name: `Stasiun ${origin}`,
+            city: origin
+          },
+          destination_station: train.destination_station || {
+            code: destination,
+            name: `Stasiun ${destination}`,
+            city: destination
+          },
+          departure_time: train.departure_time || '07:00:00',
+          arrival_time: train.arrival_time || '10:00:00',
+          duration_minutes: train.duration_minutes || 180,
+          duration: train.duration || formatDuration(train.duration_minutes || 180),
+          travel_date: train.travel_date || departureDate,
+          status: train.status || 'scheduled',
+          harga: train.price || train.harga || 250000,
+          price: train.price || train.harga || 250000,
+          stok_kursi: train.available_seats || train.stok_kursi || 20,
+          availableSeats: train.available_seats || train.stok_kursi || 20,
+          class_type: train.class_type || train.train_type || 'Executive',
+          trainClass: train.class_type || train.train_type || 'Executive',
+          facilities: train.facilities || getFacilitiesByClass(train.class_type || train.train_type || 'Executive'),
+          insurance: 5000,
+          seat_type: 'AD',
+          route_type: 'Direct',
+          schedule_id: train.schedule_id || train.id,
+          isRefundable: true,
+          isCheckinAvailable: true,
+          isBestDeal: (train.available_seats || 0) > 15,
+          isHighDemand: (train.available_seats || 0) < 5,
+          isMultiSegment: false,
+          classes: train.classes || [{
+            class_type: train.class_type || train.train_type || 'Executive',
+            price: train.price || train.harga || 250000,
+            originalPrice: (train.price || 250000) * 1.2,
+            availableSeats: train.available_seats || train.stok_kursi || 20,
             insurance: 5000,
-            seat_type: 'AD',
-            route_type: 'Direct',
-            schedule_id: item.schedule_id || item.id,
-            isRefundable: true,
-            isCheckinAvailable: true,
-            isBestDeal: (item.available_seats || 0) > 15,
-            isHighDemand: (item.available_seats || 0) < 5,
-            classes: item.classes || [{
-              class_type: item.class_type || item.train_type || 'Executive',
-              price: item.price || item.harga || 250000,
-              originalPrice: (item.price || 250000) * 1.2,
-              availableSeats: item.available_seats || item.stok_kursi || 20,
-              insurance: 5000,
-              facilities: item.facilities || getFacilitiesByClass(item.class_type || item.train_type || 'Executive')
-            }]
-          }));
-          
-          setTrains(formattedData);
-          console.log('✅ Database data loaded:', formattedData.length, 'trains');
-        } else {
-          // Jika database kosong, coba endpoints lain
-          console.log('⚠️ No database data, trying other endpoints');
-          
-          const endpoints = [
-            `/api/search/train?origin=${origin}&destination=${destination}&departureDate=${departureDate}&passengers=${passengers}`,
-            `/api/trains/search?origin=${origin}&destination=${destination}&date=${departureDate}&passengers=${passengers}`,
-          ];
-
-          let fallbackData = null;
-          
-          for (const endpoint of endpoints) {
-            try {
-              const fallbackResponse = await fetch(endpoint);
-              if (fallbackResponse.ok) {
-                const fallbackJson = await fallbackResponse.json();
-                
-                if (Array.isArray(fallbackJson)) {
-                  fallbackData = fallbackJson;
-                } else if (fallbackJson.data && Array.isArray(fallbackJson.data)) {
-                  fallbackData = fallbackJson.data;
-                }
-                
-                if (fallbackData) {
-                  console.log(`✅ Got fallback data from ${endpoint}`);
-                  break;
-                }
-              }
-            } catch (e) {
-              console.log(`❌ Failed from ${endpoint}`);
-            }
-          }
-
-          if (fallbackData && fallbackData.length > 0) {
-            const formattedData: any[] = fallbackData.map((item: any) => ({
-              id: item.id || `train-${Date.now()}-${Math.random()}`,
-              train_id: item.train_id || item.id || '',
-              train_number: item.train_number || item.train_code || '',
-              train_name: item.train_name || item.trainName || '',
-              train_type: item.train_type || item.trainType || 'Executive',
-              operator: item.operator || 'PT KAI',
-              origin_station: item.origin_station || {
-                code: origin,
-                name: item.originStation || origin,
-                city: item.originCity || origin
-              },
-              destination_station: item.destination_station || {
-                code: destination,
-                name: item.destinationStation || destination,
-                city: item.destinationCity || destination
-              },
-              departure_time: item.departure_time || item.departureTime || '07:00:00',
-              arrival_time: item.arrival_time || item.arrivalTime || '10:00:00',
-              duration_minutes: item.duration_minutes || 180,
-              duration: item.duration || formatDuration(item.duration_minutes || 180),
-              travel_date: item.travel_date || item.departureDate || departureDate,
-              status: item.status || 'scheduled',
-              harga: item.harga || item.price || 250000,
-              price: item.harga || item.price || 250000,
-              stok_kursi: item.stok_kursi || item.availableSeats || 20,
-              availableSeats: item.stok_kursi || item.availableSeats || 20,
-              class_type: item.class_type || item.trainClass || 'Executive',
-              trainClass: item.class_type || item.trainClass || 'Executive',
-              facilities: item.facilities || getFacilitiesByClass(item.class_type || item.trainClass || 'Executive'),
-              insurance: 5000,
-              seat_type: 'AD',
-              route_type: 'Direct',
-              schedule_id: item.schedule_id || item.id,
-              isRefundable: true,
-              isCheckinAvailable: true,
-              isBestDeal: false,
-              isHighDemand: (item.stok_kursi || 0) < 10,
-              classes: item.classes || [{
-                class_type: item.class_type || item.trainClass || 'Executive',
-                price: item.harga || item.price || 250000,
-                originalPrice: (item.harga || item.price || 250000) * 1.2,
-                availableSeats: item.stok_kursi || item.availableSeats || 20,
-                insurance: 5000,
-                facilities: item.facilities || getFacilitiesByClass(item.class_type || item.trainClass || 'Executive')
-              }]
-            }));
-            
-            setTrains(formattedData);
-            console.log('✅ Fallback data loaded:', formattedData.length, 'trains');
-          } else {
-            // Jika semua API gagal, gunakan data realistis berdasarkan database
-            console.log('⚠️ All APIs failed, using realistic data based on DB');
-            const realisticTrains = generateRealisticFallbackTrainsFromDB(origin, destination, departureDate);
-            setTrains(realisticTrains);
-          }
-        }
-        
-      } catch (error: any) {
-        console.error('❌ Error fetching trains:', error);
-        setError('Gagal memuat data kereta dari database. Menampilkan data realistis.');
-        
-        // Gunakan data realistis berdasarkan database
-        const realisticTrains = generateRealisticFallbackTrainsFromDB(origin, destination, departureDate);
-        setTrains(realisticTrains);
-      } finally {
-        setLoading(false);
+            facilities: train.facilities || getFacilitiesByClass(train.class_type || train.train_type || 'Executive')
+          }]
+        }));
       }
-    };
+    }
 
-    fetchTrains();
-  }, [origin, destination, departureDate, passengers]);
-
-  return { trains, loading, error };
+    // Fallback ke data realistis jika API gagal
+    return generateRealisticDirectTrains(origin, destination, departureDate);
+  } catch (error) {
+    console.error('Error fetching direct trains:', error);
+    return generateRealisticDirectTrains(origin, destination, departureDate);
+  }
 };
 
+// Fungsi helper
 const formatDuration = (minutes: number): string => {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
@@ -391,23 +375,305 @@ const getFacilitiesByClass = (trainClass: string): string[] => {
   };
   return facilities[trainClass] || ['AC', 'Toilet'];
 };
-// Dummy data generation removed - using live database
 
-// Komponen FilterAndSort yang lebih lengkap
+// Custom Hook untuk mengambil data kereta dengan dukungan multi-segment
+const useFetchTrains = (
+  origin: string,
+  destination: string,
+  departureDate: string,
+  passengers: number
+) => {
+  const [allTrains, setAllTrains] = useState<Train[]>([]);
+  const [filteredTrains, setFilteredTrains] = useState<Train[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [multiSegmentOptions, setMultiSegmentOptions] = useState<MultiSegmentBooking[]>([]);
+  const [showMultiSegment, setShowMultiSegment] = useState(false);
+
+  useEffect(() => {
+    const fetchTrains = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        console.log('🔍 Fetching trains with params:', {
+          origin,
+          destination,
+          departureDate,
+          passengers,
+          showMultiSegment
+        });
+
+        // Ambil data multi-segment jika dipilih
+        if (showMultiSegment) {
+          const multiSegmentData = await fetchMultiSegmentOptionsFromDB(
+            origin,
+            destination,
+            departureDate,
+            passengers
+          );
+          setMultiSegmentOptions(multiSegmentData);
+          
+          // Konversi multi-segment ke format train untuk display
+          const segmentTrains: Train[] = multiSegmentData.map((option, index) => ({
+            id: `multi-segment-${index}`,
+            trainId: index + 1000,
+            train_name: `${option.segments.length} Segmen`,
+            train_type: 'Multi-Segmen',
+            departure_time: option.segments[0]?.departureTime || '07:00',
+            arrival_time: option.segments[option.segments.length - 1]?.arrivalTime || '17:00',
+            duration: option.totalDuration,
+            price: option.totalPrice,
+            availableSeats: Math.min(...option.segments.map(s => s.availableSeats)),
+            travel_date: departureDate,
+            isMultiSegment: true,
+            segments: option.segments,
+            connectionTime: option.connectionTime,
+            classes: [{
+              class_type: 'Multi-Segmen',
+              price: option.totalPrice,
+              originalPrice: option.totalPrice * 1.1,
+              availableSeats: Math.min(...option.segments.map(s => s.availableSeats)),
+              insurance: 5000,
+              facilities: ['Transfer Antar Kereta', 'Asuransi Perjalanan', 'Bantuan Porter']
+            }]
+          }));
+
+          setAllTrains(segmentTrains);
+          setFilteredTrains(segmentTrains);
+          console.log('✅ Multi-segment data loaded:', segmentTrains.length, 'options');
+        } else {
+          // Ambil data direct trains (tanpa transit)
+          const directTrains = await fetchDirectTrainsFromDB(
+            origin,
+            destination,
+            departureDate,
+            passengers
+          );
+          
+          setAllTrains(directTrains);
+          setFilteredTrains(directTrains);
+          console.log('✅ Direct trains loaded:', directTrains.length, 'trains');
+        }
+
+      } catch (error: any) {
+        console.error('❌ Error fetching trains:', error);
+        setError('Gagal memuat data kereta dari database. Menampilkan data realistis.');
+        
+        // Fallback ke data realistis
+        const realisticTrains = generateRealisticDirectTrains(origin, destination, departureDate);
+        setAllTrains(realisticTrains);
+        setFilteredTrains(realisticTrains);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTrains();
+  }, [origin, destination, departureDate, passengers, showMultiSegment]);
+
+  return {
+    trains: filteredTrains,
+    allTrains,
+    loading,
+    error,
+    multiSegmentOptions,
+    showMultiSegment,
+    setShowMultiSegment
+  };
+};
+
+// Fungsi untuk generate data direct trains realistis
+const generateRealisticDirectTrains = (
+  originCode: string,
+  destinationCode: string,
+  date: string
+): Train[] => {
+  const stationNames: Record<string, { name: string, city: string }> = {
+    'BD': { name: 'Stasiun Bandung', city: 'Bandung' },
+    'PSE': { name: 'Stasiun Gambir', city: 'Jakarta' },
+    'GMR': { name: 'Stasiun Gambir', city: 'Jakarta' },
+    'SBY': { name: 'Stasiun Surabaya Gubeng', city: 'Surabaya' },
+    'YK': { name: 'Stasiun Yogyakarta', city: 'Yogyakarta' },
+    'SMC': { name: 'Stasiun Semarang Tawang', city: 'Semarang' },
+    'ML': { name: 'Stasiun Malang', city: 'Malang' },
+    'BDO': { name: 'Stasiun Bandung', city: 'Bandung' },
+  };
+
+  const originInfo = stationNames[originCode] || { name: `Stasiun ${originCode}`, city: originCode };
+  const destinationInfo = stationNames[destinationCode] || { name: `Stasiun ${destinationCode}`, city: destinationCode };
+
+  return [
+    {
+      id: 'argo-parahyangan-001',
+      trainId: 101,
+      train_number: 'KA-001',
+      train_name: 'Argo Parahyangan',
+      train_type: 'Executive',
+      operator: 'PT KAI',
+      origin_station: {
+        code: originCode,
+        name: originInfo.name,
+        city: originInfo.city
+      },
+      destination_station: {
+        code: destinationCode,
+        name: destinationInfo.name,
+        city: destinationInfo.city
+      },
+      departure_time: '05:00:00',
+      arrival_time: '09:30:00',
+      duration_minutes: 270,
+      duration: '4j 30m',
+      travel_date: date,
+      status: 'scheduled',
+      harga: 250000,
+      price: 250000,
+      stok_kursi: 35,
+      availableSeats: 35,
+      class_type: 'Executive',
+      trainClass: 'Executive',
+      facilities: ['AC Dingin', 'Makanan Premium', 'WiFi Gratis', 'Stop Kontak', 'Bantal & Selimut', 'TV Personal'],
+      insurance: 5000,
+      seat_type: 'AD',
+      route_type: 'Direct',
+      schedule_id: 'schedule-001',
+      isRefundable: true,
+      isCheckinAvailable: true,
+      isBestDeal: true,
+      isHighDemand: false,
+      isMultiSegment: false,
+      classes: [{
+        class_type: 'Executive',
+        price: 250000,
+        originalPrice: 300000,
+        availableSeats: 35,
+        insurance: 5000,
+        facilities: ['AC Dingin', 'Makanan Premium', 'WiFi Gratis', 'Stop Kontak', 'Bantal & Selimut', 'TV Personal']
+      }]
+    },
+    {
+      id: 'lodaya-002',
+      trainId: 102,
+      train_number: 'LDY-002',
+      train_name: 'Lodaya',
+      train_type: 'Business',
+      operator: 'PT KAI',
+      origin_station: {
+        code: originCode,
+        name: originInfo.name,
+        city: originInfo.city
+      },
+      destination_station: {
+        code: destinationCode,
+        name: destinationInfo.name,
+        city: destinationInfo.city
+      },
+      departure_time: '08:00:00',
+      arrival_time: '14:00:00',
+      duration_minutes: 360,
+      duration: '6j 0m',
+      travel_date: date,
+      status: 'scheduled',
+      harga: 180000,
+      price: 180000,
+      stok_kursi: 25,
+      availableSeats: 25,
+      class_type: 'Business',
+      trainClass: 'Business',
+      facilities: ['AC', 'Makanan Ringan', 'Stop Kontak', 'Bantal', 'TV Komunal'],
+      insurance: 5000,
+      seat_type: 'AD',
+      route_type: 'Direct',
+      schedule_id: 'schedule-002',
+      isRefundable: true,
+      isCheckinAvailable: true,
+      isBestDeal: false,
+      isHighDemand: false,
+      isMultiSegment: false,
+      classes: [{
+        class_type: 'Business',
+        price: 180000,
+        originalPrice: 216000,
+        availableSeats: 25,
+        insurance: 5000,
+        facilities: ['AC', 'Makanan Ringan', 'Stop Kontak', 'Bantal', 'TV Komunal']
+      }]
+    },
+    {
+      id: 'argo-wilis-003',
+      trainId: 103,
+      train_number: 'AW-003',
+      train_name: 'Argo Wilis',
+      train_type: 'Executive',
+      operator: 'PT KAI',
+      origin_station: {
+        code: originCode,
+        name: originInfo.name,
+        city: originInfo.city
+      },
+      destination_station: {
+        code: destinationCode,
+        name: destinationInfo.name,
+        city: destinationInfo.city
+      },
+      departure_time: '09:30:00',
+      arrival_time: '15:00:00',
+      duration_minutes: 330,
+      duration: '5j 30m',
+      travel_date: date,
+      status: 'scheduled',
+      harga: 280000,
+      price: 280000,
+      stok_kursi: 20,
+      availableSeats: 20,
+      class_type: 'Executive',
+      trainClass: 'Executive',
+      facilities: ['AC Dingin', 'Makanan Premium', 'WiFi Gratis', 'Stop Kontak', 'Bantal & Selimut', 'TV Personal'],
+      insurance: 5000,
+      seat_type: 'AD',
+      route_type: 'Direct',
+      schedule_id: 'schedule-003',
+      isRefundable: true,
+      isCheckinAvailable: true,
+      isBestDeal: false,
+      isHighDemand: true,
+      isMultiSegment: false,
+      classes: [{
+        class_type: 'Executive',
+        price: 280000,
+        originalPrice: 336000,
+        availableSeats: 20,
+        insurance: 5000,
+        facilities: ['AC Dingin', 'Makanan Premium', 'WiFi Gratis', 'Stop Kontak', 'Bantal & Selimut', 'TV Personal']
+      }]
+    }
+  ];
+};
+
+// Komponen FilterAndSort dengan perbaikan untuk multi-segment
 const FilterAndSort = ({
   onSort,
   onFilter,
   onPriceRange,
   activeSort,
   activeFilter,
-  priceRange
+  priceRange,
+  showMultiSegment,
+  setShowMultiSegment,
+  origin,
+  destination
 }: {
-  onSort: (sortType: string) => void,
-  onFilter: (filterType: string) => void,
-  onPriceRange: (range: { min: number, max: number }) => void,
-  activeSort: string,
-  activeFilter: string,
-  priceRange: { min: number, max: number }
+  onSort: (sortType: string) => void;
+  onFilter: (filterType: string) => void;
+  onPriceRange: (range: { min: number, max: number }) => void;
+  activeSort: string;
+  activeFilter: string;
+  priceRange: { min: number, max: number };
+  showMultiSegment: boolean;
+  setShowMultiSegment: (show: boolean) => void;
+  origin: string;
+  destination: string;
 }) => {
   const priceRanges = [
     { label: 'Semua Harga', min: 0, max: 1000000 },
@@ -417,8 +683,49 @@ const FilterAndSort = ({
     { label: '> Rp 500.000', min: 500000, max: 1000000 }
   ];
 
+  // Cek apakah rute ini mendukung multi-segment
+  const originName = originCodeToName(origin);
+  const destinationName = originCodeToName(destination);
+  const normalizedOrigin = originName.toLowerCase();
+  const normalizedDest = destinationName.toLowerCase();
+  
+  const isBandungGambirRoute = 
+    (normalizedOrigin.includes('bandung') && normalizedDest.includes('gambir')) ||
+    (normalizedOrigin.includes('gambir') && normalizedDest.includes('bandung'));
+  
+  const showMultiSegmentOption = isBandungGambirRoute;
+
   return (
     <div className="space-y-6">
+      {/* Toggle Multi Segment */}
+      {showMultiSegmentOption && (
+        <div>
+          <h3 className="font-semibold text-gray-700 mb-3">Tipe Perjalanan</h3>
+          <div className="bg-gray-100 p-1.5 rounded-lg border border-gray-200">
+            <button
+              onClick={() => setShowMultiSegment(false)}
+              className={`w-full px-3 py-2 rounded-lg transition-all flex items-center gap-2 ${!showMultiSegment
+                  ? 'bg-[#FD7E14] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              <span>🚂</span>
+              <span>Perjalanan Langsung</span>
+            </button>
+            <button
+              onClick={() => setShowMultiSegment(true)}
+              className={`w-full px-3 py-2 rounded-lg transition-all flex items-center gap-2 ${showMultiSegment
+                  ? 'bg-[#FD7E14] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              <span>🔄</span>
+              <span>Dengan Transit Kereta</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       <div>
         <h3 className="font-semibold text-gray-700 mb-3">Urutkan berdasarkan:</h3>
         <div className="space-y-2">
@@ -433,8 +740,8 @@ const FilterAndSort = ({
               key={option.id}
               onClick={() => onSort(option.id)}
               className={`w-full text-left px-3 py-2 rounded-lg transition-all flex items-center gap-2 ${activeSort === option.id
-                ? 'bg-[#FD7E14] text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-[#FD7E14] text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
             >
               <span>{option.icon}</span>
@@ -444,72 +751,56 @@ const FilterAndSort = ({
         </div>
       </div>
 
-      <div>
-        <h3 className="font-semibold text-gray-700 mb-3">Filter kelas:</h3>
-        <div className="space-y-2">
-          {[
-            { id: 'all', label: 'Semua Kelas', icon: '🎫' },
-            { id: 'executive', label: 'Eksekutif', icon: '⭐' },
-            { id: 'business', label: 'Bisnis', icon: '💼' },
-            { id: 'economy', label: 'Ekonomi', icon: '🚉' }
-          ].map((option) => (
-            <button
-              key={option.id}
-              onClick={() => onFilter(option.id)}
-              className={`w-full text-left px-3 py-2 rounded-lg transition-all flex items-center gap-2 ${activeFilter === option.id
-                ? 'bg-[#FD7E14] text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-            >
-              <span>{option.icon}</span>
-              <span>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="font-semibold text-gray-700 mb-3">Rentang Harga:</h3>
-        <div className="space-y-2">
-          {priceRanges.map((range, index) => (
-            <button
-              key={index}
-              onClick={() => onPriceRange(range)}
-              className={`w-full text-left px-3 py-2 rounded-lg transition-all ${priceRange.min === range.min && priceRange.max === range.max
-                ? 'bg-[#FD7E14] text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-            >
-              {range.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="pt-4 border-t">
-        <h3 className="font-semibold text-gray-700 mb-3">Fasilitas:</h3>
-        <div className="space-y-2">
-          {[
-            { id: 'wifi', label: 'WiFi', icon: '📶' },
-            { id: 'food', label: 'Makanan', icon: '🍱' },
-            { id: 'tv', label: 'TV', icon: '📺' },
-            { id: 'power', label: 'Stop Kontak', icon: '🔌' }
-          ].map((facility) => (
-            <div key={facility.id} className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span>{facility.icon}</span>
-                <span className="text-gray-700">{facility.label}</span>
-              </div>
-              <input type="checkbox" className="h-4 w-4 text-[#FD7E14] rounded" />
+      {!showMultiSegment && (
+        <>
+          <div>
+            <h3 className="font-semibold text-gray-700 mb-3">Filter kelas:</h3>
+            <div className="space-y-2">
+              {[
+                { id: 'all', label: 'Semua Kelas', icon: '🎫' },
+                { id: 'executive', label: 'Eksekutif', icon: '⭐' },
+                { id: 'business', label: 'Bisnis', icon: '💼' },
+                { id: 'economy', label: 'Ekonomi', icon: '🚉' }
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => onFilter(option.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-all flex items-center gap-2 ${activeFilter === option.id
+                      ? 'bg-[#FD7E14] text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                >
+                  <span>{option.icon}</span>
+                  <span>{option.label}</span>
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-gray-700 mb-3">Rentang Harga:</h3>
+            <div className="space-y-2">
+              {priceRanges.map((range, index) => (
+                <button
+                  key={index}
+                  onClick={() => onPriceRange(range)}
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-all ${priceRange.min === range.min && priceRange.max === range.max
+                      ? 'bg-[#FD7E14] text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
 
-// Komponen TrainCard yang lebih informatif
+// Komponen TrainCard yang diperbarui
 const TrainCard = ({ train, passengers, onSelect }: {
   train: any,
   passengers: number,
@@ -518,10 +809,7 @@ const TrainCard = ({ train, passengers, onSelect }: {
   const [selectedClass, setSelectedClass] = useState<any>(null);
   const [showAllFacilities, setShowAllFacilities] = useState(false);
 
-  // Format facilities untuk ditampilkan
-  const displayFacilities = showAllFacilities
-    ? train.classes?.[0]?.facilities || []
-    : (train.classes?.[0]?.facilities || []).slice(0, 3);
+  const isMultiSegment = train.isMultiSegment;
 
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300 hover:border-orange-300">
@@ -531,21 +819,29 @@ const TrainCard = ({ train, passengers, onSelect }: {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-xl font-bold text-gray-900">
-                {train.train_name}
+                {isMultiSegment ? `${train.segments?.length || 2} Segmen Perjalanan` : train.train_name}
               </h3>
-              <span className="px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full">
-                No. {train.train_number}
-              </span>
-              {train.train_type && (
+              {isMultiSegment ? (
                 <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800 rounded-full">
-                  {train.train_type}
+                  Dengan Transit Kereta
                 </span>
+              ) : (
+                <>
+                  <span className="px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full">
+                    No. {train.train_number}
+                  </span>
+                  {train.train_type && (
+                    <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800 rounded-full">
+                      {train.train_type}
+                    </span>
+                  )}
+                </>
               )}
             </div>
             <div className="flex items-center gap-3 text-sm text-gray-600">
               <span className="flex items-center gap-1">
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.414L11 9.586V6z" clipRule="evenodd" />
                 </svg>
                 {train.duration}
               </span>
@@ -555,56 +851,141 @@ const TrainCard = ({ train, passengers, onSelect }: {
                 </svg>
                 Berangkat {train.departure_time}
               </span>
+              {isMultiSegment && train.connectionTime && (
+                <span className="flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
+                  </svg>
+                  Waktu transfer: {train.connectionTime} menit
+                </span>
+              )}
             </div>
           </div>
 
           <div className="text-right">
-            {train.isAvailable === false ? (
-              <span className="px-3 py-1 text-sm font-semibold bg-red-100 text-red-800 rounded-full">
-                Penuh
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 text-sm font-semibold bg-green-100 text-green-800 rounded-full">
+                Tersedia
               </span>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 text-sm font-semibold bg-green-100 text-green-800 rounded-full">
-                  Tersedia
-                </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Schedule Timeline untuk Multi-Segmen */}
+        {isMultiSegment && train.segments && (
+          <div className="mb-6 space-y-4">
+            {train.segments.map((segment: any, index: number) => (
+              <div key={index} className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center">
+                    <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs mr-3">
+                      {index + 1}
+                    </div>
+                    <h4 className="font-bold text-gray-800">{segment.trainName}</h4>
+                    <span className="ml-2 px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded">
+                      {segment.trainType}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-semibold text-gray-700">
+                      Rp {segment.price.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between mt-3">
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-gray-900">{segment.departureTime}</div>
+                    <div className="text-sm text-gray-800">{segment.origin}</div>
+                  </div>
+                  
+                  <div className="flex-1 mx-4">
+                    <div className="relative">
+                      <div className="h-1 bg-gradient-to-r from-blue-500 via-orange-500 to-green-500 w-full rounded-full"></div>
+                      <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-blue-600 rounded-full border-2 border-white shadow"></div>
+                      <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-green-600 rounded-full border-2 border-white shadow"></div>
+                      <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                        <svg className="w-6 h-6 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="text-center mt-2">
+                      <span className="text-sm text-gray-600">{segment.duration}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-gray-900">{segment.arrivalTime}</div>
+                    <div className="text-sm text-gray-800">{segment.destination}</div>
+                  </div>
+                </div>
+                
+                <div className="mt-2 text-sm text-gray-600">
+                  <span className="flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                    {segment.availableSeats} kursi tersedia
+                  </span>
+                </div>
+              </div>
+            ))}
+            
+            {/* Connection Info */}
+            {train.connectionTime && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-yellow-800">Waktu Transfer</p>
+                    <p className="text-xs text-yellow-700">
+                      Anda memiliki {train.connectionTime} menit untuk pindah kereta di stasiun transit.
+                      Pastikan tiba minimal 30 menit sebelum keberangkatan kereta berikutnya.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
-        </div>
+        )}
 
-        {/* Schedule Timeline */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">{train.departure_time}</div>
-              <div className="text-sm font-medium text-gray-800">{train.origin_station?.city}</div>
-              <div className="text-xs text-gray-500 mt-1">{train.origin_station?.name}</div>
-            </div>
+        {/* Schedule Timeline untuk Single Segment */}
+        {!isMultiSegment && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{train.departure_time}</div>
+                <div className="text-sm font-medium text-gray-800">{train.origin_station?.city}</div>
+                <div className="text-xs text-gray-500 mt-1">{train.origin_station?.name}</div>
+              </div>
 
-            <div className="flex-1 mx-8">
-              <div className="relative">
-                <div className="h-1 bg-gradient-to-r from-blue-500 via-orange-500 to-green-500 w-full rounded-full"></div>
-                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-blue-600 rounded-full border-2 border-white shadow"></div>
-                <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-green-600 rounded-full border-2 border-white shadow"></div>
-                <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                  <svg className="w-6 h-6 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                  </svg>
+              <div className="flex-1 mx-8">
+                <div className="relative">
+                  <div className="h-1 bg-gradient-to-r from-blue-500 via-orange-500 to-green-500 w-full rounded-full"></div>
+                  <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-blue-600 rounded-full border-2 border-white shadow"></div>
+                  <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-3 h-3 bg-green-600 rounded-full border-2 border-white shadow"></div>
+                  <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                    <svg className="w-6 h-6 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="text-center mt-2">
+                  <span className="text-sm text-gray-600">{train.duration} perjalanan</span>
                 </div>
               </div>
-              <div className="text-center mt-2">
-                <span className="text-sm text-gray-600">{train.duration} perjalanan</span>
+
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{train.arrival_time}</div>
+                <div className="text-sm font-medium text-gray-800">{train.destination_station?.city}</div>
+                <div className="text-xs text-gray-500 mt-1">{train.destination_station?.name}</div>
               </div>
             </div>
-
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">{train.arrival_time}</div>
-              <div className="text-sm font-medium text-gray-800">{train.destination_station?.city}</div>
-              <div className="text-xs text-gray-500 mt-1">{train.destination_station?.name}</div>
-            </div>
           </div>
-        </div>
+        )}
 
         {/* Facilities */}
         {train.classes?.[0]?.facilities && train.classes[0].facilities.length > 0 && (
@@ -621,7 +1002,7 @@ const TrainCard = ({ train, passengers, onSelect }: {
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {displayFacilities.map((facility: string, idx: number) => (
+              {train.classes[0].facilities.slice(0, showAllFacilities ? undefined : 3).map((facility: string, idx: number) => (
                 <span
                   key={idx}
                   className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-full border border-blue-100 flex items-center gap-1"
@@ -632,7 +1013,9 @@ const TrainCard = ({ train, passengers, onSelect }: {
                   {facility === 'Stop Kontak' && '🔌'}
                   {facility === 'AC' && '❄️'}
                   {facility === 'Bantal' && '🛏️'}
-                  {facility === 'Sleeper' && '😴'}
+                  {facility === 'Transfer Antar Kereta' && '🔄'}
+                  {facility === 'Asuransi Perjalanan' && '🛡️'}
+                  {facility === 'Bantuan Porter' && '🧳'}
                   {facility}
                 </span>
               ))}
@@ -646,32 +1029,20 @@ const TrainCard = ({ train, passengers, onSelect }: {
             <div
               key={index}
               className={`p-4 rounded-lg border-2 cursor-pointer transition-all hover:border-[#FD7E14] hover:shadow-md ${selectedClass === trainClass
-                ? 'border-[#FD7E14] bg-orange-50'
-                : 'border-gray-200'
+                  ? 'border-[#FD7E14] bg-orange-50'
+                  : 'border-gray-200'
                 }`}
               onClick={() => {
-                if (trainClass.availableSeats > 0) {
-                  setSelectedClass(trainClass);
-                }
+                setSelectedClass(trainClass);
               }}
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h4 className="font-bold text-gray-800 text-lg">{trainClass.class_type}</h4>
-                    {trainClass.availableSeats <= 5 && trainClass.availableSeats > 0 ? (
-                      <span className="px-2 py-1 text-xs font-semibold bg-red-100 text-red-800 rounded-full">
-                        Hanya {trainClass.availableSeats} kursi tersisa!
-                      </span>
-                    ) : trainClass.availableSeats === 0 ? (
-                      <span className="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">
-                        Habis
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">
-                        Tersedia
-                      </span>
-                    )}
+                    <span className="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">
+                      Tersedia
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-4 text-sm text-gray-600">
@@ -709,7 +1080,7 @@ const TrainCard = ({ train, passengers, onSelect }: {
         </div>
 
         {/* Action Button */}
-        {selectedClass && selectedClass.availableSeats > 0 && (
+        {selectedClass && (
           <div className="mt-6 pt-6 border-t border-gray-200">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
@@ -752,7 +1123,7 @@ const TrainCard = ({ train, passengers, onSelect }: {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                   </svg>
-                  Pilih & Lanjutkan
+                  {isMultiSegment ? 'Pilih Perjalanan dengan Transit' : 'Pilih & Lanjutkan'}
                 </button>
               </div>
             </div>
@@ -778,13 +1149,19 @@ const TrainResultsContent = () => {
     fastestDuration: ''
   });
 
-  const origin = searchParams.get('origin') || 'origin';
-  const destination = searchParams.get('destination') || 'destination';
+  const origin = searchParams.get('origin') || 'BD';
+  const destination = searchParams.get('destination') || 'GMR';
   const departureDate = searchParams.get('departureDate') || new Date().toISOString().split('T')[0];
   const passengers = parseInt(searchParams.get('passengers') || '1');
 
   // Gunakan custom hook
-  const { trains, loading, error } = useFetchTrains(
+  const {
+    trains,
+    loading,
+    error,
+    showMultiSegment,
+    setShowMultiSegment
+  } = useFetchTrains(
     origin,
     destination,
     departureDate,
@@ -806,14 +1183,34 @@ const TrainResultsContent = () => {
           }
         });
 
-        if (train.duration_minutes < fastestDuration) {
+        // Untuk multi-segment, hitung total duration
+        if (train.isMultiSegment) {
+          const segments = train.segments || [];
+          const totalMinutes = segments.reduce((sum: number, segment: any) => {
+            const match = segment.duration.match(/(\d+)j\s*(\d+)m/);
+            if (match) {
+              const hours = parseInt(match[1]);
+              const minutes = parseInt(match[2]);
+              return sum + (hours * 60 + minutes);
+            }
+            return sum + 180; // default 3 hours
+          }, 0);
+          
+          // Tambahkan waktu transfer
+          const connectionTime = train.connectionTime || 0;
+          const totalWithTransfer = totalMinutes + connectionTime;
+          
+          if (totalWithTransfer < fastestDuration) {
+            fastestDuration = totalWithTransfer;
+          }
+        } else if (train.duration_minutes && train.duration_minutes < fastestDuration) {
           fastestDuration = train.duration_minutes;
         }
       });
 
       const hours = Math.floor(fastestDuration / 60);
       const minutes = fastestDuration % 60;
-      const durationString = `${hours}j ${minutes}m`;
+      const durationString = fastestDuration === Infinity ? '' : `${hours}j ${minutes}m`;
 
       setSearchStats({
         totalTrains: trains.length,
@@ -830,8 +1227,8 @@ const TrainResultsContent = () => {
 
     let result = [...trains];
 
-    // Filter by class
-    if (filterType !== 'all') {
+    // Filter by class (hanya untuk non-multi-segment)
+    if (filterType !== 'all' && !showMultiSegment) {
       result = result.map(train => {
         const filteredClasses = train.classes?.filter((cls: any) => {
           const classType = (cls.class_type || '').toLowerCase();
@@ -848,7 +1245,7 @@ const TrainResultsContent = () => {
       }).filter(Boolean) as any[];
     }
 
-    // Filter by price range
+    // Filter by price range (untuk semua tipe)
     result = result.map(train => {
       const filteredClasses = train.classes?.filter((cls: any) => {
         return cls.price >= priceRange.min && cls.price <= priceRange.max;
@@ -887,6 +1284,25 @@ const TrainResultsContent = () => {
             : 0;
           return bMaxPrice - aMaxPrice;
         case 'duration':
+          if (a.isMultiSegment && b.isMultiSegment) {
+            // Untuk multi-segment, hitung total duration termasuk waktu transfer
+            const getTotalMinutes = (train: any) => {
+              if (!train.segments) return Infinity;
+              const segmentMinutes = train.segments.reduce((sum: number, segment: any) => {
+                const match = segment.duration.match(/(\d+)j\s*(\d+)m/);
+                if (match) {
+                  const hours = parseInt(match[1]);
+                  const minutes = parseInt(match[2]);
+                  return sum + (hours * 60 + minutes);
+                }
+                return sum + 180;
+              }, 0);
+              return segmentMinutes + (train.connectionTime || 0);
+            };
+            return getTotalMinutes(a) - getTotalMinutes(b);
+          }
+          if (a.isMultiSegment) return 1; // Multi-segment diakhir
+          if (b.isMultiSegment) return -1;
           return (a.duration_minutes || 0) - (b.duration_minutes || 0);
         default:
           return 0;
@@ -894,52 +1310,92 @@ const TrainResultsContent = () => {
     });
 
     return result;
-  }, [trains, sortType, filterType, priceRange]);
+  }, [trains, sortType, filterType, priceRange, showMultiSegment]);
 
   const handleSelectTrain = (train: any, trainClass: any) => {
-    // Persiapkan data untuk booking
-    const bookingData = {
-      scheduleId: train.schedule_id || train.id,
-      trainId: train.id || 1,
-      trainName: train.train_name,
-      trainType: trainClass.class_type,
-      departureTime: train.departure_time,
-      arrivalTime: train.arrival_time,
-      duration: train.duration,
-      origin: train.origin_station?.city || originCodeToName(origin),
-      destination: train.destination_station?.city || originCodeToName(destination),
-      price: trainClass.price,
-      availableSeats: trainClass.availableSeats,
-      departureDate: departureDate,
-      trainCode: train.train_number,
-      originCity: train.origin_station?.city,
-      destinationCity: train.destination_station?.city,
-      // Additional data for booking page
-      passengerCount: passengers,
-      totalAmount: trainClass.price * passengers,
-      selectedClass: trainClass,
-      trainDetails: train
-    };
+    if (train.isMultiSegment) {
+      // Handle multi-segment booking
+      const segmentData = train.segments.map((segment: any, index: number) => ({
+        segmentId: segment.segmentId,
+        trainId: segment.trainId,
+        trainName: segment.trainName,
+        trainType: segment.trainType,
+        departureTime: segment.departureTime,
+        arrivalTime: segment.arrivalTime,
+        duration: segment.duration,
+        origin: segment.origin,
+        destination: segment.destination,
+        price: segment.price,
+        availableSeats: segment.availableSeats,
+        departureDate: segment.departureDate,
+        scheduleId: segment.scheduleId
+      }));
 
-    // Simpan ke sessionStorage
-    sessionStorage.setItem('selectedTrain', JSON.stringify(bookingData));
-    console.log('🚂 Saved train to session:', bookingData);
+      const bookingData = {
+        isMultiSegment: true,
+        segments: segmentData,
+        totalPrice: trainClass.price,
+        totalDuration: train.duration,
+        passengerCount: passengers,
+        connectionTime: train.connectionTime,
+        selectedClass: trainClass,
+        trainDetails: train
+      };
 
-    // Redirect ke booking page dengan query params
-    const queryParams = new URLSearchParams({
-      scheduleId: bookingData.scheduleId,
-      trainId: bookingData.trainId.toString(),
-      trainName: bookingData.trainName,
-      trainType: bookingData.trainType,
-      departureTime: bookingData.departureTime,
-      origin: bookingData.origin,
-      destination: bookingData.destination,
-      price: bookingData.price.toString(),
-      departureDate: bookingData.departureDate,
-      passengers: passengers.toString()
-    });
+      sessionStorage.setItem('selectedMultiSegment', JSON.stringify(bookingData));
+      
+      // Redirect ke booking page dengan data multi-segment
+      const queryParams = new URLSearchParams({
+        isMultiSegment: 'true',
+        segments: JSON.stringify(segmentData),
+        totalPrice: trainClass.price.toString(),
+        totalDuration: train.duration,
+        passengers: passengers.toString(),
+        connectionTime: train.connectionTime?.toString() || '30'
+      });
 
-    router.push(`/booking?${queryParams.toString()}`);
+      router.push(`/booking?${queryParams.toString()}`);
+    } else {
+      // Handle single segment booking
+      const bookingData = {
+        scheduleId: train.schedule_id || train.id,
+        trainId: train.trainId,
+        trainName: train.train_name,
+        trainType: trainClass.class_type,
+        departureTime: train.departure_time,
+        arrivalTime: train.arrival_time,
+        duration: train.duration,
+        origin: train.origin_station?.city || originCodeToName(origin),
+        destination: train.destination_station?.city || originCodeToName(destination),
+        price: trainClass.price,
+        availableSeats: trainClass.availableSeats,
+        departureDate: departureDate,
+        trainCode: train.train_number,
+        originCity: train.origin_station?.city,
+        destinationCity: train.destination_station?.city,
+        passengerCount: passengers,
+        totalAmount: trainClass.price * passengers,
+        selectedClass: trainClass,
+        trainDetails: train
+      };
+
+      sessionStorage.setItem('selectedTrain', JSON.stringify(bookingData));
+      
+      const queryParams = new URLSearchParams({
+        scheduleId: bookingData.scheduleId,
+        trainId: bookingData.trainId.toString(),
+        trainName: bookingData.trainName,
+        trainType: bookingData.trainType,
+        departureTime: bookingData.departureTime,
+        origin: bookingData.origin,
+        destination: bookingData.destination,
+        price: bookingData.price.toString(),
+        departureDate: bookingData.departureDate,
+        passengers: passengers.toString()
+      });
+
+      router.push(`/booking?${queryParams.toString()}`);
+    }
   };
 
   const handleRetrySearch = () => {
@@ -960,9 +1416,14 @@ const TrainResultsContent = () => {
                 </svg>
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">Mencari Kereta...</h2>
-            <p className="text-gray-600">Sedang mencari kereta yang tersedia untuk perjalanan Anda</p>
-            <p className="text-sm text-gray-500 mt-2">Harap tunggu sebentar</p>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">
+              {showMultiSegment ? 'Mencari Opsi Perjalanan dengan Transit...' : 'Mencari Kereta...'}
+            </h2>
+            <p className="text-gray-600">
+              {showMultiSegment 
+                ? 'Sedang mencari opsi perjalanan multi-segmen untuk Anda'
+                : 'Sedang mencari kereta yang tersedia untuk perjalanan Anda'}
+            </p>
           </div>
         </div>
       </div>
@@ -984,7 +1445,9 @@ const TrainResultsContent = () => {
                   <span className="font-semibold">Perhatian:</span> {error}
                 </p>
                 <p className="text-xs text-yellow-600 mt-1">
-                  Anda melihat data contoh. Fitur pencarian sesungguhnya akan tersedia segera.
+                  {showMultiSegment
+                    ? 'Menampilkan data contoh untuk opsi perjalanan dengan transit.'
+                    : 'Anda melihat data contoh. Fitur pencarian sesungguhnya akan tersedia segera.'}
                 </p>
               </div>
             </div>
@@ -1003,8 +1466,14 @@ const TrainResultsContent = () => {
                   </svg>
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-800">Hasil Pencarian Kereta</h1>
-                  <p className="text-gray-600">Berikut adalah kereta yang tersedia untuk perjalanan Anda</p>
+                  <h1 className="text-2xl font-bold text-gray-800">
+                    {showMultiSegment ? 'Hasil Pencarian Perjalanan dengan Transit' : 'Hasil Pencarian Kereta'}
+                  </h1>
+                  <p className="text-gray-600">
+                    {showMultiSegment
+                      ? 'Opsi perjalanan dengan transit kereta untuk rute Anda'
+                      : 'Berikut adalah kereta yang tersedia untuk perjalanan Anda'}
+                  </p>
                 </div>
               </div>
 
@@ -1039,7 +1508,7 @@ const TrainResultsContent = () => {
                   <div className="bg-white/80 backdrop-blur-sm rounded-lg p-3 border border-gray-200">
                     <div className="text-xs text-gray-500 mb-1">Statistik</div>
                     <div className="font-semibold text-gray-800">
-                      {searchStats.totalTrains} Kereta • {searchStats.totalClasses} Kelas
+                      {searchStats.totalTrains} {showMultiSegment ? 'Opsi' : 'Kereta'} • {searchStats.totalClasses} Kelas
                     </div>
                   </div>
                 )}
@@ -1086,28 +1555,30 @@ const TrainResultsContent = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-500">Durasi Tercepat</div>
-                  <div className="text-xl font-bold text-blue-600">
-                    {searchStats.fastestDuration}
+            {searchStats.fastestDuration && (
+              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-gray-500">Durasi Tercepat</div>
+                    <div className="text-xl font-bold text-blue-600">
+                      {searchStats.fastestDuration}
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clipRule="evenodd" />
+                    </svg>
                   </div>
                 </div>
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clipRule="evenodd" />
-                  </svg>
-                </div>
               </div>
-            </div>
+            )}
 
             <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm text-gray-500">Kereta Tersedia</div>
+                  <div className="text-sm text-gray-500">Tersedia</div>
                   <div className="text-xl font-bold text-orange-600">
-                    {searchStats.totalTrains} Kereta
+                    {searchStats.totalTrains} {showMultiSegment ? 'Opsi' : 'Kereta'}
                   </div>
                 </div>
                 <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
@@ -1144,6 +1615,10 @@ const TrainResultsContent = () => {
                 activeSort={sortType}
                 activeFilter={filterType}
                 priceRange={priceRange}
+                showMultiSegment={showMultiSegment}
+                setShowMultiSegment={setShowMultiSegment}
+                origin={origin}
+                destination={destination}
               />
             </div>
           </div>
@@ -1157,8 +1632,16 @@ const TrainResultsContent = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">Tidak ada kereta yang ditemukan</h3>
-                <p className="text-gray-500 mb-6">Silakan ubah filter atau coba tanggal lain</p>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">
+                  {showMultiSegment 
+                    ? 'Tidak ada opsi perjalanan dengan transit yang ditemukan'
+                    : 'Tidak ada kereta yang ditemukan'}
+                </h3>
+                <p className="text-gray-500 mb-6">
+                  {showMultiSegment
+                    ? 'Perjalanan dengan transit hanya tersedia untuk rute Bandung-Gambir'
+                    : 'Silakan ubah filter atau coba tanggal lain'}
+                </p>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center">
                   <button
                     onClick={handleRetrySearch}
@@ -1180,16 +1663,18 @@ const TrainResultsContent = () => {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                       <p className="text-sm text-gray-600">
-                        Menampilkan <span className="font-semibold text-gray-800">{filteredTrains.length}</span> kereta
-                        {filterType !== 'all' && ` • Filter: ${filterType.charAt(0).toUpperCase() + filterType.slice(1)}`}
+                        Menampilkan <span className="font-semibold text-gray-800">{filteredTrains.length}</span> {showMultiSegment ? 'opsi perjalanan' : 'kereta'}
+                        {filterType !== 'all' && !showMultiSegment && ` • Filter: ${filterType.charAt(0).toUpperCase() + filterType.slice(1)}`}
                         {sortType !== 'earliest' && ` • Urutkan: ${sortType}`}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="text-sm text-gray-600">
-                        Harga: <span className="font-semibold">Rp {priceRange.min.toLocaleString('id-ID')} - Rp {priceRange.max.toLocaleString('id-ID')}</span>
-                      </div>
+                      {!showMultiSegment && (
+                        <div className="text-sm text-gray-600">
+                          Harga: <span className="font-semibold">Rp {priceRange.min.toLocaleString('id-ID')} - Rp {priceRange.max.toLocaleString('id-ID')}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1205,11 +1690,13 @@ const TrainResultsContent = () => {
                   ))}
                 </div>
 
-                {/* Pagination atau info tambahan */}
+                {/* Info tambahan */}
                 <div className="mt-8 pt-8 border-t border-gray-200">
                   <div className="text-center">
                     <p className="text-gray-600">
-                      📍 Perhatikan waktu keberangkatan dan pastikan tiba di stasiun minimal 30 menit sebelum keberangkatan.
+                      {showMultiSegment
+                        ? '⚠️ Perhatikan waktu transfer antara kereta dan pastikan tiba di stasiun transit minimal 45 menit sebelum keberangkatan kereta berikutnya.'
+                        : '📍 Perhatikan waktu keberangkatan dan pastikan tiba di stasiun minimal 30 menit sebelum keberangkatan.'}
                     </p>
                     <p className="text-sm text-gray-500 mt-2">
                       Harga sudah termasuk PPN 10%. Biaya tambahan seperti asuransi akan ditambahkan saat checkout.
@@ -1239,7 +1726,6 @@ const TrainResultsContent = () => {
   );
 };
 
-// Export utama dengan Suspense
 export default function SearchTrainsPage() {
   return (
     <Suspense fallback={

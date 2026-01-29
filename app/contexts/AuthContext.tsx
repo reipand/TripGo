@@ -56,7 +56,7 @@ interface AuthContextType {
   clearErrors: () => void;
   checkSession: () => Promise<boolean>;
   forceUpdateRole: (role: 'admin' | 'super_admin' | 'staff' | 'user') => Promise<void>;
-  getToken: () => Promise<string | null>; // ADDED THIS
+  getToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -116,17 +116,49 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const retryCount = useRef(0);
   const maxRetries = 3;
 
-  // ADDED: getToken function inside the component
+  // Helper functions untuk PKCE (untuk Google login)
+  const generatePKCEVerifier = (): string => {
+    const array = new Uint8Array(32);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      crypto.getRandomValues(array);
+    } else {
+      // Fallback untuk lingkungan tanpa crypto
+      for (let i = 0; i < array.length; i++) {
+        array[i] = Math.floor(Math.random() * 256);
+      }
+    }
+    return btoa(String.fromCharCode(...array))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  };
+
+  const generatePKCEChallenge = async (verifier: string): Promise<string> => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    
+    if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return btoa(String.fromCharCode(...new Uint8Array(hash)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+    } else {
+      // Fallback untuk lingkungan tanpa crypto.subtle
+      return verifier;
+    }
+  };
+
+  // Get token function
   const getToken = useCallback(async (): Promise<string | null> => {
     try {
-      // Try from supabase client first
       const { data } = await supabase.auth.getSession();
       if (data?.session?.access_token) {
         console.log('[getToken] Token from supabase.auth.getSession:', data.session.access_token?.substring(0, 20) + '...');
         return data.session.access_token;
       }
       
-      // Try localStorage with common patterns
+      // Try localStorage
       const possibleKeys = ['sb-auth-token', 'supabase.auth.token', 'access_token'];
       for (const key of possibleKeys) {
         try {
@@ -134,7 +166,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (stored) {
             console.log(`[getToken] Found key: ${key}`);
             
-            // Try to parse as JSON
             try {
               const parsed = JSON.parse(stored);
               const token = parsed?.currentSession?.access_token || 
@@ -147,7 +178,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 return token;
               }
             } catch (parseError) {
-              // If it's not JSON, it might be a plain token string
               if (typeof stored === 'string' && stored.length > 100) {
                 console.log(`[getToken] Plain token from ${key}: ${stored.substring(0, 20)}...`);
                 return stored;
@@ -640,7 +670,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       isMounted.current = false;
       subscription.unsubscribe();
     };
-  }, [fetchUserProfile, pathname, router]); // Added pathname and router to dependencies
+  }, [fetchUserProfile, pathname, router]);
 
   // Handle auth page redirects
   useEffect(() => {
@@ -843,25 +873,79 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [clearErrors, isAdminEmail]);
 
-  const signInWithGoogle = useCallback(async (callbackUrl?: string) => {
+  // FIXED: signInWithGoogle function dengan PKCE
+  const signInWithGoogle = useCallback(async (redirectTo?: string) => {
+    setLoading(true);
+    setSupabaseError(null);
+    
     try {
-      const callbackUrlToUse = callbackUrl || `${window.location.origin}/api/auth/callback`;
+      const redirectUrl = redirectTo || `${window.location.origin}/dashboard`;
+      
+      // Generate PKCE code verifier dan challenge
+      const codeVerifier = generatePKCEVerifier();
+      const codeChallenge = await generatePKCEChallenge(codeVerifier);
+      
+      console.log('[AuthContext] Starting Google OAuth with PKCE');
+      console.log('[AuthContext] Redirect URL:', redirectUrl);
+      console.log('[AuthContext] Code verifier generated:', !!codeVerifier);
+      console.log('[AuthContext] Code challenge generated:', !!codeChallenge);
+      
+      // Simpan code_verifier di localStorage sebagai fallback (akan di-clear di callback)
+      try {
+        localStorage.setItem('sb-auth-code-verifier', codeVerifier);
+      } catch (e) {
+        console.warn('[AuthContext] Could not save code verifier to localStorage:', e);
+      }
+      
+      // Juga simpan di cookie untuk server-side access
+      document.cookie = `sb-auth-code-verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax; secure`;
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: callbackUrlToUse,
+          redirectTo: `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
           },
+          scopes: 'email profile',
+          // PKCE parameters
+          code_challenge_method: 's256',
+          code_challenge: codeChallenge,
         },
       });
+
+      if (error) {
+        console.error('[AuthContext] Google sign in error:', error);
+        setSupabaseError(error.message);
+        throw error;
+      }
+
+      if (!data?.url) {
+        const error = new Error('No OAuth URL returned');
+        console.error('[AuthContext] No OAuth URL returned');
+        setSupabaseError('Tidak dapat memulai proses login Google');
+        throw error;
+      }
+
+      console.log('[AuthContext] OAuth URL generated, redirecting...');
       
-      return { data, error };
+      // Redirect ke Google OAuth
+      window.location.href = data.url;
+      
+      return { error: null };
+      
     } catch (error: any) {
-      console.warn('Google OAuth Exception:', error);
-      return { error: error as AuthError };
+      console.error('[AuthContext] Google sign in exception:', error);
+      const authError: AuthError = {
+        name: error.name || 'AuthApiError',
+        message: error.message || 'Terjadi kesalahan saat login dengan Google',
+        status: error.status || 500
+      };
+      setSupabaseError(authError.message);
+      return { error: authError };
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -892,10 +976,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         localStorage.removeItem('myBookings');
         localStorage.removeItem('userProfile');
         localStorage.removeItem('tripCoins');
+        localStorage.removeItem('sb-auth-code-verifier'); // Clear PKCE verifier
         sessionStorage.clear();
       } catch (storageError) {
         console.warn('Error clearing storage:', storageError);
       }
+      
+      // Clear cookies
+      document.cookie = 'sb-auth-code-verifier=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;';
       
       // Redirect ke login
       setTimeout(() => {
@@ -996,7 +1084,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     networkError,
     supabaseError,
     isInitialized,
-    getToken, // ADDED THIS
+    getToken,
     signUp,
     signIn,
     signInWithGoogle,
@@ -1029,7 +1117,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     networkError,
     supabaseError,
     isInitialized,
-    getToken, // ADDED THIS
+    getToken,
     signUp,
     signIn,
     signInWithGoogle,
