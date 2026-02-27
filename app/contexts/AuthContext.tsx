@@ -116,39 +116,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const retryCount = useRef(0);
   const maxRetries = 3;
 
-  // Helper functions untuk PKCE (untuk Google login)
-  const generatePKCEVerifier = (): string => {
-    const array = new Uint8Array(32);
-    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-      crypto.getRandomValues(array);
-    } else {
-      // Fallback untuk lingkungan tanpa crypto
-      for (let i = 0; i < array.length; i++) {
-        array[i] = Math.floor(Math.random() * 256);
-      }
-    }
-    return btoa(String.fromCharCode(...array))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  };
-
-  const generatePKCEChallenge = async (verifier: string): Promise<string> => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    
-    if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
-      const hash = await crypto.subtle.digest('SHA-256', data);
-      return btoa(String.fromCharCode(...new Uint8Array(hash)))
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-    } else {
-      // Fallback untuk lingkungan tanpa crypto.subtle
-      return verifier;
-    }
-  };
-
   // Get token function
   const getToken = useCallback(async (): Promise<string | null> => {
     try {
@@ -873,45 +840,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [clearErrors, isAdminEmail]);
 
-  // FIXED: signInWithGoogle function dengan PKCE
   const signInWithGoogle = useCallback(async (redirectTo?: string) => {
-    setLoading(true);
-    setSupabaseError(null);
-    
+    clearErrors();
+
     try {
-      const redirectUrl = redirectTo || `${window.location.origin}/dashboard`;
-      
-      // Generate PKCE code verifier dan challenge
-      const codeVerifier = generatePKCEVerifier();
-      const codeChallenge = await generatePKCEChallenge(codeVerifier);
-      
-      console.log('[AuthContext] Starting Google OAuth with PKCE');
-      console.log('[AuthContext] Redirect URL:', redirectUrl);
-      console.log('[AuthContext] Code verifier generated:', !!codeVerifier);
-      console.log('[AuthContext] Code challenge generated:', !!codeChallenge);
-      
-      // Simpan code_verifier di localStorage sebagai fallback (akan di-clear di callback)
-      try {
-        localStorage.setItem('sb-auth-code-verifier', codeVerifier);
-      } catch (e) {
-        console.warn('[AuthContext] Could not save code verifier to localStorage:', e);
-      }
-      
-      // Juga simpan di cookie untuk server-side access
-      document.cookie = `sb-auth-code-verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax; secure`;
-      
+      const safeRedirect = redirectTo && redirectTo.startsWith('/') ? redirectTo : '/dashboard';
+      const callbackUrl = `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(safeRedirect)}`;
+
+      console.log('[AuthContext] Starting Google OAuth');
+      console.log('[AuthContext] Callback URL:', callbackUrl);
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
+          redirectTo: callbackUrl,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
           },
           scopes: 'email profile',
-          // PKCE parameters
-          code_challenge_method: 's256',
-          code_challenge: codeChallenge,
         },
       });
 
@@ -944,10 +891,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       };
       setSupabaseError(authError.message);
       return { error: authError };
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [clearErrors]);
 
   const signOut = useCallback(async () => {
     console.log('[AuthContext] Starting signOut...');

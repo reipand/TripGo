@@ -1105,30 +1105,37 @@ function MyBookingsPageContent() {
   useEffect(() => {
     const justPaidFromUrl = searchParams.get('justPaid');
     const bookingCodeFromUrl = searchParams.get('bookingCode');
+    const orderIdFromUrl = searchParams.get('orderId') || searchParams.get('order_id');
 
-    if (justPaidFromUrl === 'true' && bookingCodeFromUrl) {
-      setJustPaidHighlight(bookingCodeFromUrl);
+    if (justPaidFromUrl === 'true' && (bookingCodeFromUrl || orderIdFromUrl)) {
+      setJustPaidHighlight(bookingCodeFromUrl || orderIdFromUrl || null);
       // Clean URL tanpa refresh
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!justPaidHighlight || bookings.length === 0) return;
+    if (!justPaidHighlight.startsWith('ORDER-')) return;
+
+    const matchedBooking = bookings.find((b) => b.order_id === justPaidHighlight);
+    if (matchedBooking?.booking_code) {
+      setJustPaidHighlight(matchedBooking.booking_code);
+    }
+  }, [justPaidHighlight, bookings]);
+
   // Realtime Subscription dengan error handling yang lebih baik
   const setupRealtimeSubscription = useCallback(() => {
     if (!user?.id) {
-      console.log('❌ Tidak ada user untuk realtime subscription');
       return;
     }
 
     // Cleanup existing subscription
     if (supabaseChannelRef.current) {
-      console.log('🔌 Membersihkan subscription lama');
       supabase.removeChannel(supabaseChannelRef.current);
       supabaseChannelRef.current = null;
     }
-
-    console.log('🔌 Setting up realtime subscription for user:', user.id);
 
     const channel = supabase
       .channel(`my-bookings-${user.id}`)
@@ -1141,7 +1148,6 @@ function MyBookingsPageContent() {
           filter: `user_id=eq.${user.id}`
         },
         (payload: any) => {
-          console.log('🔔 Realtime update received:', payload);
           setLastUpdate(new Date());
           
           // Show notification for important updates
@@ -1168,13 +1174,11 @@ function MyBookingsPageContent() {
           filter: `user_id=eq.${user.id}`
         },
         (payload: any) => {
-          console.log('💳 Transaction update:', payload);
           setLastUpdate(new Date());
           loadBookings(true);
         }
       )
       .subscribe((status: string) => {
-        console.log('🔌 Subscription status:', status);
         setRealtimeConnected(status === 'SUBSCRIBED');
         
         if (status === 'CHANNEL_ERROR') {
@@ -1189,7 +1193,6 @@ function MyBookingsPageContent() {
     supabaseChannelRef.current = channel;
 
     return () => {
-      console.log('🔌 Cleaning up subscription');
       if (supabaseChannelRef.current) {
         supabase.removeChannel(supabaseChannelRef.current);
         supabaseChannelRef.current = null;

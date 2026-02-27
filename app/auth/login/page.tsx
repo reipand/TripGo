@@ -4,7 +4,6 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/app/contexts/AuthContext';
-import { supabase } from '@/app/lib/supabaseClient';
 
 // --- Komponen Ikon ---
 const EyeIcon = () => (
@@ -52,39 +51,6 @@ const GoogleIcon = () => (
     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
   </svg>
 );
-
-// Helper functions untuk PKCE (dipindahkan ke luar komponen)
-const generatePKCEVerifier = (): string => {
-  const array = new Uint8Array(32);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(array);
-  } else {
-    // Fallback untuk lingkungan tanpa crypto
-    for (let i = 0; i < array.length; i++) {
-      array[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  return btoa(String.fromCharCode(...array))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-};
-
-const generatePKCEChallenge = async (verifier: string): Promise<string> => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(verifier);
-  
-  if (typeof crypto !== 'undefined' && crypto.subtle && crypto.subtle.digest) {
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return btoa(String.fromCharCode(...new Uint8Array(hash)))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  } else {
-    // Fallback untuk lingkungan tanpa crypto.subtle
-    return verifier;
-  }
-};
 
 // --- Komponen Login Content ---
 function LoginContent() {
@@ -261,67 +227,15 @@ function LoginContent() {
     setError('');
 
     try {
-      // Method 1: Gunakan Supabase built-in OAuth dengan PKCE otomatis
-      const { data, error: socialError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-          scopes: 'email profile',
-        },
-      });
-
-      if (socialError) {
-        throw socialError;
-      }
-
-      if (data?.url) {
-        // Redirect ke Google OAuth
-        window.location.href = data.url;
+      const { error: googleError } = await signInWithGoogle(redirectUrl);
+      if (googleError) {
+        setError(googleError.message || 'Terjadi kesalahan saat login dengan Google');
+        setLoading(false);
       }
     } catch (err: any) {
       console.error('Google login error:', err);
-      
-      // Fallback: Method 2 - Manual PKCE (jika method 1 gagal)
-      try {
-        // Generate PKCE code verifier dan challenge
-        const codeVerifier = generatePKCEVerifier();
-        const codeChallenge = await generatePKCEChallenge(codeVerifier);
-        
-        // Simpan code_verifier di cookie (bisa diakses oleh server)
-        document.cookie = `sb-auth-code-verifier=${codeVerifier}; path=/; max-age=600; SameSite=Lax`;
-        
-        // Construct OAuth URL dengan PKCE parameters
-        const { data: oauthData, error: oauthError } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirectUrl)}`,
-            queryParams: {
-              access_type: 'offline',
-              prompt: 'consent',
-            },
-            scopes: 'email profile',
-            // PKCE parameters
-            code_challenge_method: 's256',
-            code_challenge: codeChallenge,
-          },
-        });
-
-        if (oauthError) {
-          throw oauthError;
-        }
-
-        if (oauthData?.url) {
-          window.location.href = oauthData.url;
-        }
-      } catch (fallbackErr: any) {
-        setError('Terjadi kesalahan saat login dengan Google');
-        console.error('Fallback Google login error:', fallbackErr);
-        setLoading(false);
-      }
+      setError(err?.message || 'Terjadi kesalahan saat login dengan Google');
+      setLoading(false);
     }
   };
 

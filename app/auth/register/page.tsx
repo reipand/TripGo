@@ -75,7 +75,7 @@ const GoogleIcon = () => (
 function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signUp, signInWithGoogle, loading: authLoading } = useAuth();
+  const { signIn, signInWithGoogle, loading: authLoading } = useAuth();
   
   const [formData, setFormData] = useState({
     // Informasi dasar
@@ -240,7 +240,6 @@ const createUserViaAPI = async (email: string, password: string, userData: any) 
 
     // Coba login otomatis
     try {
-      const { signIn } = useAuth();
       const loginResult = await signIn(email, password);
       
       if (loginResult.error) {
@@ -331,19 +330,10 @@ const handleSubmit = async (e: React.FormEvent) => {
   setSuccess('');
 
   try {
-    // Simpan redirect URL dengan key yang konsisten
-    if (redirectUrl) {
-      localStorage.setItem('oauth_redirect', redirectUrl);
-    }
-
-    // Panggil signInWithGoogle tanpa parameter
-    const result = await signInWithGoogle();
+    const result = await signInWithGoogle(redirectUrl || '/dashboard');
     
     if (result?.error) {
       const errorMsg = result.error.message?.toLowerCase() || '';
-      
-      // Clean localStorage on error
-      localStorage.removeItem('oauth_redirect');
       
       if (errorMsg.includes('popup_closed_by_user')) {
         setError('Pop-up login ditutup. Silakan coba lagi.');
@@ -361,7 +351,6 @@ const handleSubmit = async (e: React.FormEvent) => {
     
   } catch (err: any) {
     console.error('Google sign up error:', err);
-    localStorage.removeItem('oauth_redirect');
     
     const errorMsg = err.message?.toLowerCase() || '';
     if (errorMsg.includes('popup')) {

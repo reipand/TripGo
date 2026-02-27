@@ -79,23 +79,27 @@ function generateTicketNumber(): string {
 }
 
 // Helper untuk verifikasi booking exists
-async function verifyBookingExists(bookingCode: string, orderId?: string): Promise<boolean> {
+async function verifyBookingExists(bookingCode?: string, orderId?: string): Promise<boolean> {
   try {
     if (!(await tableExists('bookings_kereta'))) return false;
     
+    if (!bookingCode && !orderId) {
+      return false;
+    }
+
     let query = supabase
       .from('bookings_kereta')
       .select('id')
       .limit(1);
-    
-    if (bookingCode) {
+
+    if (bookingCode && orderId) {
+      query = query.or(`booking_code.eq.${bookingCode},order_id.eq.${orderId}`);
+    } else if (bookingCode) {
       query = query.eq('booking_code', bookingCode);
-    } else if (orderId) {
-      query = query.eq('order_id', orderId);
     } else {
-      return false;
+      query = query.eq('order_id', orderId!);
     }
-    
+
     const { data, error } = await query;
     
     if (error) {
@@ -264,18 +268,22 @@ async function updateBookingWithRetry(orderId: string, bookingCode: string, upda
     }
     
     // Coba cari booking lagi setelah mungkin dibuat
-    let query = supabase
-      .from('bookings_kereta');
-    
-    if (orderId) {
-      query = query.eq('order_id', orderId);
-    } else if (bookingCode) {
-      query = query.eq('booking_code', bookingCode);
-    } else {
+    if (!orderId && !bookingCode) {
       return { success: false, error: 'No identifier provided for booking update' };
     }
-    
-    const { data: existingBooking, error: findError } = await query.select('id').limit(1);
+
+    const identifierColumn = orderId ? 'order_id' : 'booking_code';
+    const identifierValue = orderId || bookingCode;
+
+    const { data: existingBooking, error: findError } = await supabase
+      .from('bookings_kereta')
+      .select('id')
+      .eq(identifierColumn, identifierValue)
+      .limit(1);
+
+    if (findError) {
+      console.warn(`⚠️ Failed to find booking before update: ${findError.message}`);
+    }
     
     // Jika booking tidak ditemukan, coba buat lagi dengan data minimal
     if (!existingBooking || existingBooking.length === 0) {
@@ -319,12 +327,8 @@ async function updateBookingWithRetry(orderId: string, bookingCode: string, upda
     let updateQuery = supabase
       .from('bookings_kereta')
       .update(updateData);
-    
-    if (orderId) {
-      updateQuery = updateQuery.eq('order_id', orderId);
-    } else if (bookingCode) {
-      updateQuery = updateQuery.eq('booking_code', bookingCode);
-    }
+
+    updateQuery = updateQuery.eq(identifierColumn, identifierValue);
     
     const { error } = await updateQuery;
     
@@ -495,6 +499,7 @@ export async function POST(request: NextRequest) {
   const orderId = body.order_id || body.orderId;
   const bookingCode = body.booking_code || body.bookingCode;
   const rawStatus = body.status || body.transaction_status || body.payment_status;
+  const requestPaymentMethod = body.payment_method || body.paymentMethod;
   
   if (!orderId && !bookingCode) {
     return NextResponse.json({
@@ -581,8 +586,8 @@ export async function POST(request: NextRequest) {
       bookingUpdateData.payment_date = new Date().toISOString();
     }
     
-    if (body.payment_method && await hasColumn('bookings_kereta', 'payment_method')) {
-      bookingUpdateData.payment_method = body.payment_method;
+    if (requestPaymentMethod && await hasColumn('bookings_kereta', 'payment_method')) {
+      bookingUpdateData.payment_method = requestPaymentMethod;
     }
     
     // Extra data dari request untuk membantu create fallback
@@ -590,7 +595,7 @@ export async function POST(request: NextRequest) {
       customer_email: body.customer_email,
       customer_name: body.customer_name,
       amount: body.amount,
-      payment_method: body.payment_method,
+      payment_method: requestPaymentMethod,
       train_name: body.train_name,
       train_type: body.train_type,
       origin: body.origin,
@@ -632,7 +637,7 @@ export async function POST(request: NextRequest) {
         consistency_check: consistencyCheck,
         timestamp: new Date().toISOString()
       },
-      warnings: []
+      warnings: [] as string[]
     };
     
     // Add warnings
@@ -712,19 +717,25 @@ export async function GET(request: NextRequest) {
   
   try {
     // Get all related data
+    const [paymentTableExists, bookingTableExists, ticketsTableExists] = await Promise.all([
+      tableExists('payment_transactions'),
+      tableExists('bookings_kereta'),
+      tableExists('tickets')
+    ]);
+
     const [paymentData, bookingData, ticketData] = await Promise.all([
-      orderId && tableExists('payment_transactions') 
+      orderId && paymentTableExists
         ? supabase.from('payment_transactions').select('*').eq('order_id', orderId).maybeSingle()
         : Promise.resolve({ data: null }),
       
-      (orderId || bookingCode) && tableExists('bookings_kereta')
+      (orderId || bookingCode) && bookingTableExists
         ? supabase.from('bookings_kereta')
             .select('*')
             .or(`order_id.eq.${orderId},booking_code.eq.${bookingCode}`)
             .maybeSingle()
         : Promise.resolve({ data: null }),
       
-      bookingCode && tableExists('tickets')
+      bookingCode && ticketsTableExists
         ? supabase.from('tickets').select('*').eq('booking_id', bookingCode).maybeSingle()
         : Promise.resolve({ data: null })
     ]);

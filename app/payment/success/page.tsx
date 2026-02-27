@@ -1,7 +1,7 @@
 // app/payment/success/page.tsx
 'use client';
 
-import React, { useState, useEffect, Suspense, useCallback } from 'react';
+import React, { useState, useEffect, Suspense, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   CheckCircle, Download, Clock, Train, User, Calendar,
@@ -158,6 +158,14 @@ const decodeEmail = (email: string): string => {
   }
 };
 
+const isAbortError = (error: any): boolean => {
+  return (
+    error?.name === 'AbortError' ||
+    error?.message?.includes('AbortError') ||
+    error?.message?.includes('operation was aborted')
+  );
+};
+
 // --- Komponen Transit Info ---
 const TransitInfo = ({ booking }: { booking: BookingData }) => {
   const hasTransit = booking.transit_station;
@@ -261,15 +269,16 @@ const TransitInfo = ({ booking }: { booking: BookingData }) => {
 };
 // Fungsi untuk mengambil data dari database dengan polling cerdas
 async function fetchBookingData(supabase: any, bookingCode: string, orderId: string) {
-  console.log('🔍 Fetching booking data for:', { bookingCode, orderId });
-
   // Fungsi internal untuk query dengan retry
   const queryWithRetry = async (queryFn: Function, maxRetries = 3) => {
     let lastError;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         return await queryFn();
-      } catch (error) {
+      } catch (error: any) {
+        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+          throw error;
+        }
         lastError = error;
         if (attempt < maxRetries - 1) {
           await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, attempt)));
@@ -289,7 +298,9 @@ async function fetchBookingData(supabase: any, bookingCode: string, orderId: str
         .from('bookings_kereta')
         .select('*');
       
-      if (bookingCode) {
+      if (bookingCode && orderId) {
+        query = query.or(`booking_code.eq.${bookingCode},order_id.eq.${orderId}`);
+      } else if (bookingCode) {
         query = query.eq('booking_code', bookingCode);
       } else if (orderId) {
         query = query.eq('order_id', orderId);
@@ -303,35 +314,21 @@ async function fetchBookingData(supabase: any, bookingCode: string, orderId: str
 
     if (bookingQuery) {
       foundBooking = bookingQuery;
-      console.log('✅ Found booking:', foundBooking.booking_code);
     }
 
     if (!foundBooking) {
-      console.log('⚠️ Booking not found, checking recent bookings...');
-      
-      // Coba cari berdasarkan user jika login
-      const { data: recentBookings } = await supabase
-        .from('bookings_kereta')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(5);
-      
-      if (recentBookings && recentBookings.length > 0) {
-        foundBooking = recentBookings[0];
-        console.log('✅ Using most recent booking:', foundBooking.booking_code);
-      }
-    }
-
-    if (!foundBooking) {
-      console.log('⏳ Booking data not yet available, will retry...');
       throw new Error('Booking data not yet available in database');
     }
 
-    console.log('✅ Booking data found, processing...');
     return await processBookingData(supabase, foundBooking, orderId || bookingCode);
 
   } catch (error: any) {
-    console.error('❌ Error in fetchBookingData:', error?.message || error);
+    if (isAbortError(error)) {
+      throw error;
+    }
+    if (!(error?.message?.includes('not yet available'))) {
+      console.error('[fetchBookingData]', error?.message || error);
+    }
     throw error;
   }
 }
@@ -351,7 +348,6 @@ async function processBookingData(supabase: any, booking: any, orderId: string) 
       console.warn('⚠️ Error fetching payment:', paymentError.message);
     } else if (paymentResult && paymentResult.length > 0) {
       paymentData = paymentResult[0];
-      console.log('✅ Payment data found:', paymentData.order_id);
     }
   } catch (paymentError) {
     console.warn('⚠️ Error in payment query:', paymentError);
@@ -371,7 +367,6 @@ async function processBookingData(supabase: any, booking: any, orderId: string) 
       console.warn('⚠️ Error fetching ticket:', ticketError.message);
     } else if (ticketResult && ticketResult.length > 0) {
       ticketData = ticketResult[0];
-      console.log('✅ Ticket data found:', ticketData.ticket_number);
     }
   } catch (ticketError) {
     console.warn('⚠️ Error in ticket query:', ticketError);
@@ -390,7 +385,6 @@ async function processBookingData(supabase: any, booking: any, orderId: string) 
       console.warn('⚠️ Error fetching passengers:', passengersError.message);
     } else {
       passengersData = passengersResult || [];
-      console.log(`✅ Found ${passengersData.length} passengers`);
     }
   } catch (passengersError) {
     console.warn('⚠️ Error in passengers query:', passengersError);
@@ -424,16 +418,29 @@ const PaymentSuccessContent = () => {
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null);
   const [ticketData, setTicketData] = useState<TicketData | null>(null);
   const [passengers, setPassengers] = useState<any[]>([]);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   // Inisialisasi Supabase client
   const [supabase, setSupabase] = useState<any>(null);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const initSupabase = async () => {
       try {
         const { createClient } = await import('@/app/lib/supabaseClient');
         const client = createClient();
-        setSupabase(client);
+        if (isMountedRef.current) {
+          setSupabase(client);
+        }
       } catch (error) {
         console.error('Failed to initialize Supabase:', error);
       }
@@ -511,8 +518,6 @@ const PaymentSuccessContent = () => {
       
       if (error) {
         console.warn('⚠️ Error saving ticket to database:', error.message);
-      } else {
-        console.log('✅ Ticket saved to database');
       }
     } catch (error) {
       console.error('Error saving ticket:', error);
@@ -542,8 +547,7 @@ const PaymentSuccessContent = () => {
     };
     
     setBookingData(decodedBooking);
-    console.log('✅ Booking data processed:', decodedBooking.booking_code);
-    
+
     // Decode email untuk payment
     if (payment) {
       const decodedPayment = {
@@ -553,7 +557,6 @@ const PaymentSuccessContent = () => {
         status: payment.status || 'success'
       };
       setPaymentData(decodedPayment);
-      console.log('✅ Payment data processed:', decodedPayment.order_id);
     } else {
       // Buat payment data dari booking jika tidak ada
       const defaultPayment: PaymentData = {
@@ -575,7 +578,6 @@ const PaymentSuccessContent = () => {
         }
       };
       setPaymentData(defaultPayment);
-      console.log('✅ Default payment data created');
     }
     
     // Set ticket data
@@ -586,7 +588,6 @@ const PaymentSuccessContent = () => {
         ticket_number: ticket.ticket_number || `TICKET-${Date.now().toString().slice(-8)}`
       };
       setTicketData(decodedTicket);
-      console.log('✅ Ticket data processed:', decodedTicket.ticket_number);
     } else {
       // Buat ticket data dari booking jika tidak ada
       const defaultTicket: TicketData = {
@@ -603,8 +604,7 @@ const PaymentSuccessContent = () => {
         status: 'active'
       };
       setTicketData(defaultTicket);
-      console.log('✅ Default ticket data created:', defaultTicket.ticket_number);
-      
+
       // Simpan ticket ke database
       if (supabase) {
         saveTicketToDatabase(supabase, defaultTicket);
@@ -618,7 +618,6 @@ const PaymentSuccessContent = () => {
         email: decodeEmail(p.email || '')
       }));
       setPassengers(decodedPassengers);
-      console.log(`✅ ${decodedPassengers.length} passengers processed`);
     } else {
       // Buat passenger dari booking jika tidak ada
       const defaultPassenger = {
@@ -628,7 +627,6 @@ const PaymentSuccessContent = () => {
         seat_number: decodedBooking.seat_numbers?.[0] || 'A1'
       };
       setPassengers([defaultPassenger]);
-      console.log('✅ Default passenger created');
     }
     
     // Simpan ke session storage untuk cache
@@ -667,8 +665,7 @@ const PaymentSuccessContent = () => {
       };
       
       sessionStorage.setItem('recentBookingSuccess', JSON.stringify(bookingForStorage));
-      console.log('✅ Saved to session storage');
-      
+
       // Simpan ke localStorage untuk my-bookings
       const existingBookings = localStorage.getItem('myBookings');
       let bookingsArray = [];
@@ -693,8 +690,7 @@ const PaymentSuccessContent = () => {
       
       // Simpan maksimal 50 booking
       localStorage.setItem('myBookings', JSON.stringify(bookingsArray.slice(0, 50)));
-      console.log('✅ Saved to localStorage');
-      
+
     } catch (storageError) {
       console.error('Error saving to storage:', storageError);
     }
@@ -702,35 +698,43 @@ const PaymentSuccessContent = () => {
 
   // Fungsi untuk retry load data dengan exponential backoff
   const retryLoadData = useCallback(async (attempt: number, isInitial = false) => {
+    if (!isMountedRef.current) return;
+
     if (!supabase || attempt >= maxRetries) {
-      setError('Gagal memuat data setelah beberapa percobaan. Data mungkin belum tersedia di database.');
-      setLoading(false);
-      setLastErrorTime(Date.now());
+      if (isMountedRef.current) {
+        setError('Gagal memuat data setelah beberapa percobaan. Data mungkin belum tersedia di database.');
+        setLoading(false);
+        setLastErrorTime(Date.now());
+      }
       return;
     }
 
-    console.log(`🔄 Retry attempt ${attempt + 1}/${maxRetries}`);
-    setRetryCount(attempt);
+    if (isMountedRef.current) {
+      setRetryCount(attempt);
+    }
     
     try {
       const bookingCode = searchParams.get('bookingCode');
-      const orderId = searchParams.get('orderId') || searchParams.get('transaction_id');
-
-      console.log('🔍 Searching with:', { bookingCode, orderId });
+      const orderId =
+        searchParams.get('orderId') ||
+        searchParams.get('order_id') ||
+        searchParams.get('transaction_id');
 
       const data = await fetchBookingData(supabase, bookingCode || '', orderId || '');
+      if (!isMountedRef.current) return;
       processData(data);
       setError(null);
       setLastErrorTime(null);
       setLoading(false);
     } catch (error: any) {
-      console.log(`⚠️ Retry ${attempt + 1} failed:`, error.message);
-      
+      if (isAbortError(error)) {
+        return;
+      }
       // Jika error adalah booking tidak ditemukan, coba sync via API
       if (error.message.includes('not yet available')) {
         try {
           const bookingCode = searchParams.get('bookingCode');
-          const orderId = searchParams.get('orderId');
+          const orderId = searchParams.get('orderId') || searchParams.get('order_id');
           
           // Panggil API untuk memaksa sync booking
           const syncResponse = await fetch('/api/payment/force-sync', {
@@ -744,7 +748,7 @@ const PaymentSuccessContent = () => {
           });
 
           if (syncResponse.ok) {
-            console.log('✅ Force sync successful');
+            // sync successful
           }
         } catch (syncError) {
           console.warn('⚠️ Force sync failed:', syncError);
@@ -754,10 +758,8 @@ const PaymentSuccessContent = () => {
       // Exponential backoff dengan jitter
       const baseDelay = isInitial ? 1000 : 500;
       const delay = Math.min(baseDelay * Math.pow(1.5, attempt) + Math.random() * 500, 10000);
-      
-      console.log(`⏳ Waiting ${Math.round(delay)}ms before next retry...`);
-      
-      setTimeout(() => {
+
+      retryTimeoutRef.current = setTimeout(() => {
         retryLoadData(attempt + 1, false);
       }, delay);
     }
@@ -767,7 +769,6 @@ const PaymentSuccessContent = () => {
   useEffect(() => {
     const loadData = async () => {
       if (!supabase) {
-        console.log('⏳ Waiting for Supabase client...');
         // Tunggu 500ms lalu coba lagi
         setTimeout(() => {
           if (retryCount < 3) {
@@ -784,29 +785,22 @@ const PaymentSuccessContent = () => {
         setLoading(true);
         setError(null);
 
-        console.log('🔄 Loading payment success data from database...');
-
         // Ambil parameter dari URL
         const bookingCode = searchParams.get('bookingCode');
-        const orderId = searchParams.get('orderId');
+        const orderId = searchParams.get('orderId') || searchParams.get('order_id');
         const status = searchParams.get('status');
         const transactionId = searchParams.get('transaction_id');
-
-        console.log('📋 URL Params:', { bookingCode, orderId, status, transactionId });
 
         // Prioritaskan parameter yang tersedia
         let targetBookingCode = bookingCode;
         let targetOrderId = orderId || transactionId;
 
         if (!targetBookingCode && !targetOrderId) {
-          console.warn('⚠️ No booking code, order ID, or transaction ID in URL');
-          
           // Coba ambil dari session storage
           const lastBookingCode = sessionStorage.getItem('lastBookingCode');
           const lastOrderId = sessionStorage.getItem('lastOrderId');
           
           if (lastBookingCode || lastOrderId) {
-            console.log('🔍 Trying with session storage data:', { lastBookingCode, lastOrderId });
             targetBookingCode = lastBookingCode || '';
             targetOrderId = lastOrderId || '';
           } else {
@@ -827,7 +821,6 @@ const PaymentSuccessContent = () => {
         try {
           const sessionBooking = sessionStorage.getItem('recentBookingSuccess');
           if (sessionBooking) {
-            console.log('🔄 Loading from session storage as fallback');
             const parsedBooking = JSON.parse(sessionBooking);
             
             // Validasi data dari session storage
@@ -902,7 +895,7 @@ const PaymentSuccessContent = () => {
       if (lastErrorTime && Date.now() - lastErrorTime < 5000) return; // Skip jika baru error
       
       const bookingCode = searchParams.get('bookingCode');
-      const orderId = searchParams.get('orderId');
+      const orderId = searchParams.get('orderId') || searchParams.get('order_id');
       
       if (bookingCode || orderId) {
         fetchBookingData(supabase, bookingCode || '', orderId || '')
@@ -941,7 +934,8 @@ const PaymentSuccessContent = () => {
 
     // Redirect ke my-bookings dengan parameter
     const bookingCode = bookingData?.booking_code || '';
-    const redirectUrl = `/my-bookings?justPaid=true&bookingCode=${encodeURIComponent(bookingCode)}&fromPayment=true`;
+    const orderId = bookingData?.order_id || '';
+    const redirectUrl = `/my-bookings?justPaid=true&bookingCode=${encodeURIComponent(bookingCode)}&orderId=${encodeURIComponent(orderId)}&fromPayment=true`;
 
     router.replace(redirectUrl);
   }, [isRedirecting, bookingData, router]);

@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/app/lib/supabaseClient';
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 // GET /api/schedules/[id] -> detail jadwal + rute + gerbong + kursi (schema baru)
 export async function GET(
   request: NextRequest,
@@ -16,10 +19,7 @@ export async function GET(
 
     console.log(`🔍 Fetching schedule details for ID: ${id}`);
 
-    // 1. Detail jadwal + info kereta
-    const { data: schedule, error: schedErr } = await supabase
-      .from('jadwal_kereta')
-      .select(`
+    const scheduleSelect = `
         id,
         travel_date,
         status,
@@ -33,11 +33,64 @@ export async function GET(
           jumlah_kursi,
           fasilitas
         )
-      `)
-      .eq('id', id)
-      .single();
+      `;
 
-    if (schedErr) {
+    let schedule: any = null;
+    let schedErr: any = null;
+
+    // 1. Detail jadwal + info kereta
+    if (UUID_REGEX.test(id)) {
+      const { data, error } = await supabase
+        .from('jadwal_kereta')
+        .select(scheduleSelect)
+        .eq('id', id)
+        .maybeSingle();
+      schedule = data;
+      schedErr = error;
+    } else {
+      // Fallback: ID mungkin berupa kode kereta (contoh: TR001)
+      console.log(`ℹ️ Non-UUID schedule id detected, resolving by train code: ${id}`);
+
+      const { data: trainRow, error: trainErr } = await supabase
+        .from('kereta')
+        .select('id')
+        .eq('kode_kereta', id)
+        .maybeSingle();
+
+      if (trainErr) {
+        schedErr = trainErr;
+      } else if (trainRow?.id) {
+        const today = new Date().toISOString().split('T')[0];
+
+        const { data: upcomingSchedule, error: upcomingErr } = await supabase
+          .from('jadwal_kereta')
+          .select(scheduleSelect)
+          .eq('train_id', trainRow.id)
+          .gte('travel_date', today)
+          .order('travel_date', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (upcomingSchedule) {
+          schedule = upcomingSchedule;
+          schedErr = null;
+        } else {
+          const { data: anySchedule, error: anyErr } = await supabase
+            .from('jadwal_kereta')
+            .select(scheduleSelect)
+            .eq('train_id', trainRow.id)
+            .order('travel_date', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          schedule = anySchedule;
+          schedErr = anyErr;
+        }
+      } else {
+        schedErr = { message: `Train code not found: ${id}` };
+      }
+    }
+
+    if (schedErr && !schedule) {
       console.error('❌ Error fetching schedule:', schedErr);
       return NextResponse.json({ 
         error: 'Gagal mengambil jadwal', 
@@ -52,6 +105,7 @@ export async function GET(
     }
 
     console.log(`✅ Schedule found: ${schedule.kereta?.nama_kereta || 'Unknown'}`);
+    const resolvedScheduleId = schedule.id;
 
     // 2. Rute berurutan
     const { data: routes, error: routeErr } = await supabase
@@ -80,7 +134,7 @@ export async function GET(
           tipe
         )
       `)
-      .eq('schedule_id', id)
+      .eq('schedule_id', resolvedScheduleId)
       .order('route_order', { ascending: true });
 
     if (routeErr) {
@@ -135,7 +189,7 @@ export async function GET(
           class_type
         )
       `)
-      .eq('schedule_id', id);
+      .eq('schedule_id', resolvedScheduleId);
 
     if (seatErr) {
       console.error('❌ Error fetching seats:', seatErr);
@@ -163,7 +217,7 @@ export async function GET(
           facilities: schedule.kereta.fasilitas
         } : null
       },
-      routes: (routes || []).map(route => ({
+      routes: (routes || []).map((route: any) => ({
         id: route.id,
         schedule_id: route.schedule_id,
         route_order: route.route_order,
@@ -185,18 +239,18 @@ export async function GET(
           type: route.destination_station.tipe
         } : null
       })),
-      coaches: (coaches || []).map(coach => ({
+      coaches: (coaches || []).map((coach: any) => ({
         id: coach.id,
         train_id: coach.train_id,
         coach_code: coach.coach_code,
         class_type: coach.class_type,
         total_seats: coach.total_seats,
         layout: coach.layout,
-        available_seats: (seats || []).filter(seat => 
+        available_seats: (seats || []).filter((seat: any) => 
           seat.coach_id === coach.id && seat.status === 'available'
         ).length
       })),
-      seats: (seats || []).map(seat => ({
+      seats: (seats || []).map((seat: any) => ({
         id: seat.id,
         schedule_id: seat.schedule_id,
         coach_id: seat.coach_id,
