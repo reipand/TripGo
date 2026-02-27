@@ -1,4 +1,3 @@
-// app/api/trains/[trainId]/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -12,18 +11,18 @@ export async function GET(
   { params }: { params: { trainId: string } }
 ) {
   try {
-    const { data: train, error } = await supabase
-      .from('kereta')
+    const { data: wagons, error } = await supabase
+      .from('gerbong')
       .select('*')
-      .eq('id', params.trainId)
-      .single();
+      .eq('train_id', params.trainId)
+      .order('coach_code');
 
     if (error) throw error;
 
-    return NextResponse.json(train);
+    return NextResponse.json(wagons);
   } catch (error) {
     return NextResponse.json(
-      { error: 'Gagal mengambil data kereta' },
+      { error: 'Gagal mengambil data gerbong' },
       { status: 500 }
     );
   }

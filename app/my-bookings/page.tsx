@@ -1717,65 +1717,116 @@ export default function MyBookingsPage() {
 
     input.click();
   }, [applyFilter, activeFilter, bookings]);
+const handleCancelBooking = useCallback(async (bookingCode: string) => {
+  if (!confirm(`Apakah Anda yakin ingin membatalkan booking ${bookingCode}? Dana akan dikembalikan sesuai kebijakan.`)) {
+    return;
+  }
 
-  // Handle cancel booking with refund
-  const handleCancelBooking = useCallback(async (bookingCode: string) => {
-    if (!confirm(`Apakah Anda yakin ingin membatalkan booking ${bookingCode}? Dana akan dikembalikan sesuai kebijakan.`)) {
+  try {
+    const bookingToCancel = bookings.find(b => b.booking_code === bookingCode);
+    if (!bookingToCancel) {
+      alert('Booking tidak ditemukan');
       return;
     }
 
-    try {
-      const bookingToCancel = bookings.find(b => b.booking_code === bookingCode);
-      if (!bookingToCancel) return;
+    // Get current user
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      alert('Anda harus login untuk membatalkan booking');
+      return;
+    }
 
-      // Calculate refund amount (80% refund)
-      const refundAmount = Math.floor((bookingToCancel.final_amount || bookingToCancel.total_amount) * 0.8);
+    // Calculate refund amount (80% refund)
+    const refundAmount = Math.floor((bookingToCancel.final_amount || bookingToCancel.total_amount) * 0.8);
 
-      // Update booking in database
-      const { error } = await supabase
-        .from('bookings_kereta')
-        .update({
+    // Update booking in database with RLS check
+    const { data: existingBooking, error: fetchError } = await supabase
+      .from('bookings_kereta')
+      .select('id, user_id')
+      .eq('booking_code', bookingCode)
+      .single();
+
+    if (fetchError) {
+      console.error('Database fetch error:', fetchError);
+      throw new Error('Booking tidak ditemukan di database');
+    }
+
+    // Verify user owns this booking
+    if (existingBooking.user_id !== userData.user.id) {
+      alert('Anda tidak memiliki izin untuk membatalkan booking ini');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('bookings_kereta')
+      .update({
+        status: 'cancelled',
+        payment_status: 'refunded',
+        refund_amount: refundAmount,
+        refund_status: 'processing',
+        cancellation_reason: 'Dibatalkan oleh pengguna',
+        updated_at: new Date().toISOString()
+      })
+      .eq('booking_code', bookingCode)
+      .eq('user_id', userData.user.id); // RLS check
+
+    if (error) {
+      console.error('Database update error:', error);
+      throw error;
+    }
+
+    // Update local state
+    const updatedBookings = bookings.map(booking => {
+      if (booking.booking_code === bookingCode) {
+        return {
+          ...booking,
           status: 'cancelled',
           payment_status: 'refunded',
           refund_amount: refundAmount,
           refund_status: 'processing',
           cancellation_reason: 'Dibatalkan oleh pengguna',
           updated_at: new Date().toISOString()
-        })
-        .eq('booking_code', bookingCode);
-
-      if (error) {
-        console.error('Database update error:', error);
-        throw error;
+        };
       }
+      return booking;
+    });
 
-      // Update local state
-      const updatedBookings = bookings.map(booking => {
-        if (booking.booking_code === bookingCode) {
-          return {
-            ...booking,
-            status: 'cancelled',
-            payment_status: 'refunded',
-            refund_amount: refundAmount,
-            refund_status: 'processing',
-            cancellation_reason: 'Dibatalkan oleh pengguna',
-            updated_at: new Date().toISOString()
-          };
-        }
-        return booking;
-      });
+    setBookings(updatedBookings);
+    applyFilter(activeFilter, updatedBookings);
 
-      setBookings(updatedBookings);
-      applyFilter(activeFilter, updatedBookings);
-
+    // Save to localStorage
+    try {
       localStorage.setItem('myBookings', JSON.stringify(updatedBookings));
-
-      alert(`Booking ${bookingCode} berhasil dibatalkan. Refund sebesar ${formatCurrency(refundAmount)} akan diproses dalam 3-5 hari kerja.`);
-    } catch (error) {
-      console.error('Error cancelling booking:', error);
-      alert('Gagal membatalkan booking. Silakan coba lagi.');
+    } catch (storageError) {
+      console.warn('Failed to save to localStorage:', storageError);
     }
-  }, [applyFilter, activeFilter, bookings, formatCurrency]);
+
+    // Create notification
+    try {
+      await supabase.from('notifications').insert({
+        user_id: userData.user.id,
+        type: 'booking',
+        title: 'Booking Cancelled',
+        message: `Booking ${bookingCode} has been cancelled. Refund of ${formatCurrency(refundAmount)} will be processed.`,
+        booking_id: existingBooking.id,
+        booking_code: bookingCode,
+        data: { refund_amount: refundAmount }
+      });
+    } catch (notificationError) {
+      console.warn('Failed to create notification:', notificationError);
+    }
+
+    alert(`Booking ${bookingCode} berhasil dibatalkan. Refund sebesar ${formatCurrency(refundAmount)} akan diproses dalam 3-5 hari kerja.`);
+  } catch (error: any) {
+    console.error('Error cancelling booking:', error);
+    
+    if (error.message?.includes('row-level security policy') || error.code === '42501') {
+      alert('Gagal membatalkan booking: Izin tidak cukup. Pastikan booking ini milik Anda.');
+    } else {
+      alert(`Gagal membatalkan booking: ${error.message || 'Terjadi kesalahan tidak diketahui'}`);
+    }
+  }
+}, [applyFilter, activeFilter, bookings, formatCurrency]);
 
   // Handle check-in
   const handleCheckIn = useCallback(async (bookingCode: string) => {
@@ -1823,57 +1874,129 @@ export default function MyBookingsPage() {
     }
   }, [applyFilter, activeFilter, bookings]);
 
-  // Handle send payment link
-  const handleSendPaymentLink = useCallback(async (bookingCode: string) => {
-    const booking = bookings.find(b => b.booking_code === bookingCode);
-    if (!booking) return;
+// Handle send payment link - FIXED VERSION
+const handleSendPaymentLink = useCallback(async (bookingCode: string) => {
+  const booking = bookings.find(b => b.booking_code === bookingCode);
+  if (!booking) {
+    alert('Booking tidak ditemukan');
+    return;
+  }
 
-    if (!confirm(`Kirim link pembayaran ke ${booking.passenger_email || 'email Anda'}?`)) {
+  if (!confirm(`Kirim link pembayaran ke ${booking.passenger_email || 'email Anda'}?`)) {
+    return;
+  }
+
+  try {
+    // First, verify the booking exists and user has permission
+    const { data: existingBooking, error: fetchError } = await supabase
+      .from('bookings_kereta')
+      .select('id, user_id')
+      .eq('booking_code', bookingCode)
+      .single();
+
+    if (fetchError) {
+      console.error('Error fetching booking:', fetchError);
+      throw new Error('Booking tidak ditemukan di database');
+    }
+
+    // Check RLS policy - user can only update their own bookings
+    const { data: userData } = await supabase.auth.getUser();
+    if (existingBooking.user_id && userData.user?.id !== existingBooking.user_id) {
+      alert('Anda tidak memiliki izin untuk mengubah booking ini');
       return;
     }
 
-    try {
-      // Simulate sending payment link
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    // Update database with proper RLS handling
+    const { error } = await supabase
+      .from('bookings_kereta')
+      .update({
+        payment_status: 'paid',
+        status: 'confirmed',
+        payment_method: 'Payment Link',
+        updated_at: new Date().toISOString(),
+        // Ensure the row has a user_id for RLS
+        user_id: existingBooking.user_id || userData.user?.id
+      })
+      .eq('booking_code', bookingCode)
+      .eq('user_id', existingBooking.user_id || userData.user?.id); // RLS filter
 
-      // Update database
-      const { error } = await supabase
-        .from('bookings_kereta')
-        .update({
+    if (error) {
+      console.error('Database update error:', error);
+      throw error;
+    }
+
+    // Update local state
+    const updatedBookings = bookings.map(b => {
+      if (b.booking_code === bookingCode) {
+        return {
+          ...b,
           payment_status: 'paid',
           status: 'confirmed',
           payment_method: 'Payment Link',
           updated_at: new Date().toISOString()
-        })
-        .eq('booking_code', bookingCode);
+        };
+      }
+      return b;
+    });
 
-      if (error) throw error;
+    setBookings(updatedBookings);
+    applyFilter(activeFilter, updatedBookings);
 
-      // Update local state
-      const updatedBookings = bookings.map(b => {
-        if (b.booking_code === bookingCode) {
-          return {
-            ...b,
-            payment_status: 'paid',
-            status: 'confirmed',
-            payment_method: 'Payment Link',
-            updated_at: new Date().toISOString()
-          };
-        }
-        return b;
-      });
-
-      setBookings(updatedBookings);
-      applyFilter(activeFilter, updatedBookings);
-
+    // Save to localStorage
+    try {
       localStorage.setItem('myBookings', JSON.stringify(updatedBookings));
-
-      alert('Link pembayaran telah dikirim. Status booking diperbarui menjadi LUNAS.');
-    } catch (error) {
-      console.error('Send payment link error:', error);
-      alert('Gagal mengirim link pembayaran');
+    } catch (storageError) {
+      console.warn('Failed to save to localStorage:', storageError);
     }
-  }, [applyFilter, activeFilter, bookings]);
+
+    // Show success message
+    alert('Link pembayaran telah dikirim. Status booking diperbarui menjadi LUNAS.');
+    
+    // Also update in Supabase with a more detailed approach
+    try {
+      // Create a notification for the user
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: userData.user?.id,
+          type: 'payment',
+          title: 'Payment Link Sent',
+          message: `Payment link for booking ${bookingCode} has been sent to ${booking.passenger_email}`,
+          booking_id: existingBooking.id,
+          booking_code: bookingCode,
+          data: {
+            action: 'payment_link_sent',
+            email_sent_to: booking.passenger_email
+          }
+        });
+
+      if (notificationError) {
+        console.warn('Failed to create notification:', notificationError);
+      }
+    } catch (notificationErr) {
+      console.warn('Notification creation failed:', notificationErr);
+    }
+
+  } catch (error: any) {
+    // Improved error logging
+    console.error('Send payment link error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      originalError: error
+    });
+    
+    // Check for specific RLS error
+    if (error.message?.includes('row-level security policy') || error.code === '42501') {
+      alert('Gagal mengirim link pembayaran: Izin tidak cukup. Pastikan booking ini milik Anda.');
+    } else if (error.message?.includes('foreign key constraint')) {
+      alert('Gagal mengirim link pembayaran: Data tidak valid. Silakan hubungi admin.');
+    } else {
+      alert(`Gagal mengirim link pembayaran: ${error.message || 'Terjadi kesalahan tidak diketahui'}`);
+    }
+  }
+}, [applyFilter, activeFilter, bookings]);
 
   // Calculate statistics
   const stats = useMemo(() => {

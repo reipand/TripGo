@@ -1,16 +1,6 @@
 // app/api/send-email/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { MailtrapClient } from 'mailtrap';
-
-// Initialize Mailtrap client
-const TOKEN = process.env.MAILTRAP_TOKEN;
-if (!TOKEN) {
-  throw new Error('MAILTRAP_TOKEN is not set in environment variables');
-}
-
-const client = new MailtrapClient({
-  token: TOKEN,
-});
+import nodemailer from 'nodemailer';
 
 // Email sender configuration
 const sender = {
@@ -57,29 +47,48 @@ export async function POST(request: NextRequest) {
     // Get email content based on template
     const { html, text } = getEmailTemplate(template, data);
 
-    // Send email using Mailtrap
-    const response = await client.send({
-      from: sender,
-      to: recipients,
-      subject: subject,
-      html: html,
-      text: text,
-      category: "transactional",
-      custom_variables: {
-        template: template,
-        sent_via: 'tripgo-api'
+    const host = process.env.MAILTRAP_HOST || 'sandbox.smtp.mailtrap.io';
+    const port = Number(process.env.MAILTRAP_PORT || 2525);
+    const user = process.env.MAILTRAP_USER;
+    const pass = process.env.MAILTRAP_PASS;
+
+    if (!user || !pass) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Missing Mailtrap SMTP credentials (MAILTRAP_USER/MAILTRAP_PASS)',
+        },
+        { status: 500 }
+      );
+    }
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      auth: { user, pass },
+    });
+
+    const response = await transporter.sendMail({
+      from: `${sender.name} <${sender.email}>`,
+      to: recipients.map((r) => r.email).join(','),
+      subject,
+      html,
+      text,
+      ...(bccRecipients && { bcc: bccRecipients.map((r) => r.email).join(',') }),
+      ...(ccRecipients && { cc: ccRecipients.map((r) => r.email).join(',') }),
+      headers: {
+        'X-Template-Name': template,
+        'X-Sent-Via': 'tripgo-api',
       },
-      ...(bccRecipients && { bcc: bccRecipients }),
-      ...(ccRecipients && { cc: ccRecipients })
     });
 
     // Log success
-    console.log(`Email sent successfully to ${to}. Mailtrap ID: ${response.success ? 'sent' : 'failed'}`);
+    console.log(`Email sent successfully to ${to}. Message ID: ${response.messageId}`);
 
     return NextResponse.json({
       success: true,
       message: 'Email sent successfully',
-      mailtrapResponse: response,
+      mailtrapResponse: { messageId: response.messageId, accepted: response.accepted, rejected: response.rejected },
       recipientCount: recipients.length
     }, { status: 200 });
 

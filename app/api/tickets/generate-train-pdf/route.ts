@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/app/lib/supabaseClient';
+import { supabaseAdmin } from '@/app/lib/supabase-admin';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
