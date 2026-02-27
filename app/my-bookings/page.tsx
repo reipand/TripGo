@@ -1,7 +1,7 @@
 // app/my-bookings/page.tsx
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -1079,7 +1079,7 @@ const downloadTicketPDF = async (booking: Booking) => {
   }
 };
 
-export default function MyBookingsPage() {
+function MyBookingsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
@@ -2940,5 +2940,13 @@ const handleSendPaymentLink = useCallback(async (bookingCode: string) => {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function MyBookingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <MyBookingsPageContent />
+    </Suspense>
   );
 }

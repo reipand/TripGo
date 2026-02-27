@@ -22,6 +22,22 @@ import {
 
 export default function AdminAnalytics() {
   useAdminRoute(); // Protect route
+
+  type RevenueRow = {
+    total_amount: number | null;
+    booking_date: string;
+    payment_status: string | null;
+  };
+  type BookingRow = {
+    id: string;
+    booking_date: string;
+    status: string | null;
+  };
+  type UserRow = {
+    id: string;
+    created_at: string;
+    last_login: string | null;
+  };
   
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('30d'); // 7d, 30d, 90d, 1y
@@ -89,7 +105,7 @@ export default function AdminAnalytics() {
         .select('*');
 
       // Process revenue data
-      const revenueByDate = revenueData?.reduce((acc: any, booking) => {
+      const revenueByDate = (revenueData as RevenueRow[] | null)?.reduce((acc: Record<string, number>, booking: RevenueRow) => {
         const date = new Date(booking.booking_date).toISOString().split('T')[0];
         acc[date] = (acc[date] || 0) + (booking.total_amount || 0);
         return acc;
@@ -101,7 +117,7 @@ export default function AdminAnalytics() {
       }));
 
       // Process bookings data
-      const bookingsByDate = bookingsData?.reduce((acc: any, booking) => {
+      const bookingsByDate = (bookingsData as BookingRow[] | null)?.reduce((acc: Record<string, number>, booking: BookingRow) => {
         const date = new Date(booking.booking_date).toISOString().split('T')[0];
         acc[date] = (acc[date] || 0) + 1;
         return acc;
@@ -113,7 +129,7 @@ export default function AdminAnalytics() {
       }));
 
       // Process users data
-      const usersByDate = usersData?.reduce((acc: any, user) => {
+      const usersByDate = (usersData as UserRow[] | null)?.reduce((acc: Record<string, number>, user: UserRow) => {
         const date = new Date(user.created_at).toISOString().split('T')[0];
         acc[date] = (acc[date] || 0) + 1;
         return acc;
@@ -125,9 +141,16 @@ export default function AdminAnalytics() {
       }));
 
       // Calculate statistics
-      const totalRevenue = revenueData?.reduce((sum, booking) => sum + (booking.total_amount || 0), 0) || 0;
+      const totalRevenue =
+        (revenueData as RevenueRow[] | null)?.reduce(
+          (sum: number, booking: RevenueRow) => sum + (booking.total_amount || 0),
+          0
+        ) || 0;
       const totalBookings = bookingsData?.length || 0;
-      const successfulBookings = bookingsData?.filter(b => b.status === 'confirmed' || b.status === 'paid').length || 0;
+      const successfulBookings =
+        (bookingsData as BookingRow[] | null)?.filter(
+          (b: BookingRow) => b.status === 'confirmed' || b.status === 'paid'
+        ).length || 0;
       const newUsers = usersData?.length || 0;
       const totalUsers = (await supabase.from('users').select('*', { count: 'exact' })).count || 0;
 
@@ -142,14 +165,20 @@ export default function AdminAnalytics() {
           total: totalBookings,
           growth: 8.3,
           successful: successfulBookings,
-          cancelled: bookingsData?.filter(b => b.status === 'cancelled').length || 0,
+          cancelled:
+            (bookingsData as BookingRow[] | null)?.filter(
+              (b: BookingRow) => b.status === 'cancelled'
+            ).length || 0,
           data: bookingsChartData
         },
         users: {
           total: totalUsers,
           growth: 15.2,
           new: newUsers,
-          active: usersData?.filter(u => u.last_login && new Date(u.last_login) > startDate).length || 0,
+          active:
+            (usersData as UserRow[] | null)?.filter(
+              (u: UserRow) => u.last_login && new Date(u.last_login) > startDate
+            ).length || 0,
           data: usersChartData
         },
         trains: {

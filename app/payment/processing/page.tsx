@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Script from 'next/script';
 
-export default function PaymentProcessingPage() {
+function PaymentProcessingPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
@@ -285,5 +285,13 @@ export default function PaymentProcessingPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function PaymentProcessingPage() {
+  return (
+    <Suspense fallback={null}>
+      <PaymentProcessingPageContent />
+    </Suspense>
   );
 }

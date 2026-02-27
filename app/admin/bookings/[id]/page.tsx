@@ -879,7 +879,7 @@ export default function BookingDetail({ params }: { params: Promise<{ id: string
                       
                       <div className="space-y-3">
                         {segments.map((segment, idx) => {
-                          const trainName = TRAIN_MAPPINGS[segment.train_code]?.name || segment.train_name;
+                          const trainName = TRAIN_MAPPINGS[segment.train_code ?? '']?.name || segment.train_name;
                           return (
                             <div key={idx} className="bg-white rounded-lg p-3 border border-purple-100">
                               <div className="flex justify-between items-start mb-2">
@@ -956,7 +956,7 @@ export default function BookingDetail({ params }: { params: Promise<{ id: string
                             <div className="text-sm font-medium text-gray-500">Destination</div>
                             <div className="text-lg font-bold mt-1">{booking.destination}</div>
                             <div className="text-sm text-gray-500 mt-1">
-                              {booking.arrival_date ? formatDate(booking.arrival_date) : formatDate(booking.departure_date)}
+                              {formatDate(booking.departure_date)}
                             </div>
                             {booking.station_details?.destination && (
                               <div className="text-xs text-gray-500">

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -35,7 +35,7 @@ const UserIcon = () => (
   </svg>
 );
 
-export default function VerifySuccessPage() {
+function VerifySuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get('redirect');
@@ -219,5 +219,13 @@ export default function VerifySuccessPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VerifySuccessPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-[#0A58CA] to-[#0548AD]" />}>
+      <VerifySuccessContent />
+    </Suspense>
   );
 }

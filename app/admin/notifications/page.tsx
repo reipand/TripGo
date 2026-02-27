@@ -103,7 +103,7 @@ export default function AdminNotifications() {
       if (queryError) throw queryError;
 
       // Transform data
-      const transformedData = (data || []).map(item => ({
+      const transformedData = (data || []).map((item: any) => ({
         ...item,
         user_name: item.users?.name,
         user_email: item.users?.email
