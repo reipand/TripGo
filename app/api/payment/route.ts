@@ -8,12 +8,13 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function GET(
-  request: NextRequest,
-  context: { params: { bookingCode: string } }
+  request: NextRequest
 ) {
   try {
-    // Ekstrak bookingCode dari params
-    const bookingCode = (await context.params).bookingCode;
+    const bookingCode =
+      request.nextUrl.searchParams.get('bookingCode') ||
+      request.nextUrl.searchParams.get('booking_code') ||
+      '';
     
     console.log(`🔍 GET payment status untuk booking: ${bookingCode}`);
     
@@ -174,12 +175,16 @@ export async function GET(
 
 // POST endpoint untuk membuat pembayaran baru untuk booking yang ada
 export async function POST(
-  request: NextRequest,
-  context: { params: { bookingCode: string } }
+  request: NextRequest
 ) {
   try {
-    const bookingCode = (await context.params).bookingCode;
     const body = await request.json();
+    const bookingCode =
+      body.bookingCode ||
+      body.booking_code ||
+      request.nextUrl.searchParams.get('bookingCode') ||
+      request.nextUrl.searchParams.get('booking_code') ||
+      '';
     
     console.log(`🔄 POST create payment untuk booking: ${bookingCode}`);
     
@@ -325,12 +330,16 @@ export async function POST(
 
 // PATCH endpoint untuk update manual status pembayaran
 export async function PATCH(
-  request: NextRequest,
-  context: { params: { bookingCode: string } }
+  request: NextRequest
 ) {
   try {
-    const bookingCode = (await context.params).bookingCode;
     const body = await request.json();
+    const bookingCode =
+      body.bookingCode ||
+      body.booking_code ||
+      request.nextUrl.searchParams.get('bookingCode') ||
+      request.nextUrl.searchParams.get('booking_code') ||
+      '';
     const { payment_status, status, notes } = body;
 
     console.log(`✏️ PATCH update payment status untuk booking: ${bookingCode}`);

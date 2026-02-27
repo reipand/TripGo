@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/app/lib/supabaseClient';
 
 interface Params {
-  params: Promise<{ bookingCode: string }>;
+  params: Promise<{ id: string }>;
 }
 
 export async function GET(
@@ -11,7 +11,7 @@ export async function GET(
   { params }: Params
 ) {
   try {
-    const { bookingCode } = await params;
+    const { id: bookingCode } = await params;
 
     if (!bookingCode) {
       return NextResponse.json(
@@ -268,7 +268,7 @@ export async function POST(
   { params }: Params
 ) {
   try {
-    const { bookingCode } = await params;
+    const { id: bookingCode } = await params;
 
     if (!bookingCode) {
       return NextResponse.json(
@@ -403,7 +403,7 @@ export async function PUT(
   { params }: Params
 ) {
   try {
-    const { bookingCode } = await params;
+    const { id: bookingCode } = await params;
     const body = await request.json();
     const { status, notes } = body;
 

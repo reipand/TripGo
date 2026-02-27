@@ -3,10 +3,10 @@ import { supabase } from '@/app/lib/supabaseClient';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const bookingId = params.id;
+    const { id: bookingId } = await params;
     console.log('💰 Fetching payment details for booking:', bookingId);
 
     // Cari booking berdasarkan bookingCode atau orderId

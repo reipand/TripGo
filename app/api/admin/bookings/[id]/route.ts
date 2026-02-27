@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/app/lib/supabaseServer';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export async function GET(
@@ -14,7 +14,7 @@ export async function GET(
 ) {
   try {
     const supabase = createClient();
-    const { id } = params;
+    const { id } = await params;
 
     if (!id) {
       return NextResponse.json(
@@ -74,7 +74,7 @@ export async function PATCH(
 ) {
   try {
     const supabase = createClient();
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     if (!id) {
@@ -187,7 +187,7 @@ export async function DELETE(
 ) {
   try {
     const supabase = createClient();
-    const { id } = params;
+    const { id } = await params;
 
     if (!id) {
       return NextResponse.json(

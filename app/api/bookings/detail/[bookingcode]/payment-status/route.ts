@@ -3,12 +3,12 @@ import { supabase } from '@/app/lib/supabaseClient';
 
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ bookingCode: string }> }
+  context: { params: Promise<{ bookingcode: string }> }
 ) {
   try {
     // PERBAIKAN PENTING: Gunakan await untuk params yang berupa Promise
     const params = await context.params;
-    const bookingCode = params.bookingCode;
+    const bookingCode = params.bookingcode;
     
     console.log(`🔍 [DEBUG] Payment status API called`);
     console.log(`📥 Received params:`, params);

@@ -10,10 +10,10 @@ const supabase = createClient(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { bookingcode: string } }
+  { params }: { params: Promise<{ bookingcode: string }> }
 ) {
   try {
-    const bookingCode = params.bookingcode;
+    const { bookingcode: bookingCode } = await params;
 
     if (!bookingCode) {
       return NextResponse.json(

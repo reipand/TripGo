@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Interface untuk params
 interface RouteParams {
-  params: Promise<{ orderId: string }>;
+  params: Promise<{ orderid: string }>;
 }
 
 export async function GET(
@@ -18,7 +18,7 @@ export async function GET(
 ) {
   try {
     // FIX: Unwrap params dengan benar untuk Next.js 14
-    const { orderId } = await params;
+    const { orderid: orderId } = await params;
     
     console.log(`[API GET] Getting payment status for order: "${orderId}"`);
     console.log(`[API GET] Full URL: ${request.url}`);
@@ -160,7 +160,7 @@ export async function POST(
 ) {
   try {
     // FIX: Unwrap params dengan benar
-    const { orderId } = await params;
+    const { orderid: orderId } = await params;
     
     console.log(`[API POST] Updating order: "${orderId}"`);
     console.log(`[API POST] Full URL: ${request.url}`);

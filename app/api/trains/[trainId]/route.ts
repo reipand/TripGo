@@ -9,13 +9,14 @@ const supabase = createClient(
 
 export async function GET(
   request: Request,
-  { params }: { params: { trainId: string } }
+  { params }: { params: Promise<{ trainId: string }> }
 ) {
   try {
+    const { trainId } = await params;
     const { data: train, error } = await supabase
       .from('kereta')
       .select('*')
-      .eq('id', params.trainId)
+      .eq('id', trainId)
       .single();
 
     if (error) throw error;

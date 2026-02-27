@@ -3,10 +3,10 @@ import { supabase } from '@/app/lib/supabaseClient';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { bookingCode: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const bookingCode = params.bookingCode;
+    const { id: bookingCode } = await params;
     
     if (!bookingCode) {
       return NextResponse.json(

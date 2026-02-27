@@ -8,10 +8,10 @@ const supabase = createClient(
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ scheduleId: string; wagonId: string }> }
+  { params }: { params: Promise<{ id: string; wagonId: string }> }
 ) {
   try {
-    const { scheduleId, wagonId } = await params;
+    const { id, wagonId } = await params;
     const { data: seats, error } = await supabase
       .from('train_seats')
       .select(`
@@ -23,7 +23,7 @@ export async function GET(
           passenger_email
         )
       `)
-      .eq('schedule_id', scheduleId)
+      .eq('schedule_id', id)
       .eq('coach_id', wagonId)
       .order('seat_number');
 

@@ -8,13 +8,14 @@ const supabase = createClient(
 
 export async function GET(
   request: Request,
-  { params }: { params: { trainId: string } }
+  { params }: { params: Promise<{ trainId: string }> }
 ) {
   try {
+    const { trainId } = await params;
     const { data: wagons, error } = await supabase
       .from('gerbong')
       .select('*')
-      .eq('train_id', params.trainId)
+      .eq('train_id', trainId)
       .order('coach_code');
 
     if (error) throw error;

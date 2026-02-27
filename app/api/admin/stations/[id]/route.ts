@@ -4,10 +4,10 @@ import { supabase } from '@/app/lib/supabaseClient';
 // GET /api/admin/stations/[id] - Get single station
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const stationId = context.params.id;
+    const { id: stationId } = await context.params;
 
     const { data, error } = await supabase
       .from('stasiun')
@@ -36,10 +36,10 @@ export async function GET(
 // PUT /api/admin/stations/[id] - Update station
 export async function PUT(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const stationId = context.params.id;
+    const { id: stationId } = await context.params;
     const body = await request.json();
 
     // Validate required fields
@@ -97,10 +97,10 @@ export async function PUT(
 // DELETE /api/admin/stations/[id] - Delete station
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const stationId = context.params.id;
+    const { id: stationId } = await context.params;
 
     // Check if station is used in routes
     const station = await supabase
