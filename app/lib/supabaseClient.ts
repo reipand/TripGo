@@ -23,7 +23,7 @@ export const createClient = () => {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
     }
   });
 };
@@ -42,7 +42,7 @@ export const supabase = (() => {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        detectSessionInUrl: false, // Callback page handles PKCE exchange manually
       }
     });
   }

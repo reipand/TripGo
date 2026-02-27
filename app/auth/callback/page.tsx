@@ -112,19 +112,16 @@ async function ensureUserProfile(authUser: User): Promise<string> {
 function CallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading: authLoading, fetchUserProfile } = useAuth();
+  const { fetchUserProfile } = useAuth();
   const [statusMessage, setStatusMessage] = useState('Memproses autentikasi Google...');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const processedRef = useRef(false);
 
   useEffect(() => {
+    if (processedRef.current) return;
+    processedRef.current = true;
+
     const handleCallback = async () => {
-      if (processedRef.current || authLoading) {
-        return;
-      }
-
-      processedRef.current = true;
-
       try {
         const errorParam = searchParams.get('error');
         const errorDescription = searchParams.get('error_description');
@@ -143,15 +140,10 @@ function CallbackContent() {
         }
 
         const { data: userData, error: userError } = await supabase.auth.getUser();
-        const authUser = userData?.user || user;
+        const authUser = userData?.user;
 
-        if (userError) {
-          throw userError;
-        }
-
-        if (!authUser) {
-          throw new Error('Sesi login tidak ditemukan. Silakan coba lagi.');
-        }
+        if (userError) throw userError;
+        if (!authUser) throw new Error('Sesi login tidak ditemukan. Silakan coba lagi.');
 
         setStatusMessage('Menyinkronkan profil akun...');
         const role = await ensureUserProfile(authUser);
@@ -167,15 +159,13 @@ function CallbackContent() {
       } catch (error: any) {
         console.error('[OAuth Callback] Error:', error);
         setErrorMessage(error?.message || 'Autentikasi gagal.');
-
-        setTimeout(() => {
-          router.replace('/auth/login?error=oauth_failed');
-        }, 1500);
+        setTimeout(() => router.replace('/auth/login?error=oauth_failed'), 1500);
       }
     };
 
     handleCallback();
-  }, [authLoading, fetchUserProfile, router, searchParams, user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (errorMessage) {
     return (

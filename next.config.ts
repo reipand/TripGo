@@ -9,12 +9,20 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'placehold.co',
-        port: '',
-        pathname: '/**', // Izinkan semua path di bawah hostname ini
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com', // Google OAuth profile pictures
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'huwcvhngslkmfljfnxrv.supabase.co', // Supabase storage
+        pathname: '/**',
       },
     ],
   },
-  // Allow cross-origin requests during development
   allowedDevOrigins: ['http://192.168.0.133:3000', 'http://localhost:3000'],
 };
 
