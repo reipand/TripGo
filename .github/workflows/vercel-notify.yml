@@ -1,0 +1,19 @@
+name: "Vercel - trip-go: git check"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  notify-vercel:
+    name: Notify Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - name: notify vercel
+        uses: vercel/repository-dispatch/actions/status@v1
+        with:
+          name: 'Vercel - trip-go: git check'
