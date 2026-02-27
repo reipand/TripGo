@@ -270,99 +270,55 @@ async function getOrCreatePaymentTransaction(
   }
 }
 
-// Simple Midtrans integration dengan perbaikan email
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+const IS_PRODUCTION = process.env.MIDTRANS_IS_PRODUCTION === 'true';
+const MIDTRANS_SNAP_URL = IS_PRODUCTION
+  ? 'https://app.midtrans.com/snap/v1/transactions'
+  : 'https://app.sandbox.midtrans.com/snap/v1/transactions';
+
 async function createMidtransTransaction(data: any) {
   const serverKey = process.env.MIDTRANS_SERVER_KEY;
   const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
 
   if (!serverKey || !clientKey) {
-    console.log('⚠️ Midtrans keys not configured, using mock response');
-    return {
-      token: `MOCK-TOKEN-${Date.now()}`,
-      redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${data.transaction_details.order_id}`,
-      is_fallback: true
-    };
+    console.error('[Midtrans] Server key or client key not configured');
+    throw new Error('Payment gateway tidak dikonfigurasi. Hubungi administrator.');
   }
 
-  // PERBAIKAN: Pastikan email di customer_details sudah valid
-  if (data.customer_details && data.customer_details.email) {
-    const originalEmail = data.customer_details.email;
-    const fixedEmail = validateAndFormatEmailForMidtrans(originalEmail);
-    
-    if (originalEmail !== fixedEmail) {
-      console.log('🔧 Fixed email for Midtrans:', {
-        original: originalEmail,
-        fixed: fixedEmail
-      });
-      data.customer_details.email = fixedEmail;
-    }
+  if (data.customer_details?.email) {
+    data.customer_details.email = validateAndFormatEmailForMidtrans(data.customer_details.email);
   }
 
-  console.log('🔄 Sending to Midtrans with data:', {
-    order_id: data.transaction_details.order_id,
-    amount: data.transaction_details.gross_amount,
-    email: data.customer_details?.email,
-    item_name: data.item_details?.[0]?.name
-  });
+  const encodedKey = Buffer.from(`${serverKey}:`).toString('base64');
 
-  try {
-    const encodedKey = Buffer.from(`${serverKey}:`).toString('base64');
-
-    const response = await fetch('https://app.sandbox.midtrans.com/snap/v1/transactions', {
+  const makeRequest = async (body: any) =>
+    fetch(MIDTRANS_SNAP_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Authorization': `Basic ${encodedKey}`
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(body)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Midtrans API error:', response.status, errorText);
-      
-      // Cek jika error karena email
-      if (errorText.includes('customer_details.email') || errorText.includes('email format')) {
-        console.error('📧 Email format rejected by Midtrans. Original email:', data.customer_details?.email);
-        
-        // Coba dengan email default
-        data.customer_details.email = 'customer@example.com';
-        console.log('🔄 Retrying with default email...');
-        
-        const retryResponse = await fetch('https://app.sandbox.midtrans.com/snap/v1/transactions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': `Basic ${encodedKey}`
-          },
-          body: JSON.stringify(data)
-        });
-        
-        if (retryResponse.ok) {
-          return await retryResponse.json();
-        }
-      }
+  const response = await makeRequest(data);
 
-      // Fallback untuk error lainnya
-      return {
-        token: `FALLBACK-TOKEN-${Date.now()}`,
-        redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${data.transaction_details.order_id}`,
-        is_fallback: true
-      };
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Midtrans] API error:', response.status, errorText);
+
+    // Retry with fallback email if Midtrans rejects email format
+    if (errorText.includes('customer_details.email') || errorText.includes('email format')) {
+      data.customer_details.email = 'customer@example.com';
+      const retryResponse = await makeRequest(data);
+      if (retryResponse.ok) return await retryResponse.json();
     }
 
-    return await response.json();
-  } catch (error) {
-    console.error('❌ Midtrans API call failed:', error);
-
-    return {
-      token: `FALLBACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${data.transaction_details.order_id}`,
-      is_fallback: true
-    };
+    throw new Error(`Midtrans error ${response.status}: ${errorText.slice(0, 200)}`);
   }
+
+  return await response.json();
 }
 
 // PERBAIKAN: Fungsi untuk mendapatkan data dari request dengan email decoding
@@ -537,9 +493,9 @@ export async function POST(request: NextRequest) {
         }
       ],
       callbacks: {
-        finish: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${body.order_id}`,
-        error: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/failed?order_id=${body.order_id}`,
-        pending: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/pending?order_id=${body.order_id}`
+        finish: `${BASE_URL}/payment/success?order_id=${body.order_id}`,
+        error: `${BASE_URL}/payment/failed?order_id=${body.order_id}`,
+        pending: `${BASE_URL}/payment/pending?order_id=${body.order_id}`
       },
       enabled_payments: body.payment_method
         ? [body.payment_method]
@@ -632,31 +588,11 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ Payment API error:', error);
 
-    // Response fallback untuk development
-    const fallbackResponse = {
-      success: true,
-      data: {
-        token: `MOCK-TOKEN-${Date.now()}`,
-        redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${body?.order_id || 'FALLBACK'}&fallback=true`,
-        snap_redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/success?order_id=${body?.order_id || 'FALLBACK'}&fallback=true`,
-        order_id: body?.order_id || `FALLBACK-${Date.now()}`,
-        amount: 100000,
-        customer: {
-          name: 'Customer',
-          email: 'customer@example.com',
-          email_processed: 'fallback'
-        },
-        payment_method: 'e-wallet',
-        is_fallback: true,
-        development_mode: true,
-        expires_at: new Date(Date.now() + 1800000).toISOString(),
-        timestamp: new Date().toISOString()
-      },
-      message: 'Transaksi pembayaran dibuat dalam mode fallback',
-      note: 'Database atau payment gateway sedang dalam perbaikan'
-    };
-
-    return NextResponse.json(fallbackResponse, { status: 200 });
+    const message = error?.message || 'Terjadi kesalahan saat memproses pembayaran';
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 500 }
+    );
   }
 }
 

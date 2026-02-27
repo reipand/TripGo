@@ -13,20 +13,6 @@ const ADMIN_EMAILS = [
   'administrator@tripo.com'
 ];
 
-const getDefaultRedirectByRole = (role?: string): string => {
-  const normalizedRole = (role || 'user').toLowerCase();
-
-  if (normalizedRole === 'admin' || normalizedRole === 'super_admin') {
-    return '/admin/dashboard';
-  }
-
-  if (normalizedRole === 'staff') {
-    return '/staff/dashboard';
-  }
-
-  return '/dashboard';
-};
-
 const sanitizeRedirect = (value: string | null): string | null => {
   if (!value) return null;
 
@@ -40,24 +26,6 @@ const sanitizeRedirect = (value: string | null): string | null => {
   }
 
   return null;
-};
-
-const hasAccess = (role: string | undefined, path: string): boolean => {
-  const normalizedRole = (role || 'user').toLowerCase();
-
-  if (path.startsWith('/admin')) {
-    return ['admin', 'super_admin'].includes(normalizedRole);
-  }
-
-  if (path.startsWith('/staff')) {
-    return ['staff', 'super_admin'].includes(normalizedRole);
-  }
-
-  if (path.startsWith('/super-admin')) {
-    return normalizedRole === 'super_admin';
-  }
-
-  return true;
 };
 
 async function ensureUserProfile(authUser: User): Promise<string> {
@@ -112,7 +80,7 @@ async function ensureUserProfile(authUser: User): Promise<string> {
 function CallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { fetchUserProfile } = useAuth();
+  useAuth(); // keeps AuthContext alive for onAuthStateChange to handle profile loading
   const [statusMessage, setStatusMessage] = useState('Memproses autentikasi Google...');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const processedRef = useRef(false);
@@ -131,30 +99,23 @@ function CallbackContent() {
         }
 
         const code = searchParams.get('code');
-        if (code) {
-          setStatusMessage('Menyelesaikan sesi login...');
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-          if (exchangeError) {
-            throw exchangeError;
-          }
-        }
+        if (!code) throw new Error('Kode autentikasi tidak ditemukan.');
 
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        const authUser = userData?.user;
+        setStatusMessage('Menyelesaikan sesi login...');
 
-        if (userError) throw userError;
+        // Single network call — user is returned directly, no need for getUser()
+        const { data: sessionData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeError) throw exchangeError;
+
+        const authUser = sessionData?.user;
         if (!authUser) throw new Error('Sesi login tidak ditemukan. Silakan coba lagi.');
 
-        setStatusMessage('Menyinkronkan profil akun...');
-        const role = await ensureUserProfile(authUser);
-        await fetchUserProfile();
+        // Sync profile to DB in background — don't block the redirect
+        ensureUserProfile(authUser).catch(() => {});
 
         const requestedPath = sanitizeRedirect(searchParams.get('redirect'));
-        const targetPath = requestedPath && hasAccess(role, requestedPath)
-          ? requestedPath
-          : getDefaultRedirectByRole(role);
+        const targetPath = requestedPath || '/dashboard';
 
-        setStatusMessage('Mengalihkan ke dashboard...');
         router.replace(targetPath);
       } catch (error: any) {
         console.error('[OAuth Callback] Error:', error);
